@@ -1,0 +1,104 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SqlAgMonitor.ViewModels"
+        xmlns:conv="using:SqlAgMonitor"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="550" d:DesignHeight="500"
+        x:Class="SqlAgMonitor.Views.AddGroupWindow"
+        x:DataType="vm:AddGroupViewModel"
+        Title="Add AG / DAG"
+        Width="550" Height="500"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+
+    <Design.DataContext>
+        <vm:AddGroupViewModel/>
+    </Design.DataContext>
+
+    <DockPanel Margin="16">
+        <!-- Status bar at bottom -->
+        <StackPanel DockPanel.Dock="Bottom" Spacing="8">
+            <TextBlock Text="{Binding StatusMessage}" Opacity="0.7" FontSize="12" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Back" Command="{Binding PreviousStepCommand}" MinWidth="80"
+                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntGreaterThanZeroConverter.Instance}}" />
+                <Button Content="Next" Command="{Binding NextStepCommand}" MinWidth="80"
+                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntLessThanTwoConverter.Instance}}" />
+                <Button Content="Finish" Command="{Binding FinishCommand}" Classes="accent" MinWidth="80"
+                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsTwoConverter.Instance}}" />
+                <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="80" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Step content -->
+        <ScrollViewer>
+            <Panel>
+                <!-- Step 0: Connection -->
+                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsZeroConverter.Instance}}">
+                    <TextBlock Text="Step 1: Connect to Server" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Text="Enter the SQL Server connection details." Opacity="0.7" />
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Server" />
+                        <TextBox Text="{Binding Server}" Watermark="server\instance or server,port" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Authentication" />
+                        <ComboBox x:CompileBindings="False" SelectedItem="{Binding AuthType}">
+                            <ComboBoxItem Content="windows" />
+                            <ComboBoxItem Content="sql" />
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding IsSqlAuth}">
+                        <TextBlock Text="Username" />
+                        <TextBox Text="{Binding Username}" Watermark="sa" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="4" IsVisible="{Binding IsSqlAuth}">
+                        <TextBlock Text="Password" />
+                        <TextBox Text="{Binding Password}" PasswordChar="*" Watermark="Password" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" />
+                        <Button Content="Discover AGs/DAGs" Command="{Binding DiscoverCommand}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 1: Select group -->
+                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsOneConverter.Instance}}">
+                    <TextBlock Text="Step 2: Select AG or DAG" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Text="Select the Availability Group or Distributed AG to monitor." Opacity="0.7" />
+
+                    <ListBox ItemsSource="{Binding DiscoveredGroups}" SelectedItem="{Binding SelectedGroup}"
+                             MinHeight="200" x:CompileBindings="False">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="4">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding GroupType}" Opacity="0.6" />
+                                    <TextBlock Text="{Binding LocalRole}" Opacity="0.6" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </StackPanel>
+
+                <!-- Step 2: Configure -->
+                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsTwoConverter.Instance}}">
+                    <TextBlock Text="Step 3: Configure Monitoring" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Text="Set the polling interval for this group." Opacity="0.7" />
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Polling Interval (seconds)" />
+                        <NumericUpDown x:CompileBindings="False" Value="{Binding PollingIntervalSeconds}" 
+                                       Minimum="5" Maximum="300" Increment="1" />
+                    </StackPanel>
+                </StackPanel>
+            </Panel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

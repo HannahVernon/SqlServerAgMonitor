@@ -1,0 +1,119 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SqlAgMonitor.ViewModels"
+        xmlns:controls="using:SqlAgMonitor.Controls"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="800"
+        x:Class="SqlAgMonitor.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="SQL Server AG Monitor"
+        Width="1280" Height="800"
+        MinWidth="900" MinHeight="600">
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- Top Menu Bar -->
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Add AG/DAG..." Command="{Binding AddGroupCommand}" />
+                <Separator />
+                <MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}" />
+                <Separator />
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}" />
+            </MenuItem>
+            <MenuItem Header="_View">
+                <MenuItem Header="_Light Theme" Command="{Binding SetThemeCommand}" CommandParameter="light" />
+                <MenuItem Header="_Dark Theme" Command="{Binding SetThemeCommand}" CommandParameter="dark" />
+                <MenuItem Header="_High Contrast" Command="{Binding SetThemeCommand}" CommandParameter="highContrast" />
+            </MenuItem>
+            <MenuItem Header="_Monitoring">
+                <MenuItem Header="_Pause All" Command="{Binding PauseAllCommand}" />
+                <MenuItem Header="_Resume All" Command="{Binding ResumeAllCommand}" />
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About" Command="{Binding AboutCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- Status Bar -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource SystemControlBackgroundChromeMediumBrush}"
+                Padding="8,4">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" 
+                           VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock Text="{Binding ConnectionSummary}" VerticalAlignment="Center" FontSize="12" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Main Content: Tab Control -->
+        <TabControl ItemsSource="{Binding MonitorTabs}" SelectedItem="{Binding SelectedTab}"
+                    Margin="4">
+            <TabControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:MonitorTabViewModel">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Ellipse Width="10" Height="10" Fill="{Binding HealthBrush}" />
+                        <TextBlock Text="{Binding TabTitle}" />
+                    </StackPanel>
+                </DataTemplate>
+            </TabControl.ItemTemplate>
+            <TabControl.ContentTemplate>
+                <DataTemplate x:DataType="vm:MonitorTabViewModel">
+                    <Grid RowDefinitions="*,4,*">
+                        <!-- Topology View (top) -->
+                        <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                BorderThickness="1" CornerRadius="4" Margin="4"
+                                ClipToBounds="True">
+                            <controls:TopologyControl AgInfo="{Binding AgInfo}" 
+                                                      DagInfo="{Binding DagInfo}"
+                                                      SelectedReplica="{Binding SelectedReplicaName}" />
+                        </Border>
+
+                        <!-- Splitter -->
+                        <GridSplitter Grid.Row="1" ResizeDirection="Rows" 
+                                      Background="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+
+                        <!-- Data Grid (bottom) -->
+                        <Border Grid.Row="2" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                BorderThickness="1" CornerRadius="4" Margin="4">
+                            <DockPanel>
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" 
+                                            Spacing="8" Margin="8,4">
+                                    <TextBlock Text="Database Replica States" FontWeight="SemiBold" 
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding FilterDescription}" Opacity="0.6"
+                                               VerticalAlignment="Center" FontSize="12" />
+                                </StackPanel>
+                                <DataGrid ItemsSource="{Binding DatabaseStates}" 
+                                          AutoGenerateColumns="False"
+                                          IsReadOnly="True"
+                                          CanUserSortColumns="True"
+                                          GridLinesVisibility="Horizontal"
+                                          Margin="4">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="*" />
+                                        <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaServerName}" Width="*" />
+                                        <DataGridTextColumn Header="Sync State" Binding="{Binding SynchronizationState}" Width="120" />
+                                        <DataGridTextColumn Header="Last Hardened LSN" Binding="{Binding LastHardenedLsn}" Width="140" />
+                                        <DataGridTextColumn Header="LSN Diff" Binding="{Binding LsnDifferenceFromPrimary}" Width="80" />
+                                        <DataGridTextColumn Header="Log Send Queue (KB)" Binding="{Binding LogSendQueueSizeKb}" Width="130" />
+                                        <DataGridTextColumn Header="Redo Queue (KB)" Binding="{Binding RedoQueueSizeKb}" Width="110" />
+                                        <DataGridTextColumn Header="Log Send Rate" Binding="{Binding LogSendRateKbPerSec}" Width="100" />
+                                        <DataGridTextColumn Header="Redo Rate" Binding="{Binding RedoRateKbPerSec}" Width="90" />
+                                        <DataGridTextColumn Header="Est. Recovery" Binding="{Binding EstimatedRecoveryTimeSeconds}" Width="100" />
+                                        <DataGridTextColumn Header="Suspended" Binding="{Binding IsSuspended}" Width="80" />
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </DataTemplate>
+            </TabControl.ContentTemplate>
+        </TabControl>
+    </DockPanel>
+</Window>

@@ -1,0 +1,23 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:views="using:SqlAgMonitor.Views"
+             x:Class="SqlAgMonitor.Views.NotificationOverlay"
+             HorizontalAlignment="Right"
+             VerticalAlignment="Bottom"
+             Margin="0,0,16,16"
+             IsHitTestVisible="False">
+    <ItemsControl x:Name="NotificationList">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="views:ToastNotification">
+                <Border Background="#E02D2D3D" BorderBrush="#555570" BorderThickness="1" 
+                        CornerRadius="8" Padding="12,8" Margin="4" MaxWidth="350">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" FontSize="12" Opacity="0.8" />
+                        <TextBlock Text="{Binding Timestamp}" FontSize="10" Opacity="0.5" />
+                    </StackPanel>
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>
