@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
 using ReactiveUI;
@@ -33,6 +34,9 @@ public class SettingsViewModel : ViewModelBase
     private bool _exportEnabled;
     private string _exportPath = string.Empty;
     private int _exportIntervalHours = 6;
+
+    public List<string> ThemeOptions { get; } = new() { "Light", "Dark", "High Contrast" };
+    public List<string> SyslogProtocolOptions { get; } = new() { "UDP", "TCP" };
 
     public int GlobalPollingIntervalSeconds
     {
@@ -73,6 +77,9 @@ public class SettingsViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
     public ReactiveCommand<Unit, Unit> TestEmailCommand { get; }
 
+    /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
+    public event Action<bool>? CloseRequested;
+
     public SettingsViewModel()
     {
         SaveCommand = ReactiveCommand.Create(OnSave);
@@ -80,10 +87,24 @@ public class SettingsViewModel : ViewModelBase
         TestEmailCommand = ReactiveCommand.Create(OnTestEmail);
     }
 
+    private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "light", "Light" },
+        { "dark", "Dark" },
+        { "highContrast", "High Contrast" },
+    };
+
+    private static readonly Dictionary<string, string> DisplayToTheme = new()
+    {
+        { "Light", "light" },
+        { "Dark", "dark" },
+        { "High Contrast", "highContrast" },
+    };
+
     public void LoadFrom(AppConfiguration config)
     {
         GlobalPollingIntervalSeconds = config.GlobalPollingIntervalSeconds;
-        Theme = config.Theme;
+        Theme = ThemeToDisplay.GetValueOrDefault(config.Theme, "Dark");
         EmailEnabled = config.Email.Enabled;
         SmtpServer = config.Email.SmtpServer;
         SmtpPort = config.Email.SmtpPort;
@@ -104,7 +125,7 @@ public class SettingsViewModel : ViewModelBase
     public void ApplyTo(AppConfiguration config)
     {
         config.GlobalPollingIntervalSeconds = GlobalPollingIntervalSeconds;
-        config.Theme = Theme;
+        config.Theme = DisplayToTheme.GetValueOrDefault(Theme, "dark");
         config.Email.Enabled = EmailEnabled;
         config.Email.SmtpServer = SmtpServer;
         config.Email.SmtpPort = SmtpPort;
@@ -126,12 +147,12 @@ public class SettingsViewModel : ViewModelBase
 
     private void OnSave()
     {
-        // Will be wired up by the window that hosts this
+        CloseRequested?.Invoke(true);
     }
 
     private void OnCancel()
     {
-        // Will be wired up by the window that hosts this
+        CloseRequested?.Invoke(false);
     }
 
     private void OnTestEmail()

@@ -32,16 +32,17 @@
 
                         <StackPanel Spacing="4">
                             <TextBlock Text="Default Polling Interval (seconds)" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding GlobalPollingIntervalSeconds}" Minimum="5" Maximum="300" Increment="1" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding GlobalPollingIntervalSeconds}" 
+                                           Minimum="5" Maximum="300" Increment="1" 
+                                           Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
 
                         <StackPanel Spacing="4">
                             <TextBlock Text="Theme" />
-                            <ComboBox x:CompileBindings="False" SelectedItem="{Binding Theme}">
-                                <ComboBoxItem Content="light" />
-                                <ComboBoxItem Content="dark" />
-                                <ComboBoxItem Content="highContrast" />
-                            </ComboBox>
+                            <ComboBox x:CompileBindings="False" 
+                                      ItemsSource="{Binding ThemeOptions}" 
+                                      SelectedItem="{Binding Theme}"
+                                      Width="200" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -62,7 +63,8 @@
 
                         <StackPanel Spacing="4" IsEnabled="{Binding EmailEnabled}">
                             <TextBlock Text="SMTP Port" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding SmtpPort}" Minimum="1" Maximum="65535" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding SmtpPort}" Minimum="1" Maximum="65535" 
+                                           Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
 
                         <CheckBox Content="Use TLS" IsChecked="{Binding UseTls}" IsEnabled="{Binding EmailEnabled}" />
@@ -103,15 +105,16 @@
 
                         <StackPanel Spacing="4" IsEnabled="{Binding SyslogEnabled}">
                             <TextBlock Text="Port" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding SyslogPort}" Minimum="1" Maximum="65535" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding SyslogPort}" Minimum="1" Maximum="65535" 
+                                           Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
 
                         <StackPanel Spacing="4" IsEnabled="{Binding SyslogEnabled}">
                             <TextBlock Text="Protocol" />
-                            <ComboBox x:CompileBindings="False" SelectedItem="{Binding SyslogProtocol}">
-                                <ComboBoxItem Content="UDP" />
-                                <ComboBoxItem Content="TCP" />
-                            </ComboBox>
+                            <ComboBox x:CompileBindings="False" 
+                                      ItemsSource="{Binding SyslogProtocolOptions}" 
+                                      SelectedItem="{Binding SyslogProtocol}"
+                                      Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -126,7 +129,8 @@
                         <StackPanel Spacing="4">
                             <TextBlock Text="Master Cooldown Period (minutes)" />
                             <TextBlock Text="Maximum one email per this period." FontSize="11" Opacity="0.6" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding MasterCooldownMinutes}" Minimum="1" Maximum="1440" Increment="1" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding MasterCooldownMinutes}" Minimum="1" Maximum="1440" Increment="1" 
+                                           Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
@@ -147,7 +151,8 @@
 
                         <StackPanel Spacing="4" IsEnabled="{Binding ExportEnabled}">
                             <TextBlock Text="Export Interval (hours)" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding ExportIntervalHours}" Minimum="1" Maximum="168" Increment="1" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding ExportIntervalHours}" Minimum="1" Maximum="168" Increment="1" 
+                                           Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>

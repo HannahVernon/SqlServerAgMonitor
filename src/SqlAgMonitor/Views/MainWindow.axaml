@@ -31,8 +31,10 @@
                 <MenuItem Header="_High Contrast" Command="{Binding SetThemeCommand}" CommandParameter="highContrast" />
             </MenuItem>
             <MenuItem Header="_Monitoring">
-                <MenuItem Header="_Pause All" Command="{Binding PauseAllCommand}" />
-                <MenuItem Header="_Resume All" Command="{Binding ResumeAllCommand}" />
+                <MenuItem Header="_Pause All" Command="{Binding PauseAllCommand}" 
+                          IsEnabled="{Binding IsNotAllPaused}" />
+                <MenuItem Header="_Resume All" Command="{Binding ResumeAllCommand}" 
+                          IsEnabled="{Binding IsAllPaused}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Command="{Binding AboutCommand}" />
@@ -47,6 +49,11 @@
                            VerticalAlignment="Center" Opacity="0.7" FontSize="12" />
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <TextBlock Text="{Binding ConnectionSummary}" VerticalAlignment="Center" FontSize="12" />
+                    <Border Background="#CCCC3300" CornerRadius="3" Padding="8,2" 
+                            IsVisible="{Binding IsAllPaused}" VerticalAlignment="Center">
+                        <TextBlock Text="⏸  PAUSED" FontSize="11" FontWeight="SemiBold" 
+                                   Foreground="White" VerticalAlignment="Center" />
+                    </Border>
                 </StackPanel>
             </DockPanel>
         </Border>

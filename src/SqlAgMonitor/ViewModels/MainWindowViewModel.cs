@@ -28,6 +28,7 @@ public class MainWindowViewModel : ViewModelBase
     private MonitorTabViewModel? _selectedTab;
     private string _statusText = "Ready";
     private string _connectionSummary = "No groups monitored";
+    private bool _isAllPaused;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
 
@@ -48,6 +49,14 @@ public class MainWindowViewModel : ViewModelBase
         get => _connectionSummary;
         set => this.RaiseAndSetIfChanged(ref _connectionSummary, value);
     }
+
+    public bool IsAllPaused
+    {
+        get => _isAllPaused;
+        set => this.RaiseAndSetIfChanged(ref _isAllPaused, value);
+    }
+
+    public bool IsNotAllPaused => !_isAllPaused;
 
     public ReactiveCommand<Unit, Unit> AddGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
@@ -171,6 +180,8 @@ public class MainWindowViewModel : ViewModelBase
     {
         foreach (var tab in MonitorTabs)
             tab.IsPaused = true;
+        IsAllPaused = true;
+        this.RaisePropertyChanged(nameof(IsNotAllPaused));
         StatusText = "All monitoring paused";
     }
 
@@ -178,6 +189,8 @@ public class MainWindowViewModel : ViewModelBase
     {
         foreach (var tab in MonitorTabs)
             tab.IsPaused = false;
+        IsAllPaused = false;
+        this.RaisePropertyChanged(nameof(IsNotAllPaused));
         StatusText = "All monitoring resumed";
     }
 
