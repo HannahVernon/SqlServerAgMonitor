@@ -51,9 +51,24 @@
             </DockPanel>
         </Border>
 
-        <!-- Main Content: Tab Control -->
-        <TabControl ItemsSource="{Binding MonitorTabs}" SelectedItem="{Binding SelectedTab}"
-                    Margin="4">
+        <!-- Main Content: Tab Control or Empty State -->
+        <Panel>
+            <!-- Empty state when no tabs -->
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                        IsVisible="{Binding !MonitorTabs.Count}">
+                <TextBlock Text="No Availability Groups Monitored" FontSize="24" FontWeight="Light"
+                           HorizontalAlignment="Center" Opacity="0.5" />
+                <TextBlock Text="Click File → Add AG/DAG to get started, or use the button below."
+                           HorizontalAlignment="Center" Opacity="0.4" FontSize="14" />
+                <Button Content="  ＋  Add AG / DAG  " Command="{Binding AddGroupCommand}"
+                        HorizontalAlignment="Center" FontSize="16" Padding="20,10"
+                        Classes="accent" />
+            </StackPanel>
+
+            <!-- Tab control when tabs exist -->
+            <TabControl ItemsSource="{Binding MonitorTabs}" SelectedItem="{Binding SelectedTab}"
+                        Margin="4"
+                        IsVisible="{Binding MonitorTabs.Count}">
             <TabControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:MonitorTabViewModel">
                     <StackPanel Orientation="Horizontal" Spacing="6">
@@ -115,5 +130,6 @@
                 </DataTemplate>
             </TabControl.ContentTemplate>
         </TabControl>
+        </Panel>
     </DockPanel>
 </Window>

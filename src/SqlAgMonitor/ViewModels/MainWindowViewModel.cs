@@ -3,11 +3,18 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using Avalonia;
+using Avalonia.Controls;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
+using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Services;
+using SqlAgMonitor.Views;
 
 namespace SqlAgMonitor.ViewModels;
 
@@ -15,7 +22,7 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly AgMonitorService _agMonitor;
     private readonly DagMonitorService _dagMonitor;
-    private readonly ILogger _logger;
+    private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
 
     private MonitorTabViewModel? _selectedTab;
@@ -59,7 +66,7 @@ public class MainWindowViewModel : ViewModelBase
     {
         _agMonitor = agMonitor;
         _dagMonitor = dagMonitor;
-        _logger = loggerFactory?.CreateLogger<MainWindowViewModel>()!;
+        _logger = loggerFactory?.CreateLogger<MainWindowViewModel>();
 
         AddGroupCommand = ReactiveCommand.Create(OnAddGroup);
         OpenSettingsCommand = ReactiveCommand.Create(OnOpenSettings);
@@ -114,23 +121,50 @@ public class MainWindowViewModel : ViewModelBase
 
     private void OnAddGroup()
     {
-        // TODO: Open add AG/DAG wizard
+        var window = GetMainWindow();
+        if (window == null) return;
+
+        var addWindow = new AddGroupWindow
+        {
+            DataContext = new AddGroupViewModel()
+        };
+        addWindow.ShowDialog(window);
     }
 
     private void OnOpenSettings()
     {
-        // TODO: Open settings dialog
+        var window = GetMainWindow();
+        if (window == null) return;
+
+        var configService = App.Services.GetRequiredService<IConfigurationService>();
+        var vm = new SettingsViewModel();
+        vm.LoadFrom(configService.Load());
+
+        var settingsWindow = new SettingsWindow { DataContext = vm };
+        settingsWindow.ShowDialog(window);
     }
 
     private void OnExit()
     {
         _subscriptions.Dispose();
-        Environment.Exit(0);
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            if (desktop.MainWindow is MainWindow mw)
+                mw.ForceClose();
+        }
     }
 
     private void OnSetTheme(string theme)
     {
-        // TODO: Apply theme
+        var themeService = new ThemeService();
+        themeService.SetTheme(theme);
+
+        var configService = App.Services.GetRequiredService<IConfigurationService>();
+        var config = configService.Load();
+        config.Theme = theme;
+        configService.Save(config);
+
+        StatusText = $"Theme changed to {theme}";
     }
 
     private void OnPauseAll()
@@ -149,6 +183,13 @@ public class MainWindowViewModel : ViewModelBase
 
     private void OnAbout()
     {
-        // TODO: Show about dialog
+        StatusText = "SQL Server AG Monitor v1.0 — Avalonia UI + ReactiveUI + .NET 9";
+    }
+
+    private static Window? GetMainWindow()
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            return desktop.MainWindow;
+        return null;
     }
 }

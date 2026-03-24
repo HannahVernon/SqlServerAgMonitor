@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace SqlAgMonitor.Core.Services.Credentials;
 
+[SupportedOSPlatform("windows")]
 public class DpapiCredentialStore : ICredentialStore
 {
     private readonly ILogger<DpapiCredentialStore> _logger;
