@@ -6,6 +6,7 @@ using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Media;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -194,9 +195,35 @@ public class MainWindowViewModel : ViewModelBase
         StatusText = "All monitoring resumed";
     }
 
-    private void OnAbout()
+    private async void OnAbout()
     {
-        StatusText = "SQL Server AG Monitor v1.0 — Avalonia UI + ReactiveUI + .NET 9";
+        var window = GetMainWindow();
+        if (window == null) return;
+
+        var aboutWindow = new Window
+        {
+            Title = "About",
+            Width = 360,
+            Height = 220,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Content = new Avalonia.Controls.StackPanel
+            {
+                Margin = new Avalonia.Thickness(24),
+                Spacing = 12,
+                VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
+                Children =
+                {
+                    new TextBlock { Text = "SQL Server AG Monitor", FontSize = 22, FontWeight = FontWeight.Bold, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center },
+                    new TextBlock { Text = "Version 1.0.0", FontSize = 14, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.7 },
+                    new TextBlock { Text = "by Hannah Vernon", FontSize = 14, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.7 },
+                    new Separator { Margin = new Avalonia.Thickness(0, 4) },
+                    new TextBlock { Text = "Avalonia UI • ReactiveUI • .NET 9", FontSize = 12, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.5 },
+                }
+            }
+        };
+
+        await aboutWindow.ShowDialog(window);
     }
 
     private static Window? GetMainWindow()
