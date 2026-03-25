@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Linq;
@@ -6,13 +7,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Core.Services.Connection;
+using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Core.Services.Monitoring;
 
 namespace SqlAgMonitor.ViewModels;
 
 public class AddGroupViewModel : ViewModelBase
 {
+    private readonly ISqlConnectionService? _connectionService;
+    private readonly IAgDiscoveryService? _discoveryService;
+    private readonly ICredentialStore? _credentialStore;
+
     private string _server = string.Empty;
-    private string _authType = "windows";
+    private string _authType = "Windows";
     private string? _username;
     private string? _password;
     private bool _isDiscovering;
@@ -23,6 +31,8 @@ public class AddGroupViewModel : ViewModelBase
     private int _pollingIntervalSeconds;
     private int _currentStep;
 
+    public List<string> AuthTypeOptions { get; } = new() { "Windows", "SQL Server" };
+
     public string Server
     {
         get => _server;
@@ -32,7 +42,11 @@ public class AddGroupViewModel : ViewModelBase
     public string AuthType
     {
         get => _authType;
-        set => this.RaiseAndSetIfChanged(ref _authType, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _authType, value);
+            this.RaisePropertyChanged(nameof(IsSqlAuth));
+        }
     }
 
     public string? Username
@@ -89,7 +103,7 @@ public class AddGroupViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _currentStep, value);
     }
 
-    public bool IsSqlAuth => string.Equals(AuthType, "sql", StringComparison.OrdinalIgnoreCase);
+    public bool IsSqlAuth => string.Equals(AuthType, "SQL Server", StringComparison.OrdinalIgnoreCase);
 
     public ObservableCollection<DiscoveredGroup> DiscoveredGroups { get; } = new();
 
@@ -100,13 +114,25 @@ public class AddGroupViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> FinishCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
 
+    /// <summary>Raised when the dialog should close. True = finished (add group), False = cancelled.</summary>
+    public event Action<bool>? CloseRequested;
+
     public AddGroupViewModel()
+        : this(null, null, null)
     {
+    }
+
+    public AddGroupViewModel(
+        ISqlConnectionService? connectionService,
+        IAgDiscoveryService? discoveryService,
+        ICredentialStore? credentialStore)
+    {
+        _connectionService = connectionService;
+        _discoveryService = discoveryService;
+        _credentialStore = credentialStore;
+
         PollingIntervalSeconds = 16;
         CurrentStep = 0;
-
-        this.WhenAnyValue(x => x.AuthType)
-            .Subscribe(_ => this.RaisePropertyChanged(nameof(IsSqlAuth)));
 
         var canTest = this.WhenAnyValue(
             x => x.Server, x => x.IsTestingConnection,
@@ -126,17 +152,34 @@ public class AddGroupViewModel : ViewModelBase
         CancelCommand = ReactiveCommand.Create(OnCancel);
     }
 
+    private string CredentialKey => $"agmon:{Server}:{Username}";
+
+    private string ResolvedAuthType =>
+        string.Equals(AuthType, "SQL Server", StringComparison.OrdinalIgnoreCase) ? "sql" : "windows";
+
     private async Task OnTestConnectionAsync(CancellationToken cancellationToken)
     {
+        if (_connectionService is null)
+        {
+            StatusMessage = "Connection service not available.";
+            return;
+        }
+
         IsTestingConnection = true;
         StatusMessage = $"Testing connection to {Server}...";
 
         try
         {
-            // Will be wired to ISqlConnectionService.TestConnectionAsync by the host window
-            await Task.Delay(500, cancellationToken);
-            ConnectionTested = true;
-            StatusMessage = "Connection successful.";
+            if (IsSqlAuth && _credentialStore is not null && !string.IsNullOrEmpty(Password))
+            {
+                await _credentialStore.StorePasswordAsync(CredentialKey, Password, cancellationToken);
+            }
+
+            var success = await _connectionService.TestConnectionAsync(
+                Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken);
+
+            ConnectionTested = success;
+            StatusMessage = success ? "Connection successful." : "Connection failed. Check server name and credentials.";
         }
         catch (Exception ex)
         {
@@ -151,15 +194,28 @@ public class AddGroupViewModel : ViewModelBase
 
     private async Task OnDiscoverAsync(CancellationToken cancellationToken)
     {
+        if (_discoveryService is null)
+        {
+            StatusMessage = "Discovery service not available.";
+            return;
+        }
+
         IsDiscovering = true;
         StatusMessage = "Discovering AGs and DAGs...";
         DiscoveredGroups.Clear();
 
         try
         {
-            // Will be wired to IAgDiscoveryService by the host window
-            await Task.Delay(500, cancellationToken);
+            var groups = await _discoveryService.DiscoverGroupsAsync(
+                Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken);
+
+            foreach (var group in groups)
+                DiscoveredGroups.Add(group);
+
             StatusMessage = $"Found {DiscoveredGroups.Count} group(s).";
+
+            if (DiscoveredGroups.Count == 1)
+                SelectedGroup = DiscoveredGroups[0];
         }
         catch (Exception ex)
         {
@@ -185,11 +241,11 @@ public class AddGroupViewModel : ViewModelBase
 
     private void OnFinish()
     {
-        // Will be handled by the host window to save config and start monitoring
+        CloseRequested?.Invoke(true);
     }
 
     private void OnCancel()
     {
-        // Will close the window
+        CloseRequested?.Invoke(false);
     }
 }

@@ -46,10 +46,10 @@
 
                     <StackPanel Spacing="4">
                         <TextBlock Text="Authentication" />
-                        <ComboBox x:CompileBindings="False" SelectedItem="{Binding AuthType}">
-                            <ComboBoxItem Content="windows" />
-                            <ComboBoxItem Content="sql" />
-                        </ComboBox>
+                        <ComboBox x:CompileBindings="False" 
+                                  ItemsSource="{Binding AuthTypeOptions}"
+                                  SelectedItem="{Binding AuthType}"
+                                  Width="200" HorizontalAlignment="Left" />
                     </StackPanel>
 
                     <StackPanel Spacing="4" IsVisible="{Binding IsSqlAuth}">
@@ -95,7 +95,8 @@
                     <StackPanel Spacing="4">
                         <TextBlock Text="Polling Interval (seconds)" />
                         <NumericUpDown x:CompileBindings="False" Value="{Binding PollingIntervalSeconds}" 
-                                       Minimum="5" Maximum="300" Increment="1" />
+                                       Minimum="5" Maximum="300" Increment="1" 
+                                       Width="150" HorizontalAlignment="Left" />
                     </StackPanel>
                 </StackPanel>
             </Panel>

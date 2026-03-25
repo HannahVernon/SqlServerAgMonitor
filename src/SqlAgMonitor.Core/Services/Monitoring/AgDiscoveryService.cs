@@ -14,7 +14,7 @@ public class AgDiscoveryService : IAgDiscoveryService
     private const string DiscoverySql = @"
         SELECT
             ag.[name]                       AS [ag_name],
-            ag.[is_distributed],
+            COALESCE(ag.[is_distributed], 0) AS [is_distributed],
             ars.[role_desc],
             ar.[replica_server_name]
         FROM sys.availability_groups ag

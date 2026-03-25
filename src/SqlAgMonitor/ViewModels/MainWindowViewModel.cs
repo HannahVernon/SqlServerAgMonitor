@@ -13,6 +13,8 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Core.Services.Connection;
+using SqlAgMonitor.Core.Services.Credentials;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.Views;
@@ -134,10 +136,12 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var addWindow = new AddGroupWindow
-        {
-            DataContext = new AddGroupViewModel()
-        };
+        var connectionService = App.Services.GetRequiredService<ISqlConnectionService>();
+        var discoveryService = App.Services.GetRequiredService<IAgDiscoveryService>();
+        var credentialStore = App.Services.GetRequiredService<ICredentialStore>();
+
+        var vm = new AddGroupViewModel(connectionService, discoveryService, credentialStore);
+        var addWindow = new AddGroupWindow { DataContext = vm };
         addWindow.ShowDialog(window);
     }
 
