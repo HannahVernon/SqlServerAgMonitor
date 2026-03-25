@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
@@ -68,6 +69,7 @@ public class MainWindowViewModel : ViewModelBase
     public bool IsNotAllPaused => !_isAllPaused;
 
     public ReactiveCommand<Unit, Unit> AddGroupCommand { get; }
+    public ReactiveCommand<Unit, Unit> RemoveGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ExitCommand { get; }
     public ReactiveCommand<string, Unit> SetThemeCommand { get; }
@@ -86,7 +88,11 @@ public class MainWindowViewModel : ViewModelBase
         _dagMonitor = dagMonitor;
         _logger = loggerFactory?.CreateLogger<MainWindowViewModel>();
 
+        var canRemove = this.WhenAnyValue(x => x.SelectedTab)
+            .Select(tab => tab != null);
+
         AddGroupCommand = ReactiveCommand.Create(OnAddGroup);
+        RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
         OpenSettingsCommand = ReactiveCommand.Create(OnOpenSettings);
         ExitCommand = ReactiveCommand.Create(OnExit);
         SetThemeCommand = ReactiveCommand.Create<string>(OnSetTheme);
@@ -255,6 +261,95 @@ public class MainWindowViewModel : ViewModelBase
             _logger?.LogError(ex, "Failed to start monitoring {Group}.", groupName);
             StatusText = $"Error starting monitoring for {groupName}: {ex.Message}";
         }
+    }
+
+    private async Task OnRemoveGroupAsync()
+    {
+        var tab = SelectedTab;
+        if (tab is null) return;
+
+        var window = GetMainWindow();
+        if (window is null) return;
+
+        // Confirmation dialog
+        var confirmWindow = new Window
+        {
+            Title = "Confirm Removal",
+            Width = 400,
+            Height = 160,
+            CanResize = false,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+        };
+
+        var confirmed = false;
+        var panel = new Avalonia.Controls.StackPanel
+        {
+            Margin = new Avalonia.Thickness(20),
+            Spacing = 16,
+            Children =
+            {
+                new TextBlock
+                {
+                    Text = $"Stop monitoring \"{tab.TabTitle}\" and remove it?",
+                    TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                    FontSize = 14
+                }
+            }
+        };
+
+        var buttonPanel = new Avalonia.Controls.StackPanel
+        {
+            Orientation = Avalonia.Layout.Orientation.Horizontal,
+            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+            Spacing = 8,
+        };
+
+        var removeBtn = new Button { Content = "Remove", MinWidth = 80, Classes = { "accent" } };
+        var cancelBtn = new Button { Content = "Cancel", MinWidth = 80 };
+
+        removeBtn.Click += (_, _) => { confirmed = true; confirmWindow.Close(); };
+        cancelBtn.Click += (_, _) => { confirmWindow.Close(); };
+
+        buttonPanel.Children.Add(removeBtn);
+        buttonPanel.Children.Add(cancelBtn);
+        panel.Children.Add(buttonPanel);
+        confirmWindow.Content = panel;
+
+        await confirmWindow.ShowDialog(window);
+
+        if (!confirmed) return;
+
+        var groupName = tab.TabTitle;
+        var groupType = tab.GroupType;
+
+        // Stop monitoring
+        try
+        {
+            if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
+                await _dagMonitor.StopMonitoringAsync(groupName);
+            else
+                await _agMonitor.StopMonitoringAsync(groupName);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error stopping monitoring for {Group}.", groupName);
+        }
+
+        // Remove from config
+        var configService = App.Services.GetRequiredService<IConfigurationService>();
+        var config = configService.Load();
+        config.MonitoredGroups.RemoveAll(g =>
+            string.Equals(g.Name, groupName, StringComparison.OrdinalIgnoreCase));
+        configService.Save(config);
+
+        // Remove tab
+        MonitorTabs.Remove(tab);
+        _previousSnapshots.Remove(groupName, out _);
+        SelectedTab = MonitorTabs.FirstOrDefault();
+        ConnectionSummary = MonitorTabs.Count > 0
+            ? $"{MonitorTabs.Count} group(s) monitored"
+            : "No groups monitored";
+        StatusText = $"Removed {groupName}";
     }
 
     private void OnOpenSettings()

@@ -35,6 +35,8 @@
                           IsEnabled="{Binding IsNotAllPaused}" />
                 <MenuItem Header="_Resume All" Command="{Binding ResumeAllCommand}" 
                           IsEnabled="{Binding IsAllPaused}" />
+                <Separator />
+                <MenuItem Header="_Remove Current AG/DAG..." Command="{Binding RemoveGroupCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Command="{Binding AboutCommand}" />
@@ -79,6 +81,12 @@
             <TabControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:MonitorTabViewModel">
                     <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel.ContextMenu>
+                            <ContextMenu x:CompileBindings="False">
+                                <MenuItem Header="Remove" 
+                                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveGroupCommand}" />
+                            </ContextMenu>
+                        </StackPanel.ContextMenu>
                         <Ellipse Width="10" Height="10" Fill="{Binding HealthBrush}" />
                         <TextBlock Text="{Binding TabTitle}" />
                     </StackPanel>
