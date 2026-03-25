@@ -38,7 +38,7 @@ public class AgMonitorService : IAgMonitorService
                 ON ar.[group_id] = ag.[group_id]
             INNER JOIN sys.dm_hadr_availability_replica_states ars
                 ON ar.[replica_id] = ars.[replica_id]
-        WHERE ag.[is_distributed] = 0
+        WHERE COALESCE(ag.[is_distributed], 0) = 0
         ORDER BY ag.[name], ar.[replica_server_name];
     ";
 
@@ -67,8 +67,8 @@ public class AgMonitorService : IAgMonitorService
                 ON hdrs.[group_id] = ag.[group_id]
             INNER JOIN sys.databases d
                 ON hdrs.[database_id] = d.[database_id]
-        WHERE hdrs.[is_local] = 1
-        ORDER BY ag.[name], d.[name];
+        WHERE COALESCE(ag.[is_distributed], 0) = 0
+        ORDER BY ag.[name], ar.[replica_server_name], d.[name];
     ";
 
     public AgMonitorService(
@@ -219,6 +219,7 @@ public class AgMonitorService : IAgMonitorService
         {
             replicas.Add(new ReplicaInfo
             {
+                AgName = reader.GetString(0),
                 ReplicaServerName = reader.GetString(1),
                 Role = SqlParsingHelpers.ParseRole(reader.IsDBNull(2) ? null : reader.GetString(2)),
                 OperationalState = SqlParsingHelpers.ParseOperationalState(reader.IsDBNull(3) ? null : reader.GetString(3)),
@@ -272,12 +273,21 @@ public class AgMonitorService : IAgMonitorService
     {
         var agInfo = new AvailabilityGroupInfo { AgName = groupName };
 
-        // Compute LSN differences from primary
-        var primaryStates = dbStates
-            .Where(d => replicas.Any(r => r.ReplicaServerName == d.ReplicaServerName && r.Role == ReplicaRole.Primary))
-            .ToDictionary(d => d.DatabaseName, d => d.LastHardenedLsn);
+        // Filter to the specific AG
+        var agReplicas = replicas
+            .Where(r => string.Equals(r.AgName, groupName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var agDbStates = dbStates
+            .Where(d => string.Equals(d.AgName, groupName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
 
-        foreach (var dbState in dbStates)
+        // Compute LSN differences from primary
+        var primaryStates = agDbStates
+            .Where(d => agReplicas.Any(r => r.ReplicaServerName == d.ReplicaServerName && r.Role == ReplicaRole.Primary))
+            .GroupBy(d => d.DatabaseName)
+            .ToDictionary(g => g.Key, g => g.First().LastHardenedLsn);
+
+        foreach (var dbState in agDbStates)
         {
             if (primaryStates.TryGetValue(dbState.DatabaseName, out var primaryLsn))
             {
@@ -285,16 +295,16 @@ public class AgMonitorService : IAgMonitorService
             }
         }
 
-        foreach (var replica in replicas)
+        foreach (var replica in agReplicas)
         {
-            var replicaDbStates = dbStates.Where(d => d.ReplicaServerName == replica.ReplicaServerName).ToList();
+            var replicaDbStates = agDbStates.Where(d => d.ReplicaServerName == replica.ReplicaServerName).ToList();
             replica.DatabaseCount = replicaDbStates.Count;
             foreach (var dbs in replicaDbStates)
                 replica.DatabaseStates.Add(dbs);
             agInfo.Replicas.Add(replica);
         }
 
-        agInfo.OverallHealth = SqlParsingHelpers.ComputeOverallHealth(replicas.AsReadOnly());
+        agInfo.OverallHealth = SqlParsingHelpers.ComputeOverallHealth(agReplicas.AsReadOnly());
         return agInfo;
     }
 

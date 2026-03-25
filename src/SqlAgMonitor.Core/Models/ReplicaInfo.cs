@@ -5,6 +5,7 @@ namespace SqlAgMonitor.Core.Models;
 
 public class ReplicaInfo : ReactiveObject
 {
+    private string _agName = string.Empty;
     private string _replicaServerName = string.Empty;
     private ReplicaRole _role;
     private OperationalState _operationalState;
@@ -16,6 +17,7 @@ public class ReplicaInfo : ReactiveObject
     private int _databaseCount;
     private string? _endpointUrl;
 
+    public string AgName { get => _agName; set => this.RaiseAndSetIfChanged(ref _agName, value); }
     public string ReplicaServerName { get => _replicaServerName; set => this.RaiseAndSetIfChanged(ref _replicaServerName, value); }
     public ReplicaRole Role { get => _role; set => this.RaiseAndSetIfChanged(ref _role, value); }
     public OperationalState OperationalState { get => _operationalState; set => this.RaiseAndSetIfChanged(ref _operationalState, value); }
