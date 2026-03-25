@@ -85,7 +85,8 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
             ApplicationName = "SqlAgMonitor",
             ConnectTimeout = 15,
             Encrypt = SqlConnectionEncryptOption.Optional,
-            TrustServerCertificate = true
+            TrustServerCertificate = true,
+            MultiSubnetFailover = true
         };
 
         if (string.Equals(authType, "windows", StringComparison.OrdinalIgnoreCase))
