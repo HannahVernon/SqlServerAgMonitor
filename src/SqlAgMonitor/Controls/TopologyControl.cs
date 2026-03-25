@@ -195,7 +195,7 @@ public class TopologyControl : Control
                 };
                 _nodeLayouts.Add(secLayout);
 
-                long maxLsnDiff = secondaries[i].DatabaseStates.Count > 0
+                decimal maxLsnDiff = secondaries[i].DatabaseStates.Count > 0
                     ? secondaries[i].DatabaseStates.Max(d => d.LsnDifferenceFromPrimary)
                     : 0;
                 bool isDisconnected = secondaries[i].ConnectedState == ConnectedState.Disconnected;

@@ -14,7 +14,7 @@ public enum HealthLevel
 
 public static class HealthLevelExtensions
 {
-    public static HealthLevel FromLsnDifference(long lsnDifference, bool isDisconnected = false)
+    public static HealthLevel FromLsnDifference(decimal lsnDifference, bool isDisconnected = false)
     {
         if (isDisconnected) return HealthLevel.DangerZone;
 
