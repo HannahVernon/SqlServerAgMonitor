@@ -81,12 +81,6 @@
             <TabControl.ItemTemplate>
                 <DataTemplate x:DataType="vm:MonitorTabViewModel">
                     <StackPanel Orientation="Horizontal" Spacing="6">
-                        <StackPanel.ContextMenu>
-                            <ContextMenu x:CompileBindings="False">
-                                <MenuItem Header="Remove" 
-                                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RemoveGroupCommand}" />
-                            </ContextMenu>
-                        </StackPanel.ContextMenu>
                         <Ellipse Width="10" Height="10" Fill="{Binding HealthBrush}" />
                         <TextBlock Text="{Binding TabTitle}" />
                     </StackPanel>
@@ -135,7 +129,6 @@
                                         <DataGridTextColumn Header="Redo Queue (KB)" Binding="{Binding RedoQueueSizeKb}" Width="110" />
                                         <DataGridTextColumn Header="Log Send Rate" Binding="{Binding LogSendRateKbPerSec}" Width="100" />
                                         <DataGridTextColumn Header="Redo Rate" Binding="{Binding RedoRateKbPerSec}" Width="90" />
-                                        <DataGridTextColumn Header="Est. Recovery" Binding="{Binding EstimatedRecoveryTimeSeconds}" Width="100" />
                                         <DataGridTextColumn Header="Suspended" Binding="{Binding IsSuspended}" Width="80" />
                                     </DataGrid.Columns>
                                 </DataGrid>

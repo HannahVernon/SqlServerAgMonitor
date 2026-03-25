@@ -63,7 +63,6 @@ public class DagMonitorService : IAgMonitorService
             hdrs.[redo_queue_size],
             hdrs.[log_send_rate],
             hdrs.[redo_rate],
-            hdrs.[estimated_recovery_time],
             hdrs.[is_suspended],
             hdrs.[suspend_reason_desc],
             ar.[availability_mode_desc]
@@ -292,10 +291,9 @@ public class DagMonitorService : IAgMonitorService
                 RedoQueueSizeKb = reader.IsDBNull(8) ? 0 : reader.GetInt64(8),
                 LogSendRateKbPerSec = reader.IsDBNull(9) ? 0 : reader.GetInt64(9),
                 RedoRateKbPerSec = reader.IsDBNull(10) ? 0 : reader.GetInt64(10),
-                EstimatedRecoveryTimeSeconds = reader.IsDBNull(11) ? 0 : reader.GetInt64(11),
-                IsSuspended = !reader.IsDBNull(12) && reader.GetBoolean(12),
-                SuspendReason = reader.IsDBNull(13) ? null : reader.GetString(13),
-                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(14) ? null : reader.GetString(14))
+                IsSuspended = !reader.IsDBNull(11) && reader.GetBoolean(11),
+                SuspendReason = reader.IsDBNull(12) ? null : reader.GetString(12),
+                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(13) ? null : reader.GetString(13))
             });
         }
 

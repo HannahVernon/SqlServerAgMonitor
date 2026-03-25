@@ -26,7 +26,11 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
-        services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Debug));
+        services.AddLogging(builder =>
+        {
+            builder.SetMinimumLevel(LogLevel.Debug);
+            builder.AddProvider(new FileLoggerProvider(Program.LogFilePath));
+        });
         services.AddSqlAgMonitorCore();
         Services = services.BuildServiceProvider();
 
