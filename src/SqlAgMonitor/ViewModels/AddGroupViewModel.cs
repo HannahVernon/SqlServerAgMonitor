@@ -100,8 +100,24 @@ public class AddGroupViewModel : ViewModelBase
     public int CurrentStep
     {
         get => _currentStep;
-        set => this.RaiseAndSetIfChanged(ref _currentStep, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _currentStep, value);
+            this.RaisePropertyChanged(nameof(IsStep0));
+            this.RaisePropertyChanged(nameof(IsStep1));
+            this.RaisePropertyChanged(nameof(IsStep2));
+            this.RaisePropertyChanged(nameof(ShowNextButton));
+            this.RaisePropertyChanged(nameof(ShowBackButton));
+            this.RaisePropertyChanged(nameof(ShowFinishButton));
+        }
     }
+
+    public bool IsStep0 => CurrentStep == 0;
+    public bool IsStep1 => CurrentStep == 1;
+    public bool IsStep2 => CurrentStep == 2;
+    public bool ShowNextButton => CurrentStep < 2;
+    public bool ShowBackButton => CurrentStep > 0;
+    public bool ShowFinishButton => CurrentStep == 2;
 
     public bool IsSqlAuth => string.Equals(AuthType, "SQL Server", StringComparison.OrdinalIgnoreCase);
 

@@ -1,7 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SqlAgMonitor.ViewModels"
-        xmlns:conv="using:SqlAgMonitor"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="550" d:DesignHeight="500"
@@ -22,11 +21,11 @@
             <TextBlock Text="{Binding StatusMessage}" Opacity="0.7" FontSize="12" />
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                 <Button Content="Back" Command="{Binding PreviousStepCommand}" MinWidth="80"
-                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntGreaterThanZeroConverter.Instance}}" />
+                        IsVisible="{Binding ShowBackButton}" />
                 <Button Content="Next" Command="{Binding NextStepCommand}" MinWidth="80"
-                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntLessThanTwoConverter.Instance}}" />
+                        IsVisible="{Binding ShowNextButton}" />
                 <Button Content="Finish" Command="{Binding FinishCommand}" Classes="accent" MinWidth="80"
-                        IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsTwoConverter.Instance}}" />
+                        IsVisible="{Binding ShowFinishButton}" />
                 <Button Content="Cancel" Command="{Binding CancelCommand}" MinWidth="80" />
             </StackPanel>
         </StackPanel>
@@ -35,7 +34,7 @@
         <ScrollViewer>
             <Panel>
                 <!-- Step 0: Connection -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsZeroConverter.Instance}}">
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep0}">
                     <TextBlock Text="Step 1: Connect to Server" FontWeight="Bold" FontSize="18" />
                     <TextBlock Text="Enter the SQL Server connection details." Opacity="0.7" />
 
@@ -69,7 +68,7 @@
                 </StackPanel>
 
                 <!-- Step 1: Select group -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsOneConverter.Instance}}">
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep1}">
                     <TextBlock Text="Step 2: Select AG or DAG" FontWeight="Bold" FontSize="18" />
                     <TextBlock Text="Select the Availability Group or Distributed AG to monitor." Opacity="0.7" />
 
@@ -88,7 +87,7 @@
                 </StackPanel>
 
                 <!-- Step 2: Configure -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static conv:IntEqualsTwoConverter.Instance}}">
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep2}">
                     <TextBlock Text="Step 3: Configure Monitoring" FontWeight="Bold" FontSize="18" />
                     <TextBlock Text="Set the polling interval for this group." Opacity="0.7" />
 
