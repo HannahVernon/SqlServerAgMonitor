@@ -50,7 +50,7 @@ public class AgDiscoveryService : IAgDiscoveryService
         while (await reader.ReadAsync(cancellationToken))
         {
             var agName = reader.GetString(0);
-            var isDistributed = reader.GetBoolean(1);
+            var isDistributed = Convert.ToBoolean(reader.GetValue(1));
             var roleDesc = reader.GetString(2);
             var replicaServer = reader.GetString(3);
 
