@@ -117,6 +117,8 @@
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
                                           CanUserSortColumns="True"
+                                          CanUserResizeColumns="True"
+                                          CanUserReorderColumns="True"
                                           GridLinesVisibility="Horizontal"
                                           Margin="4">
                                     <DataGrid.Columns>
