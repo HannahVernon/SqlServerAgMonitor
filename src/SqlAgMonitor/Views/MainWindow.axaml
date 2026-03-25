@@ -88,7 +88,8 @@
             </TabControl.ItemTemplate>
             <TabControl.ContentTemplate>
                 <DataTemplate x:DataType="vm:MonitorTabViewModel">
-                    <Grid RowDefinitions="*,4,*">
+                    <Grid RowDefinitions="*,4,*" x:CompileBindings="False"
+                          Loaded="SplitGrid_Loaded">
                         <!-- Topology View (top) -->
                         <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
                                 BorderThickness="1" CornerRadius="4" Margin="4"
@@ -120,7 +121,8 @@
                                           CanUserResizeColumns="True"
                                           CanUserReorderColumns="True"
                                           GridLinesVisibility="Horizontal"
-                                          Margin="4">
+                                          Margin="4"
+                                          Loaded="DataGrid_Loaded">
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="*" />
                                         <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaServerName}" Width="*" />
