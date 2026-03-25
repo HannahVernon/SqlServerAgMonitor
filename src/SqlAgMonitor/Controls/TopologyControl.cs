@@ -20,7 +20,8 @@ public class TopologyControl : Control
         AvaloniaProperty.Register<TopologyControl, DistributedAgInfo?>(nameof(DagInfo));
 
     public static readonly StyledProperty<string?> SelectedReplicaProperty =
-        AvaloniaProperty.Register<TopologyControl, string?>(nameof(SelectedReplica));
+        AvaloniaProperty.Register<TopologyControl, string?>(nameof(SelectedReplica),
+            defaultBindingMode: Avalonia.Data.BindingMode.TwoWay);
 
     public AvailabilityGroupInfo? AgInfo
     {

@@ -1,3 +1,4 @@
+using System;
 using Avalonia.Controls;
 using Avalonia.ReactiveUI;
 using SqlAgMonitor.ViewModels;
@@ -6,25 +7,19 @@ namespace SqlAgMonitor.Views;
 
 public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 {
-    private bool _forceClose;
+    private bool _isExiting;
 
     public MainWindow()
     {
         InitializeComponent();
     }
 
-    public void ForceClose()
-    {
-        _forceClose = true;
-        Close();
-    }
-
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        if (!_forceClose)
+        if (!_isExiting && DataContext is MainWindowViewModel vm)
         {
-            e.Cancel = true;
-            Hide();
+            _isExiting = true;
+            vm.ExitCommand.Execute().Subscribe();
         }
         base.OnClosing(e);
     }

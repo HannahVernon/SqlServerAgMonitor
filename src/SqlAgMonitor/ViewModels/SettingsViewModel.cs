@@ -2,8 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reactive;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.Notifications;
 
 namespace SqlAgMonitor.ViewModels;
 
@@ -34,6 +38,9 @@ public class SettingsViewModel : ViewModelBase
     private bool _exportEnabled;
     private string _exportPath = string.Empty;
     private int _exportIntervalHours = 6;
+
+    // UI feedback
+    private string? _testEmailStatus;
 
     public List<string> ThemeOptions { get; } = new() { "Light", "Dark", "High Contrast" };
     public List<string> SyslogProtocolOptions { get; } = new() { "UDP", "TCP" };
@@ -73,6 +80,8 @@ public class SettingsViewModel : ViewModelBase
     public string ExportPath { get => _exportPath; set => this.RaiseAndSetIfChanged(ref _exportPath, value); }
     public int ExportIntervalHours { get => _exportIntervalHours; set => this.RaiseAndSetIfChanged(ref _exportIntervalHours, value); }
 
+    public string? TestEmailStatus { get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
+
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
     public ReactiveCommand<Unit, Unit> TestEmailCommand { get; }
@@ -84,7 +93,7 @@ public class SettingsViewModel : ViewModelBase
     {
         SaveCommand = ReactiveCommand.Create(OnSave);
         CancelCommand = ReactiveCommand.Create(OnCancel);
-        TestEmailCommand = ReactiveCommand.Create(OnTestEmail);
+        TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
     }
 
     private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
@@ -155,8 +164,24 @@ public class SettingsViewModel : ViewModelBase
         CloseRequested?.Invoke(false);
     }
 
-    private void OnTestEmail()
+    private async Task OnTestEmailAsync(CancellationToken cancellationToken)
     {
-        // TODO: Test SMTP connection
+        TestEmailStatus = "Sending test email...";
+        try
+        {
+            // Save current email settings first so the service reads them
+            var configService = App.Services.GetRequiredService<IConfigurationService>();
+            var config = configService.Load();
+            ApplyTo(config);
+            configService.Save(config);
+
+            var emailService = App.Services.GetRequiredService<IEmailNotificationService>();
+            var success = await emailService.TestConnectionAsync(cancellationToken);
+            TestEmailStatus = success ? "✓ Test email sent successfully." : "✗ Test email failed.";
+        }
+        catch (Exception ex)
+        {
+            TestEmailStatus = $"✗ {ex.Message}";
+        }
     }
 }

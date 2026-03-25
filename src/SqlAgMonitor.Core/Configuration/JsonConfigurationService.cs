@@ -18,6 +18,7 @@ public class JsonConfigurationService : IConfigurationService
     };
 
     public string ConfigFilePath => _configFilePath;
+    public event Action<AppConfiguration>? ConfigurationChanged;
 
     public JsonConfigurationService(ILogger<JsonConfigurationService> logger, string? configDirectory = null)
     {
@@ -66,6 +67,7 @@ public class JsonConfigurationService : IConfigurationService
                 if (dir != null) Directory.CreateDirectory(dir);
                 File.WriteAllText(_configFilePath, json);
                 _logger.LogInformation("Configuration saved to {Path}.", _configFilePath);
+                ConfigurationChanged?.Invoke(config);
             }
             catch (Exception ex)
             {

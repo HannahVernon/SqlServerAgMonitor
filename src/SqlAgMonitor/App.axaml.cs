@@ -6,6 +6,8 @@ using Avalonia.ReactiveUI;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core;
+using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.ViewModels;
 using SqlAgMonitor.Views;
@@ -27,6 +29,15 @@ public partial class App : Application
         services.AddLogging(builder => builder.SetMinimumLevel(LogLevel.Debug));
         services.AddSqlAgMonitorCore();
         Services = services.BuildServiceProvider();
+
+        // Restore saved theme
+        var configService = Services.GetRequiredService<IConfigurationService>();
+        var config = configService.Load();
+        new SqlAgMonitor.Services.ThemeService().SetTheme(config.Theme);
+
+        // Initialize event history database
+        var historyService = Services.GetRequiredService<IEventHistoryService>();
+        _ = historyService.InitializeAsync();
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

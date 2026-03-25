@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Timers;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 
@@ -21,6 +22,14 @@ public partial class NotificationOverlay : UserControl
         _cleanupTimer = new Timer(1000);
         _cleanupTimer.Elapsed += OnCleanupTimerElapsed;
         _cleanupTimer.Start();
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        _cleanupTimer.Stop();
+        _cleanupTimer.Elapsed -= OnCleanupTimerElapsed;
+        _cleanupTimer.Dispose();
+        base.OnDetachedFromVisualTree(e);
     }
 
     public void ShowNotification(string title, string message, TimeSpan? duration = null)

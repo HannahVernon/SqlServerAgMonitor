@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -13,9 +15,12 @@ using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Core.Services.Alerting;
 using SqlAgMonitor.Core.Services.Connection;
 using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Core.Services.Notifications;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.Views;
 
@@ -27,6 +32,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly DagMonitorService _dagMonitor;
     private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
+    private readonly Dictionary<string, MonitoredGroupSnapshot> _previousSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
     private MonitorTabViewModel? _selectedTab;
     private string _statusText = "Ready";
@@ -91,6 +97,31 @@ public class MainWindowViewModel : ViewModelBase
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
         SubscribeToSnapshots();
+        LoadAndStartMonitoredGroups();
+    }
+
+    private async void LoadAndStartMonitoredGroups()
+    {
+        try
+        {
+            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
+            if (configService is null) return;
+
+            var config = configService.Load();
+            foreach (var group in config.MonitoredGroups)
+            {
+                var groupType = Enum.TryParse<AvailabilityGroupType>(group.GroupType, out var gt)
+                    ? gt : AvailabilityGroupType.AvailabilityGroup;
+                await StartMonitoringGroupAsync(group.Name, groupType);
+            }
+
+            if (config.MonitoredGroups.Count > 0)
+                StatusText = $"Loaded {config.MonitoredGroups.Count} monitored group(s)";
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Error loading monitored groups at startup.");
+        }
     }
 
     private void SubscribeToSnapshots()
@@ -105,6 +136,33 @@ public class MainWindowViewModel : ViewModelBase
         var dagSub = _dagMonitor.Snapshots
             .Subscribe(snapshot => Dispatcher.UIThread.Post(() => OnSnapshotReceived(snapshot)));
         _subscriptions.Add(dagSub);
+
+        // Wire alert engine to process alerts
+        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
+        if (alertEngine is not null)
+        {
+            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
+            var emailService = App.Services?.GetService(typeof(IEmailNotificationService)) as IEmailNotificationService;
+            var syslogService = App.Services?.GetService(typeof(ISyslogService)) as ISyslogService;
+
+            var alertSub = alertEngine.Alerts
+                .Subscribe(alert =>
+                {
+                    Dispatcher.UIThread.Post(() =>
+                        StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}");
+
+                    // Record in history
+                    _ = historyService?.RecordEventAsync(alert);
+
+                    // Send notifications based on config
+                    var config = (App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService)?.Load();
+                    if (config?.Email.Enabled == true)
+                        _ = emailService?.SendAlertEmailAsync(alert);
+                    if (config?.Syslog.Enabled == true)
+                        _ = syslogService?.SendEventAsync(alert);
+                });
+            _subscriptions.Add(alertSub);
+        }
     }
 
     private void OnSnapshotReceived(MonitoredGroupSnapshot snapshot)
@@ -119,6 +177,15 @@ public class MainWindowViewModel : ViewModelBase
 
         existing.ApplySnapshot(snapshot);
         ConnectionSummary = $"{MonitorTabs.Count} group(s) monitored";
+
+        // Feed to alert engine
+        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
+        if (alertEngine is not null)
+        {
+            _previousSnapshots.TryGetValue(snapshot.Name, out var previous);
+            alertEngine.EvaluateSnapshot(snapshot, previous);
+            _previousSnapshots[snapshot.Name] = snapshot;
+        }
     }
 
     private MonitorTabViewModel? FindTab(string name)
@@ -131,7 +198,7 @@ public class MainWindowViewModel : ViewModelBase
         return null;
     }
 
-    private void OnAddGroup()
+    private async void OnAddGroup()
     {
         var window = GetMainWindow();
         if (window == null) return;
@@ -142,7 +209,52 @@ public class MainWindowViewModel : ViewModelBase
 
         var vm = new AddGroupViewModel(connectionService, discoveryService, credentialStore);
         var addWindow = new AddGroupWindow { DataContext = vm };
-        addWindow.ShowDialog(window);
+        var result = await addWindow.ShowDialog<object?>(window);
+
+        if (result is true && vm.SelectedGroup is { } group)
+        {
+            var configService = App.Services.GetRequiredService<IConfigurationService>();
+            var config = configService.Load();
+
+            var groupConfig = new MonitoredGroupConfig
+            {
+                Name = group.Name,
+                GroupType = group.GroupType.ToString(),
+                PollingIntervalSeconds = vm.PollingIntervalSeconds,
+                Connections = new List<ConnectionConfig>
+                {
+                    new ConnectionConfig
+                    {
+                        Server = vm.Server,
+                        AuthType = vm.IsSqlAuth ? "sql" : "windows",
+                        Username = vm.IsSqlAuth ? vm.Username : null,
+                        CredentialKey = vm.IsSqlAuth ? $"agmon:{vm.Server}:{vm.Username}" : null
+                    }
+                }
+            };
+
+            config.MonitoredGroups.Add(groupConfig);
+            configService.Save(config);
+
+            await StartMonitoringGroupAsync(group.Name, group.GroupType);
+            StatusText = $"Now monitoring {group.Name}";
+        }
+    }
+
+    private async Task StartMonitoringGroupAsync(string groupName, AvailabilityGroupType groupType)
+    {
+        try
+        {
+            if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
+                await _dagMonitor.StartMonitoringAsync(groupName);
+            else
+                await _agMonitor.StartMonitoringAsync(groupName);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to start monitoring {Group}.", groupName);
+            StatusText = $"Error starting monitoring for {groupName}: {ex.Message}";
+        }
     }
 
     private void OnOpenSettings()
@@ -163,8 +275,7 @@ public class MainWindowViewModel : ViewModelBase
         _subscriptions.Dispose();
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            if (desktop.MainWindow is MainWindow mw)
-                mw.ForceClose();
+            desktop.Shutdown();
         }
     }
 

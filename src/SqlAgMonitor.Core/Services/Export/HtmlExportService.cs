@@ -29,7 +29,7 @@ public class HtmlExportService : IHtmlExportService
         _logger.LogInformation("HTML report exported to {Path}.", fullPath);
     }
 
-    public Task StartScheduledExportAsync(CancellationToken cancellationToken = default)
+    public Task StartScheduledExportAsync(Func<IReadOnlyList<MonitoredGroupSnapshot>> snapshotProvider, CancellationToken cancellationToken = default)
     {
         var config = _configService.Load();
         if (!config.Export.Enabled || string.IsNullOrEmpty(config.Export.ExportPath))
@@ -38,10 +38,22 @@ public class HtmlExportService : IHtmlExportService
             return Task.CompletedTask;
         }
 
+        var exportPath = config.Export.ExportPath;
         var interval = TimeSpan.FromHours(config.Export.ScheduleIntervalHours);
-        _exportTimer = new Timer(_ =>
+        _exportTimer = new Timer(async _ =>
         {
-            _logger.LogInformation("Scheduled export timer fired.");
+            try
+            {
+                var snapshots = snapshotProvider();
+                if (snapshots.Count > 0)
+                {
+                    await ExportAsync(snapshots, exportPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Scheduled export failed.");
+            }
         }, null, interval, interval);
 
         _logger.LogInformation("Scheduled HTML export started (every {Hours}h to {Path}).",

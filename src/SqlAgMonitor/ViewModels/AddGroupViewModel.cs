@@ -27,6 +27,7 @@ public class AddGroupViewModel : ViewModelBase
     private bool _isTestingConnection;
     private string? _statusMessage;
     private bool _connectionTested;
+    private bool _credentialStored;
     private DiscoveredGroup? _selectedGroup;
     private int _pollingIntervalSeconds;
     private int _currentStep;
@@ -189,6 +190,7 @@ public class AddGroupViewModel : ViewModelBase
             if (IsSqlAuth && _credentialStore is not null && !string.IsNullOrEmpty(Password))
             {
                 await _credentialStore.StorePasswordAsync(CredentialKey, Password, cancellationToken);
+                _credentialStored = true;
             }
 
             var success = await _connectionService.TestConnectionAsync(
@@ -260,8 +262,13 @@ public class AddGroupViewModel : ViewModelBase
         CloseRequested?.Invoke(true);
     }
 
-    private void OnCancel()
+    private async void OnCancel()
     {
+        if (_credentialStored && _credentialStore is not null)
+        {
+            try { await _credentialStore.DeletePasswordAsync(CredentialKey); }
+            catch { /* best-effort cleanup */ }
+        }
         CloseRequested?.Invoke(false);
     }
 }

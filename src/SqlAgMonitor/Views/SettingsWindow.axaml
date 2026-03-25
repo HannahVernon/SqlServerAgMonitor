@@ -86,6 +86,8 @@
 
                         <Button Content="Test Email Connection" Command="{Binding TestEmailCommand}" 
                                 IsEnabled="{Binding EmailEnabled}" HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding TestEmailStatus}" Opacity="0.7" FontSize="12"
+                                   IsVisible="{Binding TestEmailStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
