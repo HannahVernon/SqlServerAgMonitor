@@ -20,6 +20,7 @@ public class MonitorTabViewModel : ViewModelBase
     private AvailabilityGroupInfo? _agInfo;
     private DistributedAgInfo? _dagInfo;
     private string? _selectedReplicaName;
+    private List<ReplicaColumnInfo> _replicaColumns = new();
 
     private List<DatabaseReplicaState> _allDatabaseStates = new();
 
@@ -93,11 +94,25 @@ public class MonitorTabViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedReplicaName, value);
-            ApplyReplicaFilter();
+            BuildPivotRows();
         }
     }
 
+    /// <summary>Flat list of all database states (kept for export/alerting).</summary>
     public ObservableCollection<DatabaseReplicaState> DatabaseStates { get; } = new();
+
+    /// <summary>Pivoted rows: one row per database, with per-replica LSN columns.</summary>
+    public ObservableCollection<DatabasePivotRow> PivotRows { get; } = new();
+
+    /// <summary>Metadata for dynamic replica columns. Changes when replica set changes.</summary>
+    public List<ReplicaColumnInfo> ReplicaColumns
+    {
+        get => _replicaColumns;
+        private set => this.RaiseAndSetIfChanged(ref _replicaColumns, value);
+    }
+
+    /// <summary>Fired when the set of replica columns changes and the DataGrid needs rebuilding.</summary>
+    public event Action? ReplicaColumnsChanged;
 
     public ObservableCollection<ReplicaInfo> Replicas { get; } = new();
 
@@ -108,7 +123,6 @@ public class MonitorTabViewModel : ViewModelBase
         AgInfo = snapshot.AgInfo;
         DagInfo = snapshot.DagInfo;
 
-        // Collect all database states from all replicas
         _allDatabaseStates.Clear();
         Replicas.Clear();
 
@@ -136,19 +150,52 @@ public class MonitorTabViewModel : ViewModelBase
             }
         }
 
-        ApplyReplicaFilter();
+        BuildReplicaColumns();
+        BuildPivotRows();
     }
 
-    private void ApplyReplicaFilter()
+    private void BuildReplicaColumns()
     {
+        var newColumns = Replicas
+            .Select((r, i) => new ReplicaColumnInfo
+            {
+                ReplicaName = r.ReplicaServerName,
+                IsPrimary = r.Role == ReplicaRole.Primary,
+                Index = i
+            })
+            .OrderByDescending(c => c.IsPrimary)
+            .ThenBy(c => c.ReplicaName, StringComparer.OrdinalIgnoreCase)
+            .Select((c, i) => new ReplicaColumnInfo
+            {
+                ReplicaName = c.ReplicaName,
+                IsPrimary = c.IsPrimary,
+                Index = i
+            })
+            .ToList();
+
+        // Only signal column rebuild if the set actually changed
+        var oldHeaders = _replicaColumns.Select(c => c.Header).ToList();
+        var newHeaders = newColumns.Select(c => c.Header).ToList();
+
+        ReplicaColumns = newColumns;
+
+        if (!oldHeaders.SequenceEqual(newHeaders))
+        {
+            ReplicaColumnsChanged?.Invoke();
+        }
+    }
+
+    private void BuildPivotRows()
+    {
+        PivotRows.Clear();
         DatabaseStates.Clear();
 
-        IEnumerable<DatabaseReplicaState> filtered = _allDatabaseStates;
+        var filtered = _allDatabaseStates.AsEnumerable();
 
         if (!string.IsNullOrEmpty(SelectedReplicaName))
         {
-            filtered = _allDatabaseStates
-                .Where(d => string.Equals(d.ReplicaServerName, SelectedReplicaName, StringComparison.OrdinalIgnoreCase));
+            filtered = filtered.Where(d =>
+                string.Equals(d.ReplicaServerName, SelectedReplicaName, StringComparison.OrdinalIgnoreCase));
             FilterDescription = $"Filtered: {SelectedReplicaName}";
         }
         else
@@ -156,7 +203,51 @@ public class MonitorTabViewModel : ViewModelBase
             FilterDescription = "All replicas";
         }
 
-        foreach (var state in filtered)
+        var statesList = filtered.ToList();
+        foreach (var state in statesList)
             DatabaseStates.Add(state);
+
+        // Build pivot: group by database name
+        var dbGroups = statesList
+            .GroupBy(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
+
+        var replicaColumns = ReplicaColumns;
+        var replicaCount = replicaColumns.Count;
+
+        foreach (var dbGroup in dbGroups)
+        {
+            var lsns = new decimal[replicaCount];
+            var syncStates = new string[replicaCount];
+
+            for (int i = 0; i < replicaCount; i++)
+            {
+                var colInfo = replicaColumns[i];
+                var match = dbGroup.FirstOrDefault(d =>
+                    string.Equals(d.ReplicaServerName, colInfo.ReplicaName, StringComparison.OrdinalIgnoreCase));
+
+                lsns[i] = match?.LastHardenedLsn ?? 0;
+                syncStates[i] = match?.SynchronizationState.ToString() ?? "";
+            }
+
+            var allStates = dbGroup.ToList();
+            var maxDiff = allStates.Count > 0
+                ? allStates.Max(d => d.LsnDifferenceFromPrimary)
+                : 0;
+            var worstSync = allStates
+                .OrderByDescending(d => d.SynchronizationState)
+                .FirstOrDefault()?.SynchronizationState.ToString() ?? "Unknown";
+            var anySuspended = allStates.Any(d => d.IsSuspended);
+
+            var row = new DatabasePivotRow
+            {
+                DatabaseName = dbGroup.Key,
+                MaxLsnDiff = maxDiff,
+                WorstSyncState = worstSync,
+                AnySuspended = anySuspended
+            };
+            row.SetReplicaValues(lsns, syncStates);
+            PivotRows.Add(row);
+        }
     }
 }

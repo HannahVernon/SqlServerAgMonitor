@@ -114,7 +114,7 @@
                                     <TextBlock Text="{Binding FilterDescription}" Opacity="0.6"
                                                VerticalAlignment="Center" FontSize="12" />
                                 </StackPanel>
-                                <DataGrid ItemsSource="{Binding DatabaseStates}" 
+                                <DataGrid ItemsSource="{Binding PivotRows}" 
                                           AutoGenerateColumns="False"
                                           IsReadOnly="True"
                                           CanUserSortColumns="True"
@@ -122,19 +122,9 @@
                                           CanUserReorderColumns="True"
                                           GridLinesVisibility="Horizontal"
                                           Margin="4"
+                                          x:CompileBindings="False"
                                           Loaded="DataGrid_Loaded">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="*" />
-                                        <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaServerName}" Width="*" />
-                                        <DataGridTextColumn Header="Sync State" Binding="{Binding SynchronizationState}" Width="120" />
-                                        <DataGridTextColumn Header="Last Hardened LSN" Binding="{Binding LastHardenedLsn}" Width="140" />
-                                        <DataGridTextColumn Header="LSN Diff" Binding="{Binding LsnDifferenceFromPrimary}" Width="80" />
-                                        <DataGridTextColumn Header="Log Send Queue (KB)" Binding="{Binding LogSendQueueSizeKb}" Width="130" />
-                                        <DataGridTextColumn Header="Redo Queue (KB)" Binding="{Binding RedoQueueSizeKb}" Width="110" />
-                                        <DataGridTextColumn Header="Log Send Rate" Binding="{Binding LogSendRateKbPerSec}" Width="100" />
-                                        <DataGridTextColumn Header="Redo Rate" Binding="{Binding RedoRateKbPerSec}" Width="90" />
-                                        <DataGridTextColumn Header="Suspended" Binding="{Binding IsSuspended}" Width="80" />
-                                    </DataGrid.Columns>
+                                    <!-- Columns are generated dynamically in code-behind -->
                                 </DataGrid>
                             </DockPanel>
                         </Border>

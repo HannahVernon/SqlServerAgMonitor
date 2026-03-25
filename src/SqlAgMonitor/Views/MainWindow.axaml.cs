@@ -147,9 +147,73 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void DataGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        if (sender is DataGrid dataGrid)
+        if (sender is not DataGrid dataGrid) return;
+
+        // Get the tab's view model
+        var tabVm = dataGrid.DataContext as MonitorTabViewModel;
+        if (tabVm == null) return;
+
+        BuildPivotColumns(dataGrid, tabVm);
+        RestoreDataGridLayout(dataGrid);
+
+        // Subscribe to future column changes (e.g. replicas added/removed)
+        tabVm.ReplicaColumnsChanged += () =>
         {
-            RestoreDataGridLayout(dataGrid);
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                BuildPivotColumns(dataGrid, tabVm);
+                RestoreDataGridLayout(dataGrid);
+            });
+        };
+    }
+
+    private static void BuildPivotColumns(DataGrid dataGrid, MonitorTabViewModel tabVm)
+    {
+        var replicaColumns = tabVm.ReplicaColumns;
+        if (replicaColumns.Count == 0 && dataGrid.Columns.Count > 0)
+            return; // Don't clear if we haven't received data yet
+
+        dataGrid.Columns.Clear();
+
+        // Fixed: Database Name
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Database",
+            Binding = new Avalonia.Data.Binding("DatabaseName"),
+            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+        });
+
+        // Dynamic: one LSN column per replica (primary first)
+        foreach (var col in replicaColumns)
+        {
+            dataGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = col.Header,
+                Binding = new Avalonia.Data.Binding($"[{col.Index}]"),
+                Width = new DataGridLength(160)
+            });
         }
+
+        // Fixed summary columns
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Max LSN Diff",
+            Binding = new Avalonia.Data.Binding("MaxLsnDiff"),
+            Width = new DataGridLength(100)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Sync State",
+            Binding = new Avalonia.Data.Binding("WorstSyncState"),
+            Width = new DataGridLength(120)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Suspended",
+            Binding = new Avalonia.Data.Binding("AnySuspended"),
+            Width = new DataGridLength(80)
+        });
     }
 }
