@@ -55,6 +55,7 @@ public static class SqlParsingHelpers
         "OFFLINE" => OperationalState.Offline,
         "PENDING" => OperationalState.Pending,
         "PENDING_FAILOVER" or "PENDING FAILOVER" => OperationalState.PendingFailover,
+        "FAILED" => OperationalState.Failed,
         "FAILED_NO_QUORUM" or "FAILED NO QUORUM" => OperationalState.FailedNoQuorum,
         _ => OperationalState.Unknown
     };
@@ -62,7 +63,7 @@ public static class SqlParsingHelpers
     public static RecoveryHealth ParseRecoveryHealth(string? desc) => desc?.ToUpperInvariant() switch
     {
         "ONLINE" => RecoveryHealth.Online,
-        "IN_PROGRESS" or "IN PROGRESS" => RecoveryHealth.InProgress,
+        "ONLINE_IN_PROGRESS" or "ONLINE IN PROGRESS" or "IN_PROGRESS" or "IN PROGRESS" => RecoveryHealth.InProgress,
         _ => RecoveryHealth.Unknown
     };
 

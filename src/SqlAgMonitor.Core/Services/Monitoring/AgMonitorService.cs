@@ -249,7 +249,7 @@ public class AgMonitorService : IAgMonitorService
                 AgName = reader.GetString(0),
                 DatabaseName = reader.GetString(1),
                 ReplicaServerName = reader.GetString(2),
-                IsLocal = reader.GetBoolean(3),
+                IsLocal = !reader.IsDBNull(3) && reader.GetBoolean(3),
                 SynchronizationState = SqlParsingHelpers.ParseSyncState(reader.IsDBNull(4) ? null : reader.GetString(4)),
                 LastHardenedLsn = reader.IsDBNull(5) ? 0 : reader.GetDecimal(5),
                 LastCommitLsn = reader.IsDBNull(6) ? 0 : reader.GetDecimal(6),

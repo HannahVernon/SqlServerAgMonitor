@@ -51,7 +51,7 @@ public class AgDiscoveryService : IAgDiscoveryService
         {
             var agName = reader.GetString(0);
             var isDistributed = Convert.ToBoolean(reader.GetValue(1));
-            var roleDesc = reader.GetString(2);
+            var roleDesc = reader.IsDBNull(2) ? null : reader.GetString(2);
             var replicaServer = reader.GetString(3);
 
             if (!groups.TryGetValue(agName, out var group))
@@ -76,7 +76,7 @@ public class AgDiscoveryService : IAgDiscoveryService
         return result;
     }
 
-    private static ReplicaRole ParseRole(string roleDesc) => roleDesc.ToUpperInvariant() switch
+    private static ReplicaRole ParseRole(string? roleDesc) => roleDesc?.ToUpperInvariant() switch
     {
         "PRIMARY" => ReplicaRole.Primary,
         "SECONDARY" => ReplicaRole.Secondary,

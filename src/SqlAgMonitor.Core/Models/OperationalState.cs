@@ -6,6 +6,7 @@ public enum OperationalState
     Offline,
     Pending,
     PendingFailover,
+    Failed,
     FailedNoQuorum,
     Unknown
 }
