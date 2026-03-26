@@ -6,6 +6,12 @@ using System.Text.Json.Serialization;
 
 namespace SqlAgMonitor.Services;
 
+public class TabGridLayout
+{
+    public Dictionary<string, double> ColumnWidths { get; set; } = new();
+    public Dictionary<string, int> ColumnDisplayIndices { get; set; } = new();
+}
+
 public class WindowLayoutState
 {
     public double? WindowX { get; set; }
@@ -14,8 +20,14 @@ public class WindowLayoutState
     public double? WindowHeight { get; set; }
     public bool IsMaximized { get; set; }
     public double SplitterTopProportion { get; set; } = 0.5;
-    public Dictionary<string, double> ColumnWidths { get; set; } = new();
-    public Dictionary<string, int> ColumnDisplayIndices { get; set; } = new();
+
+    /// <summary>Per-tab grid column layouts, keyed by tab title (AG/DAG name).</summary>
+    public Dictionary<string, TabGridLayout> TabLayouts { get; set; } = new();
+
+    [Obsolete("Use TabLayouts instead. Kept for migration from old layout files.")]
+    public Dictionary<string, double>? ColumnWidths { get; set; }
+    [Obsolete("Use TabLayouts instead. Kept for migration from old layout files.")]
+    public Dictionary<string, int>? ColumnDisplayIndices { get; set; }
 }
 
 public static class LayoutStateService

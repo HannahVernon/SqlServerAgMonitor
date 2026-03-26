@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -10,6 +11,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.ReactiveUI;
 using Avalonia.VisualTree;
+using ReactiveUI;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
@@ -21,6 +23,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private bool _isExiting;
     private WindowLayoutState? _layoutState;
     private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
+    private string? _lastActiveTabTitle;
 
     public MainWindow()
     {
@@ -51,32 +54,76 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     (int)_layoutState.WindowY.Value);
             }
         }
+
+        // Track tab switches to save/restore per-tab column layouts
+        if (DataContext is MainWindowViewModel vm)
+        {
+            vm.WhenAnyValue(x => x.SelectedTab)
+                .Subscribe(OnSelectedTabChanged);
+        }
+    }
+
+    private void OnSelectedTabChanged(MonitorTabViewModel? newTab)
+    {
+        // Save outgoing tab's column state
+        SaveCurrentTabColumnState();
+
+        // Restore incoming tab's column state (columns are rebuilt in WireUpDataGrid,
+        // but we also need to apply saved widths/order after that rebuild completes)
+        _lastActiveTabTitle = newTab?.TabTitle;
     }
 
     /// <summary>
-    /// Called by TabControl content template when the DataGrid is loaded.
-    /// Restores saved column widths and display indices.
+    /// Restores saved column widths and display indices for the given tab's DataGrid.
     /// </summary>
     public void RestoreDataGridLayout(DataGrid dataGrid)
     {
         if (_layoutState == null) return;
+
+        var tabVm = dataGrid.DataContext as MonitorTabViewModel;
+        var tabKey = tabVm?.TabTitle;
+        if (string.IsNullOrEmpty(tabKey)) return;
+
+        if (!_layoutState.TabLayouts.TryGetValue(tabKey, out var tabLayout))
+            return;
 
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
             if (header == null) continue;
 
-            if (_layoutState.ColumnWidths.TryGetValue(header, out var width) && width > 10)
+            if (tabLayout.ColumnWidths.TryGetValue(header, out var width) && width > 10)
             {
                 col.Width = new DataGridLength(width);
             }
 
-            if (_layoutState.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
+            if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
                 && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
             {
                 col.DisplayIndex = displayIndex;
             }
         }
+    }
+
+    /// <summary>Saves the current tab's DataGrid column state to the in-memory layout.</summary>
+    private void SaveCurrentTabColumnState()
+    {
+        if (_layoutState == null || string.IsNullOrEmpty(_lastActiveTabTitle)) return;
+
+        var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+        if (dataGrid == null || dataGrid.Columns.Count == 0) return;
+
+        var tabLayout = new TabGridLayout();
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header == null) continue;
+
+            tabLayout.ColumnWidths[header] = col.ActualWidth;
+            tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
+        }
+
+        _layoutState.TabLayouts[_lastActiveTabTitle] = tabLayout;
     }
 
     private void SaveLayout()
@@ -108,21 +155,14 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             }
         }
 
-        // Save DataGrid column widths and display indices
-        var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
-        if (dataGrid != null)
-        {
-            state.ColumnWidths.Clear();
-            state.ColumnDisplayIndices.Clear();
-            foreach (var col in dataGrid.Columns)
-            {
-                var header = col.Header?.ToString();
-                if (header == null) continue;
+        // Save the currently active tab's column state
+        SaveCurrentTabColumnState();
 
-                state.ColumnWidths[header] = col.ActualWidth;
-                state.ColumnDisplayIndices[header] = col.DisplayIndex;
-            }
-        }
+        // Clear obsolete global column properties
+#pragma warning disable CS0618 // Intentional: clearing legacy properties during migration
+        state.ColumnWidths = null;
+        state.ColumnDisplayIndices = null;
+#pragma warning restore CS0618
 
         LayoutStateService.Save(state);
     }
@@ -171,6 +211,9 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         var tabVm = dataGrid.DataContext as MonitorTabViewModel;
         if (tabVm == null) return;
+
+        // Track the active tab for save-on-switch
+        _lastActiveTabTitle = tabVm.TabTitle;
 
         BuildPivotColumns(dataGrid, tabVm);
         RestoreDataGridLayout(dataGrid);
