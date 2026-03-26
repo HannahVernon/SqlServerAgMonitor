@@ -20,6 +20,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 {
     private bool _isExiting;
     private WindowLayoutState? _layoutState;
+    private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
 
     public MainWindow()
     {
@@ -155,20 +156,41 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         if (sender is not DataGrid dataGrid) return;
 
-        // Get the tab's view model
+        // Wire up columns for the current DataContext
+        WireUpDataGrid(dataGrid);
+
+        // Handle tab switches: DataContext changes when the TabControl recycles the DataGrid
+        dataGrid.DataContextChanged += (s, _) =>
+        {
+            if (s is DataGrid dg)
+                WireUpDataGrid(dg);
+        };
+    }
+
+    private void WireUpDataGrid(DataGrid dataGrid)
+    {
         var tabVm = dataGrid.DataContext as MonitorTabViewModel;
         if (tabVm == null) return;
 
         BuildPivotColumns(dataGrid, tabVm);
         RestoreDataGridLayout(dataGrid);
 
-        // Subscribe to future column changes (e.g. replicas added/removed)
+        // Subscribe to future column changes only once per VM
+        if (!_subscribedVms.Add(tabVm)) return;
+
         tabVm.ReplicaColumnsChanged += () =>
         {
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
-                BuildPivotColumns(dataGrid, tabVm);
-                RestoreDataGridLayout(dataGrid);
+                // Find the DataGrid currently displaying this VM
+                var activeDg = this.GetVisualDescendants()
+                    .OfType<DataGrid>()
+                    .FirstOrDefault(dg => dg.DataContext == tabVm);
+                if (activeDg != null)
+                {
+                    BuildPivotColumns(activeDg, tabVm);
+                    RestoreDataGridLayout(activeDg);
+                }
             });
         };
     }
