@@ -39,6 +39,7 @@ public class MainWindowViewModel : ViewModelBase
     private string _statusText = "Ready";
     private string _connectionSummary = "No groups monitored";
     private bool _isAllPaused;
+    private string _lastPolledText = string.Empty;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
 
@@ -68,6 +69,12 @@ public class MainWindowViewModel : ViewModelBase
 
     public bool IsNotAllPaused => !_isAllPaused;
 
+    public string LastPolledText
+    {
+        get => _lastPolledText;
+        set => this.RaiseAndSetIfChanged(ref _lastPolledText, value);
+    }
+
     public ReactiveCommand<Unit, Unit> AddGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
@@ -76,6 +83,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> PauseAllCommand { get; }
     public ReactiveCommand<Unit, Unit> ResumeAllCommand { get; }
     public ReactiveCommand<Unit, Unit> AboutCommand { get; }
+    public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
     public MainWindowViewModel()
         : this(null!, null!, null!)
@@ -100,7 +108,17 @@ public class MainWindowViewModel : ViewModelBase
         ResumeAllCommand = ReactiveCommand.Create(OnResumeAll);
         AboutCommand = ReactiveCommand.Create(OnAbout);
 
+        var canRefresh = this.WhenAnyValue(x => x.SelectedTab)
+            .Select(tab => tab != null);
+        RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
+
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
+
+        // Update "last polled" text every second
+        var timerSub = Observable.Interval(TimeSpan.FromSeconds(1))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Subscribe(_ => UpdateLastPolledText());
+        _subscriptions.Add(timerSub);
 
         SubscribeToSnapshots();
         LoadAndStartMonitoredGroups();
@@ -478,5 +496,49 @@ public class MainWindowViewModel : ViewModelBase
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
             return desktop.MainWindow;
         return null;
+    }
+
+    private async Task OnRefreshAsync()
+    {
+        var tab = SelectedTab;
+        if (tab == null) return;
+
+        StatusText = $"Refreshing {tab.TabTitle}...";
+
+        try
+        {
+            MonitoredGroupSnapshot snapshot;
+            if (tab.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup)
+            {
+                snapshot = await _dagMonitor.PollOnceAsync(tab.TabTitle);
+            }
+            else
+            {
+                snapshot = await _agMonitor.PollOnceAsync(tab.TabTitle);
+            }
+
+            Dispatcher.UIThread.Post(() => OnSnapshotReceived(snapshot));
+            StatusText = $"Refreshed {tab.TabTitle}";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Refresh failed: {ex.Message}";
+        }
+    }
+
+    private void UpdateLastPolledText()
+    {
+        var tab = SelectedTab;
+        if (tab?.LastPolledAt is { } polledAt)
+        {
+            var elapsed = DateTimeOffset.Now - polledAt;
+            LastPolledText = elapsed.TotalSeconds < 2
+                ? "Updated just now"
+                : $"Updated {(int)elapsed.TotalSeconds}s ago";
+        }
+        else
+        {
+            LastPolledText = string.Empty;
+        }
     }
 }

@@ -1,12 +1,14 @@
 using System;
 using System.Linq;
 using System.Reactive.Linq;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Shapes;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Input.Platform;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.ReactiveUI;
@@ -218,6 +220,24 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         BuildPivotColumns(dataGrid, tabVm);
         RestoreDataGridLayout(dataGrid);
 
+        // Attach context menu for copy operations (once per DataGrid instance)
+        if (dataGrid.ContextMenu == null)
+        {
+            var copyCell = new MenuItem { Header = "Copy Cell" };
+            copyCell.Click += async (_, _) => await CopySelectedCellAsync(dataGrid);
+
+            var copyRow = new MenuItem { Header = "Copy Row" };
+            copyRow.Click += async (_, _) => await CopySelectedRowAsync(dataGrid);
+
+            var copyAll = new MenuItem { Header = "Copy All" };
+            copyAll.Click += async (_, _) => await CopyAllRowsAsync(dataGrid);
+
+            dataGrid.ContextMenu = new ContextMenu
+            {
+                Items = { copyCell, copyRow, new Separator(), copyAll }
+            };
+        }
+
         // Subscribe to future column changes only once per VM
         if (!_subscribedVms.Add(tabVm)) return;
 
@@ -308,18 +328,60 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             Width = new DataGridLength(80)
         });
 
-        dataGrid.Columns.Add(new DataGridTextColumn
+        // Color-coded sync state
+        dataGrid.Columns.Add(new DataGridTemplateColumn
         {
             Header = "Sync State",
-            Binding = new Binding("WorstSyncState"),
-            Width = new DataGridLength(120)
+            CellTemplate = new FuncDataTemplate<DatabasePivotRow>((row, _) =>
+            {
+                var text = new TextBlock
+                {
+                    VerticalAlignment = VerticalAlignment.Center,
+                    FontWeight = FontWeight.SemiBold,
+                    Margin = new Thickness(4, 0)
+                };
+                text.Bind(TextBlock.TextProperty, new Binding("WorstSyncState"));
+                text.Bind(TextBlock.ForegroundProperty,
+                    new Binding("SyncStateColorHex") { Converter = HealthColorConverter.Instance });
+                return text;
+            }),
+            Width = new DataGridLength(130)
+        });
+
+        // Suspend reason instead of boolean
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Suspended",
+            Binding = new Binding("SuspendReasonDisplay"),
+            Width = new DataGridLength(110)
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "Suspended",
-            Binding = new Binding("AnySuspended"),
-            Width = new DataGridLength(80)
+            Header = "Send Queue (KB)",
+            Binding = new Binding("SendQueueKb") { StringFormat = "{0:N0}" },
+            Width = new DataGridLength(110)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Redo Queue (KB)",
+            Binding = new Binding("RedoQueueKb") { StringFormat = "{0:N0}" },
+            Width = new DataGridLength(110)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Send Rate (KB/s)",
+            Binding = new Binding("SendRateKbPerSec") { StringFormat = "{0:N0}" },
+            Width = new DataGridLength(110)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Redo Rate (KB/s)",
+            Binding = new Binding("RedoRateKbPerSec") { StringFormat = "{0:N0}" },
+            Width = new DataGridLength(110)
         });
     }
 
@@ -338,5 +400,76 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
         public object? ConvertBack(object? value, Type targetType, object? parameter,
             System.Globalization.CultureInfo culture) => throw new NotSupportedException();
+    }
+
+    private static async Task CopySelectedCellAsync(DataGrid dataGrid)
+    {
+        if (dataGrid.CurrentColumn == null || dataGrid.SelectedItem is not DatabasePivotRow row)
+            return;
+
+        var colIndex = dataGrid.Columns.IndexOf(dataGrid.CurrentColumn);
+        var text = GetCellText(row, dataGrid.CurrentColumn, colIndex);
+        await SetClipboardAsync(dataGrid, text);
+    }
+
+    private static async Task CopySelectedRowAsync(DataGrid dataGrid)
+    {
+        if (dataGrid.SelectedItem is not DatabasePivotRow row) return;
+
+        var parts = dataGrid.Columns
+            .Select((col, i) => GetCellText(row, col, i));
+        await SetClipboardAsync(dataGrid, string.Join("\t", parts));
+    }
+
+    private static async Task CopyAllRowsAsync(DataGrid dataGrid)
+    {
+        var headers = string.Join("\t", dataGrid.Columns.Select(c => c.Header?.ToString() ?? ""));
+        var rows = dataGrid.ItemsSource?.Cast<DatabasePivotRow>()
+            .Select(row => string.Join("\t",
+                dataGrid.Columns.Select((col, i) => GetCellText(row, col, i))));
+
+        var text = headers + "\n" + string.Join("\n", rows ?? []);
+        await SetClipboardAsync(dataGrid, text);
+    }
+
+    private static string GetCellText(DatabasePivotRow row, DataGridColumn col, int colIndex)
+    {
+        if (col is DataGridTextColumn textCol && textCol.Binding is Binding binding)
+        {
+            var path = binding.Path;
+            if (path != null && path.StartsWith("[") && path.EndsWith("]")
+                && int.TryParse(path.AsSpan(1, path.Length - 2), out var idx))
+            {
+                return row[idx];
+            }
+
+            return path switch
+            {
+                "DatabaseName" => row.DatabaseName,
+                "MaxLogBlockDiff" => row.MaxLogBlockDiff.ToString("N0"),
+                "SecondaryLagSeconds" => row.SecondaryLagSeconds.ToString(),
+                "WorstSyncState" => row.WorstSyncState,
+                "SuspendReasonDisplay" => row.SuspendReasonDisplay,
+                "SendQueueKb" => row.SendQueueKb.ToString("N0"),
+                "RedoQueueKb" => row.RedoQueueKb.ToString("N0"),
+                "SendRateKbPerSec" => row.SendRateKbPerSec.ToString("N0"),
+                "RedoRateKbPerSec" => row.RedoRateKbPerSec.ToString("N0"),
+                _ => ""
+            };
+        }
+
+        // Template columns (Database name, Sync State)
+        if (col.Header?.ToString() == "Database") return row.DatabaseName;
+        if (col.Header?.ToString() == "Sync State") return row.WorstSyncState;
+        return "";
+    }
+
+    private static async Task SetClipboardAsync(DataGrid dataGrid, string text)
+    {
+        var topLevel = TopLevel.GetTopLevel(dataGrid);
+        if (topLevel?.Clipboard is { } clipboard)
+        {
+            await clipboard.SetTextAsync(text);
+        }
     }
 }

@@ -17,6 +17,7 @@ public class AgMonitorService : IAgMonitorService
     private readonly Subject<MonitoredGroupSnapshot> _snapshots = new();
     private readonly ConcurrentDictionary<string, IDisposable> _pollingSubscriptions = new();
     private readonly ConcurrentDictionary<string, ReconnectingConnectionWrapper> _connections = new();
+    private bool _useLegacyDbStateSql;
     private bool _disposed;
 
     public IObservable<MonitoredGroupSnapshot> Snapshots => _snapshots.AsObservable();
@@ -59,6 +60,36 @@ public class AgMonitorService : IAgMonitorService
             hdrs.[suspend_reason_desc],
             ar.[availability_mode_desc],
             hdrs.[secondary_lag_seconds]
+        FROM sys.dm_hadr_database_replica_states hdrs
+            INNER JOIN sys.availability_replicas ar
+                ON hdrs.[replica_id] = ar.[replica_id]
+                AND hdrs.[group_id] = ar.[group_id]
+            INNER JOIN sys.availability_groups ag
+                ON hdrs.[group_id] = ag.[group_id]
+            INNER JOIN sys.databases d
+                ON hdrs.[database_id] = d.[database_id]
+        WHERE COALESCE(ag.[is_distributed], 0) = 0
+        ORDER BY ag.[name], ar.[replica_server_name], d.[name];
+    ";
+
+    /// <summary>Fallback query for SQL Server 2014 where secondary_lag_seconds does not exist.</summary>
+    private const string DatabaseStateSqlLegacy = @"
+        SELECT
+            ag.[name]                                   AS [ag_name],
+            d.[name]                                    AS [database_name],
+            ar.[replica_server_name],
+            hdrs.[is_local],
+            hdrs.[synchronization_state_desc],
+            hdrs.[last_hardened_lsn],
+            hdrs.[last_commit_lsn],
+            hdrs.[log_send_queue_size],
+            hdrs.[redo_queue_size],
+            hdrs.[log_send_rate],
+            hdrs.[redo_rate],
+            hdrs.[is_suspended],
+            hdrs.[suspend_reason_desc],
+            ar.[availability_mode_desc],
+            NULL AS [secondary_lag_seconds]
         FROM sys.dm_hadr_database_replica_states hdrs
             INNER JOIN sys.availability_replicas ar
                 ON hdrs.[replica_id] = ar.[replica_id]
@@ -238,9 +269,29 @@ public class AgMonitorService : IAgMonitorService
     private async Task<List<DatabaseReplicaState>> QueryDatabaseStatesAsync(
         SqlConnection connection, CancellationToken cancellationToken)
     {
+        if (!_useLegacyDbStateSql)
+        {
+            try
+            {
+                return await ExecuteDbStateQueryAsync(connection, DatabaseStateSql, cancellationToken);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207)
+            {
+                // "Invalid column name 'secondary_lag_seconds'" — SQL Server < 2016
+                _logger.LogWarning("secondary_lag_seconds not available; using legacy query.");
+                _useLegacyDbStateSql = true;
+            }
+        }
+
+        return await ExecuteDbStateQueryAsync(connection, DatabaseStateSqlLegacy, cancellationToken);
+    }
+
+    private static async Task<List<DatabaseReplicaState>> ExecuteDbStateQueryAsync(
+        SqlConnection connection, string sql, CancellationToken cancellationToken)
+    {
         var dbStates = new List<DatabaseReplicaState>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = DatabaseStateSql;
+        cmd.CommandText = sql;
 
         using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))

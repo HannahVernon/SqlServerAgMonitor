@@ -22,6 +22,7 @@ public class DagMonitorService : IAgMonitorService
     private readonly Subject<MonitoredGroupSnapshot> _snapshots = new();
     private readonly ConcurrentDictionary<string, IDisposable> _pollingSubscriptions = new();
     private readonly ConcurrentDictionary<string, ReconnectingConnectionWrapper> _connections = new();
+    private bool _useLegacyDbStateSql;
     private bool _disposed;
 
     public IObservable<MonitoredGroupSnapshot> Snapshots => _snapshots.AsObservable();
@@ -103,6 +104,41 @@ public class DagMonitorService : IAgMonitorService
             [hdrs].[suspend_reason_desc],
             [ar1].[availability_mode_desc],
             [hdrs].[secondary_lag_seconds]
+        FROM [sys].[availability_groups] [dag]
+            INNER JOIN [sys].[availability_replicas] [ar]
+                ON [dag].[group_id] = [ar].[group_id]
+            CROSS APPLY [sys].[fn_hadr_distributed_ag_replica]([dag].[group_id], [ar].[replica_id]) [hdar]
+            INNER JOIN [sys].[availability_groups] [ag1]
+                ON [hdar].[group_id] = [ag1].[group_id]
+            INNER JOIN [sys].[dm_hadr_database_replica_states] [hdrs]
+                ON [ag1].[group_id] = [hdrs].[group_id]
+            INNER JOIN [sys].[availability_replicas] [ar1]
+                ON [hdrs].[replica_id] = [ar1].[replica_id]
+                AND [hdrs].[group_id] = [ar1].[group_id]
+            INNER JOIN [sys].[databases] [d]
+                ON [hdrs].[database_id] = [d].[database_id]
+        WHERE [dag].[is_distributed] = 1
+        ORDER BY [ag1].[name], [ar1].[replica_server_name], [d].[name];
+    ";
+
+    /// <summary>Fallback query for SQL Server 2014 where secondary_lag_seconds does not exist.</summary>
+    private const string LocalAgDbStatesSqlLegacy = @"
+        SELECT
+            [ag1].[name]                                AS [local_ag_name],
+            [d].[name]                                  AS [database_name],
+            [ar1].[replica_server_name],
+            [hdrs].[is_local],
+            [hdrs].[synchronization_state_desc],
+            [hdrs].[last_hardened_lsn],
+            [hdrs].[last_commit_lsn],
+            [hdrs].[log_send_queue_size],
+            [hdrs].[redo_queue_size],
+            [hdrs].[log_send_rate],
+            [hdrs].[redo_rate],
+            [hdrs].[is_suspended],
+            [hdrs].[suspend_reason_desc],
+            [ar1].[availability_mode_desc],
+            NULL AS [secondary_lag_seconds]
         FROM [sys].[availability_groups] [dag]
             INNER JOIN [sys].[availability_replicas] [ar]
                 ON [dag].[group_id] = [ar].[group_id]
@@ -339,9 +375,28 @@ public class DagMonitorService : IAgMonitorService
     private async Task<List<DatabaseReplicaState>> QueryLocalAgDbStatesAsync(
         SqlConnection connection, CancellationToken ct)
     {
+        if (!_useLegacyDbStateSql)
+        {
+            try
+            {
+                return await ExecuteDbStateQueryAsync(connection, LocalAgDbStatesSql, ct);
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207)
+            {
+                _logger.LogWarning("secondary_lag_seconds not available; using legacy query.");
+                _useLegacyDbStateSql = true;
+            }
+        }
+
+        return await ExecuteDbStateQueryAsync(connection, LocalAgDbStatesSqlLegacy, ct);
+    }
+
+    private static async Task<List<DatabaseReplicaState>> ExecuteDbStateQueryAsync(
+        SqlConnection connection, string sql, CancellationToken ct)
+    {
         var dbStates = new List<DatabaseReplicaState>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = LocalAgDbStatesSql;
+        cmd.CommandText = sql;
 
         using var reader = await cmd.ExecuteReaderAsync(ct);
         while (await reader.ReadAsync(ct))

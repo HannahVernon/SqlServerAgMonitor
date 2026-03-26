@@ -21,6 +21,31 @@ public class DatabasePivotRow
     public string WorstSyncState { get; init; } = string.Empty;
     public bool AnySuspended { get; init; }
 
+    /// <summary>Suspend reason text when any database is suspended, otherwise empty.</summary>
+    public string SuspendReasonDisplay { get; init; } = string.Empty;
+
+    /// <summary>Max log send queue across all secondaries (KB).</summary>
+    public long SendQueueKb { get; init; }
+
+    /// <summary>Max redo queue across all secondaries (KB).</summary>
+    public long RedoQueueKb { get; init; }
+
+    /// <summary>Max log send rate across all replicas (KB/s).</summary>
+    public long SendRateKbPerSec { get; init; }
+
+    /// <summary>Max redo rate across all replicas (KB/s).</summary>
+    public long RedoRateKbPerSec { get; init; }
+
+    /// <summary>Color hex for WorstSyncState display.</summary>
+    public string SyncStateColorHex => WorstSyncState switch
+    {
+        "Synchronized" => "#4CAF50",
+        "Synchronizing" => "#FFC107",
+        "NotSynchronizing" => "#F44336",
+        "Reverting" or "Initializing" => "#FF9800",
+        _ => "#9E9E9E"
+    };
+
     /// <summary>Health color hex for the database row dot, based on MaxLogBlockDiff.</summary>
     public string HealthColorHex => HealthLevelExtensions.FromLogBlockDifference(MaxLogBlockDiff) switch
     {

@@ -24,6 +24,11 @@ public class MonitorTabViewModel : ViewModelBase
 
     private List<DatabaseReplicaState> _allDatabaseStates = new();
 
+    private DateTimeOffset? _lastPolledAt;
+
+    /// <summary>When this tab was last updated with a snapshot.</summary>
+    internal DateTimeOffset? LastPolledAt => _lastPolledAt;
+
     public string TabTitle
     {
         get => _tabTitle;
@@ -122,6 +127,7 @@ public class MonitorTabViewModel : ViewModelBase
         OverallHealth = snapshot.OverallHealth;
         AgInfo = snapshot.AgInfo;
         DagInfo = snapshot.DagInfo;
+        _lastPolledAt = DateTimeOffset.Now;
 
         _allDatabaseStates.Clear();
         Replicas.Clear();
@@ -237,6 +243,14 @@ public class MonitorTabViewModel : ViewModelBase
                 .OrderByDescending(d => d.SynchronizationState)
                 .FirstOrDefault()?.SynchronizationState.ToString() ?? "Unknown";
             var anySuspended = allStates.Any(d => d.IsSuspended);
+            var suspendReason = allStates
+                .Where(d => d.IsSuspended && !string.IsNullOrEmpty(d.SuspendReason))
+                .Select(d => d.SuspendReason!)
+                .FirstOrDefault() ?? (anySuspended ? "Suspended" : string.Empty);
+            var sendQueueKb = allStates.Count > 0 ? allStates.Max(d => d.LogSendQueueSizeKb) : 0;
+            var redoQueueKb = allStates.Count > 0 ? allStates.Max(d => d.RedoQueueSizeKb) : 0;
+            var sendRate = allStates.Count > 0 ? allStates.Max(d => d.LogSendRateKbPerSec) : 0;
+            var redoRate = allStates.Count > 0 ? allStates.Max(d => d.RedoRateKbPerSec) : 0;
 
             var row = new DatabasePivotRow
             {
@@ -244,7 +258,12 @@ public class MonitorTabViewModel : ViewModelBase
                 MaxLogBlockDiff = maxDiff,
                 SecondaryLagSeconds = maxLagSeconds,
                 WorstSyncState = worstSync,
-                AnySuspended = anySuspended
+                AnySuspended = anySuspended,
+                SuspendReasonDisplay = suspendReason,
+                SendQueueKb = sendQueueKb,
+                RedoQueueKb = redoQueueKb,
+                SendRateKbPerSec = sendRate,
+                RedoRateKbPerSec = redoRate
             };
             row.SetReplicaValues(lsnDisplay, syncStates);
             PivotRows.Add(row);
