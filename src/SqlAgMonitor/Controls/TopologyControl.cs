@@ -390,20 +390,6 @@ public class TopologyControl : Control
             context.DrawText(dbText, new Point(node.Bounds.X + 10, node.Bounds.Y + 52));
         }
 
-        // Health indicator dot
-        if (node.Replica != null)
-        {
-            var healthColor = node.Replica.SynchronizationHealth switch
-            {
-                SynchronizationHealth.Healthy => GreenColor,
-                SynchronizationHealth.PartiallyHealthy => OrangeColor,
-                SynchronizationHealth.NotHealthy => RedColor,
-                _ => GrayColor
-            };
-            var dotCenter = new Point(node.Bounds.Right - 16, node.Bounds.Y + 16);
-            context.DrawEllipse(new SolidColorBrush(healthColor), null, dotCenter, ParticleRadius * 2, ParticleRadius * 2);
-        }
-
         // Connection state / availability mode
         if (node.Replica?.ConnectedState == ConnectedState.Disconnected)
         {
