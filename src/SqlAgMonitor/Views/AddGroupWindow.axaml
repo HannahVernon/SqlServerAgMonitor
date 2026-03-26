@@ -3,11 +3,11 @@
         xmlns:vm="using:SqlAgMonitor.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="550" d:DesignHeight="500"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="560"
         x:Class="SqlAgMonitor.Views.AddGroupWindow"
         x:DataType="vm:AddGroupViewModel"
         Title="Add AG / DAG"
-        Width="550" Height="500"
+        Width="600" Height="560"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
 
@@ -102,6 +102,78 @@
                                        Minimum="5" Maximum="300" Increment="1" 
                                        Width="150" HorizontalAlignment="Left" />
                     </StackPanel>
+                </StackPanel>
+
+                <!-- Step 3: DAG Member Connections (only when DAGs selected) -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep3}">
+                    <TextBlock Text="Step 4: Connect to DAG Members" FontWeight="Bold" FontSize="18" />
+                    <TextBlock Text="Each member of the Distributed AG requires its own connection for accurate monitoring."
+                               Opacity="0.7" TextWrapping="Wrap" />
+
+                    <ItemsControl ItemsSource="{Binding DagMemberConnections}"
+                                  x:CompileBindings="False" Margin="0,4">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="#555570" BorderThickness="1" CornerRadius="6"
+                                        Padding="12,8" Margin="0,4">
+                                    <StackPanel Spacing="6">
+                                        <!-- Member header -->
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="{Binding MemberAgName}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding DagRoleDesc}" Opacity="0.6" />
+                                            <TextBlock Text="(local)" Opacity="0.4"
+                                                       IsVisible="{Binding IsLocal}" />
+                                        </StackPanel>
+
+                                        <!-- Server endpoint -->
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="Server\Instance" FontSize="11" Opacity="0.7" />
+                                            <TextBox Text="{Binding Server}" Watermark="server\instance"
+                                                     FontSize="12" />
+                                        </StackPanel>
+
+                                        <!-- SQL Auth credentials (only for SQL auth on non-local members) -->
+                                        <StackPanel Spacing="4" IsVisible="{Binding IsSqlAuth}">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <StackPanel Spacing="2" Width="200">
+                                                    <TextBlock Text="Username" FontSize="11" Opacity="0.7" />
+                                                    <TextBox Text="{Binding Username}" FontSize="12" />
+                                                </StackPanel>
+                                                <StackPanel Spacing="2" Width="200">
+                                                    <TextBlock Text="Password" FontSize="11" Opacity="0.7" />
+                                                    <TextBox Text="{Binding Password}" PasswordChar="*"
+                                                             FontSize="12" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+
+                                        <!-- Status -->
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock FontSize="11">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0}">
+                                                        <Binding Path="StatusMessage" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                                <TextBlock.Foreground>
+                                                    <MultiBinding>
+                                                        <Binding Path="ConnectionSucceeded" />
+                                                    </MultiBinding>
+                                                </TextBlock.Foreground>
+                                            </TextBlock>
+                                            <TextBlock Text="✓" Foreground="#4CAF50" FontWeight="Bold"
+                                                       IsVisible="{Binding ConnectionSucceeded}" />
+                                            <TextBlock Text="Testing..." Opacity="0.5"
+                                                       IsVisible="{Binding IsTesting}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Button Content="Test All Connections" Command="{Binding TestDagMembersCommand}"
+                            HorizontalAlignment="Left" />
                 </StackPanel>
             </Panel>
         </ScrollViewer>

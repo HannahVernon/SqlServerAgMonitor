@@ -266,27 +266,44 @@ public class TopologyControl : Control
 
         if (forwarder?.LocalAgInfo != null)
         {
-            var forwarderPrimary = _nodeLayouts.FirstOrDefault(n =>
+            // Find the primary replica within the forwarder's local AG for arrow positioning
+            var forwarderNode = _nodeLayouts.FirstOrDefault(n =>
                 forwarder.LocalAgInfo.Replicas.Any(r =>
-                    r.ReplicaServerName == n.ReplicaServerName && r.Role == ReplicaRole.Primary));
+                    r.ReplicaServerName == n.ReplicaServerName && r.Role == ReplicaRole.Primary))
+                ?? _nodeLayouts.FirstOrDefault(n =>
+                    forwarder.LocalAgInfo.Replicas.Any(r =>
+                        r.ReplicaServerName == n.ReplicaServerName));
 
             foreach (var receiver in receivers)
             {
                 if (receiver.LocalAgInfo == null)
                     continue;
 
-                var receiverPrimary = _nodeLayouts.FirstOrDefault(n =>
+                // Find the primary replica within the receiver's local AG, or any replica
+                var receiverNode = _nodeLayouts.FirstOrDefault(n =>
                     receiver.LocalAgInfo.Replicas.Any(r =>
-                        r.ReplicaServerName == n.ReplicaServerName && r.Role == ReplicaRole.Primary));
+                        r.ReplicaServerName == n.ReplicaServerName && r.Role == ReplicaRole.Primary))
+                    ?? _nodeLayouts.FirstOrDefault(n =>
+                        receiver.LocalAgInfo.Replicas.Any(r =>
+                            r.ReplicaServerName == n.ReplicaServerName));
 
-                if (forwarderPrimary != null && receiverPrimary != null)
+                if (forwarderNode != null && receiverNode != null)
                 {
+                    // Compute max LSN difference across the receiver member's databases
+                    decimal maxLsnDiff = 0;
+                    foreach (var replica in receiver.LocalAgInfo.Replicas)
+                    {
+                        if (replica.DatabaseStates.Count > 0)
+                            maxLsnDiff = Math.Max(maxLsnDiff,
+                                replica.DatabaseStates.Max(d => d.LsnDifferenceFromPrimary));
+                    }
+
                     _arrowLayouts.Add(new ArrowLayout
                     {
-                        From = new Point(forwarderPrimary.Bounds.Right + 10, forwarderPrimary.Bounds.Center.Y),
-                        To = new Point(receiverPrimary.Bounds.Left - 10, receiverPrimary.Bounds.Center.Y),
+                        From = new Point(forwarderNode.Bounds.Right + 10, forwarderNode.Bounds.Center.Y),
+                        To = new Point(receiverNode.Bounds.Left - 10, receiverNode.Bounds.Center.Y),
                         IsSynchronous = forwarder.AvailabilityMode == AvailabilityMode.SynchronousCommit,
-                        HealthLevel = HealthLevelExtensions.FromLsnDifference(0),
+                        HealthLevel = HealthLevelExtensions.FromLsnDifference(maxLsnDiff),
                         IsDagLink = true
                     });
                 }

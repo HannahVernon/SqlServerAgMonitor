@@ -229,12 +229,26 @@ public class MainWindowViewModel : ViewModelBase
                     string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
                     continue;
 
-                var groupConfig = new MonitoredGroupConfig
+                List<ConnectionConfig> connections;
+
+                if (group.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup)
                 {
-                    Name = group.Name,
-                    GroupType = group.GroupType.ToString(),
-                    PollingIntervalSeconds = vm.PollingIntervalSeconds,
-                    Connections = new List<ConnectionConfig>
+                    // DAGs: one connection per member from the wizard's Step 3
+                    connections = vm.DagMemberConnections
+                        .Where(m => string.Equals(m.DagName, group.Name, StringComparison.OrdinalIgnoreCase))
+                        .Select(m => new ConnectionConfig
+                        {
+                            Server = m.Server,
+                            AuthType = m.AuthType,
+                            Username = m.IsSqlAuth ? m.Username : null,
+                            CredentialKey = m.CredentialKey
+                        })
+                        .ToList();
+                }
+                else
+                {
+                    // Regular AGs: single connection from Step 0
+                    connections = new List<ConnectionConfig>
                     {
                         new ConnectionConfig
                         {
@@ -243,7 +257,15 @@ public class MainWindowViewModel : ViewModelBase
                             Username = vm.IsSqlAuth ? vm.Username : null,
                             CredentialKey = vm.IsSqlAuth ? $"agmon:{vm.Server}:{vm.Username}" : null
                         }
-                    }
+                    };
+                }
+
+                var groupConfig = new MonitoredGroupConfig
+                {
+                    Name = group.Name,
+                    GroupType = group.GroupType.ToString(),
+                    PollingIntervalSeconds = vm.PollingIntervalSeconds,
+                    Connections = connections
                 };
 
                 config.MonitoredGroups.Add(groupConfig);

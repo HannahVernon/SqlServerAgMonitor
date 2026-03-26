@@ -32,6 +32,7 @@ public class AddGroupViewModel : ViewModelBase
     private int _pollingIntervalSeconds;
     private int _currentStep;
     private bool _hasSelectedGroups;
+    private bool _allDagMembersTested;
 
     public List<string> AuthTypeOptions { get; } = new() { "Windows", "SQL Server" };
 
@@ -93,6 +94,12 @@ public class AddGroupViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _hasSelectedGroups, value);
     }
 
+    public bool AllDagMembersTested
+    {
+        get => _allDagMembersTested;
+        set => this.RaiseAndSetIfChanged(ref _allDagMembersTested, value);
+    }
+
     /// <summary>Returns all groups the user has checked for monitoring.</summary>
     public IReadOnlyList<DiscoveredGroup> SelectedGroups =>
         DiscoveredGroups.Where(g => g.IsSelected).ToList();
@@ -115,22 +122,34 @@ public class AddGroupViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(IsStep0));
             this.RaisePropertyChanged(nameof(IsStep1));
             this.RaisePropertyChanged(nameof(IsStep2));
+            this.RaisePropertyChanged(nameof(IsStep3));
             this.RaisePropertyChanged(nameof(ShowNextButton));
             this.RaisePropertyChanged(nameof(ShowBackButton));
             this.RaisePropertyChanged(nameof(ShowFinishButton));
         }
     }
 
+    /// <summary>True when any selected group is a distributed AG.</summary>
+    public bool HasDagSelected => SelectedGroups.Any(g =>
+        g.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup);
+
+    /// <summary>Maximum step index (3 if DAGs selected, else 2).</summary>
+    private int MaxStep => HasDagSelected ? 3 : 2;
+
     public bool IsStep0 => CurrentStep == 0;
     public bool IsStep1 => CurrentStep == 1;
     public bool IsStep2 => CurrentStep == 2;
-    public bool ShowNextButton => CurrentStep < 2;
+    public bool IsStep3 => CurrentStep == 3;
+    public bool ShowNextButton => CurrentStep < MaxStep;
     public bool ShowBackButton => CurrentStep > 0;
-    public bool ShowFinishButton => CurrentStep == 2;
+    public bool ShowFinishButton => CurrentStep == MaxStep;
 
     public bool IsSqlAuth => string.Equals(AuthType, "SQL Server", StringComparison.OrdinalIgnoreCase);
 
     public ObservableCollection<DiscoveredGroup> DiscoveredGroups { get; } = new();
+
+    /// <summary>DAG member connections for Step 3.</summary>
+    public ObservableCollection<DagMemberConnectionVm> DagMemberConnections { get; } = new();
 
     public ReactiveCommand<Unit, Unit> TestConnectionCommand { get; }
     public ReactiveCommand<Unit, Unit> DiscoverCommand { get; }
@@ -138,6 +157,7 @@ public class AddGroupViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> PreviousStepCommand { get; }
     public ReactiveCommand<Unit, Unit> FinishCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
+    public ReactiveCommand<Unit, Unit> TestDagMembersCommand { get; }
 
     /// <summary>Raised when the dialog should close. True = finished (add group), False = cancelled.</summary>
     public event Action<bool>? CloseRequested;
@@ -166,8 +186,14 @@ public class AddGroupViewModel : ViewModelBase
         var canDiscover = this.WhenAnyValue(x => x.ConnectionTested, x => x.IsDiscovering,
             (tested, discovering) => tested && !discovering);
 
-        var canFinish = this.WhenAnyValue(x => x.HasSelectedGroups)
-            .Select(has => has);
+        var canFinish = this.WhenAnyValue(
+                x => x.HasSelectedGroups, x => x.AllDagMembersTested, x => x.CurrentStep,
+                (hasGroups, dagOk, step) =>
+                {
+                    if (!hasGroups) return false;
+                    if (step == 3) return dagOk;
+                    return !HasDagSelected || dagOk;
+                });
 
         TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync, canTest);
         DiscoverCommand = ReactiveCommand.CreateFromTask(OnDiscoverAsync, canDiscover);
@@ -175,6 +201,7 @@ public class AddGroupViewModel : ViewModelBase
         PreviousStepCommand = ReactiveCommand.Create(OnPreviousStep);
         FinishCommand = ReactiveCommand.Create(OnFinish, canFinish);
         CancelCommand = ReactiveCommand.Create(OnCancel);
+        TestDagMembersCommand = ReactiveCommand.CreateFromTask(OnTestDagMembersAsync);
     }
 
     private string CredentialKey => $"agmon:{Server}:{Username}";
@@ -239,7 +266,13 @@ public class AddGroupViewModel : ViewModelBase
             {
                 group.IsSelected = true;
                 group.WhenAnyValue(g => g.IsSelected)
-                    .Subscribe(_ => HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected));
+                    .Subscribe(_ =>
+                    {
+                        HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected);
+                        this.RaisePropertyChanged(nameof(HasDagSelected));
+                        this.RaisePropertyChanged(nameof(ShowNextButton));
+                        this.RaisePropertyChanged(nameof(ShowFinishButton));
+                    });
                 DiscoveredGroups.Add(group);
             }
 
@@ -258,8 +291,14 @@ public class AddGroupViewModel : ViewModelBase
 
     private void OnNextStep()
     {
-        if (CurrentStep < 2)
+        if (CurrentStep < MaxStep)
+        {
             CurrentStep++;
+
+            // When entering Step 3 (DAG members), populate member connections
+            if (CurrentStep == 3)
+                PopulateDagMemberConnections();
+        }
     }
 
     private void OnPreviousStep()
@@ -280,6 +319,136 @@ public class AddGroupViewModel : ViewModelBase
             try { await _credentialStore.DeletePasswordAsync(CredentialKey); }
             catch { /* best-effort cleanup */ }
         }
+
+        // Clean up any DAG member credentials
+        foreach (var member in DagMemberConnections.Where(m => m.CredentialKey != null))
+        {
+            try { if (_credentialStore is not null) await _credentialStore.DeletePasswordAsync(member.CredentialKey!); }
+            catch { /* best-effort cleanup */ }
+        }
+
         CloseRequested?.Invoke(false);
+    }
+
+    /// <summary>
+    /// Populates DagMemberConnections from selected DAGs' discovered members.
+    /// Local member: pre-fill with the is_local=1 instance from discovery.
+    /// Remote member: pre-fill with the AG listener name (user can edit).
+    /// </summary>
+    private void PopulateDagMemberConnections()
+    {
+        DagMemberConnections.Clear();
+        AllDagMembersTested = false;
+
+        foreach (var dag in SelectedGroups.Where(g =>
+            g.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup))
+        {
+            foreach (var member in dag.DagMembers)
+            {
+                string defaultServer;
+                if (member.IsLocal)
+                {
+                    // Use the discovered is_local=1 instance, or fall back to Step 0 server
+                    var localInstance = member.Instances.FirstOrDefault(i => i.IsLocal);
+                    defaultServer = localInstance?.ServerName ?? Server;
+                }
+                else
+                {
+                    // Use the AG listener name for remote members (user can edit)
+                    defaultServer = member.MemberAgName;
+                }
+
+                var memberVm = new DagMemberConnectionVm
+                {
+                    DagName = dag.Name,
+                    MemberAgName = member.MemberAgName,
+                    DagRoleDesc = member.DagRoleDesc,
+                    IsLocal = member.IsLocal,
+                    AuthType = ResolvedAuthType,
+                    Server = defaultServer
+                };
+
+                // For SQL auth, pre-fill username from Step 0
+                if (IsSqlAuth)
+                {
+                    memberVm.Username = Username;
+                }
+
+                // If local member and already tested with initial connection, mark as tested
+                if (member.IsLocal && ConnectionTested)
+                {
+                    memberVm.ConnectionTested = true;
+                    memberVm.ConnectionSucceeded = true;
+                    memberVm.StatusMessage = "Connected (initial connection)";
+                    if (IsSqlAuth)
+                    {
+                        memberVm.CredentialKey = CredentialKey;
+                    }
+                }
+
+                DagMemberConnections.Add(memberVm);
+            }
+        }
+
+        UpdateAllDagMembersTested();
+    }
+
+    private async Task OnTestDagMembersAsync(CancellationToken cancellationToken)
+    {
+        if (_connectionService is null) return;
+
+        var untested = DagMemberConnections
+            .Where(m => !m.ConnectionSucceeded && !m.IsTesting)
+            .ToList();
+
+        foreach (var member in untested)
+        {
+            member.IsTesting = true;
+            member.StatusMessage = $"Testing {member.Server}...";
+
+            try
+            {
+                // For SQL auth, store the member's credentials
+                if (member.IsSqlAuth && _credentialStore is not null && !string.IsNullOrEmpty(member.Password))
+                {
+                    var memberCredKey = $"agmon:{member.Server}:{member.Username}";
+                    await _credentialStore.StorePasswordAsync(memberCredKey, member.Password, cancellationToken);
+                    member.CredentialKey = memberCredKey;
+                }
+                else if (!member.IsSqlAuth)
+                {
+                    member.CredentialKey = null;
+                }
+
+                var success = await _connectionService.TestConnectionAsync(
+                    member.Server,
+                    member.IsSqlAuth ? member.Username : null,
+                    member.CredentialKey,
+                    member.AuthType,
+                    cancellationToken);
+
+                member.ConnectionTested = true;
+                member.ConnectionSucceeded = success;
+                member.StatusMessage = success ? "Connected" : "Connection failed";
+            }
+            catch (Exception ex)
+            {
+                member.ConnectionTested = true;
+                member.ConnectionSucceeded = false;
+                member.StatusMessage = $"Failed: {ex.Message}";
+            }
+            finally
+            {
+                member.IsTesting = false;
+            }
+        }
+
+        UpdateAllDagMembersTested();
+    }
+
+    private void UpdateAllDagMembersTested()
+    {
+        AllDagMembersTested = DagMemberConnections.Count > 0 &&
+                              DagMemberConnections.All(m => m.ConnectionSucceeded);
     }
 }

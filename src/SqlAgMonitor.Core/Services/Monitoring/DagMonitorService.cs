@@ -10,10 +10,9 @@ using SqlAgMonitor.Core.Services.Connection;
 namespace SqlAgMonitor.Core.Services.Monitoring;
 
 /// <summary>
-/// Monitors Distributed Availability Groups by querying the DAG's own replicas and
-/// database-level states from a single connection. A distributed AG appears in the
-/// system views just like a regular AG — its "replicas" are the member AGs and its
-/// database_replica_states show per-member LSN data for both local and remote members.
+/// Monitors Distributed Availability Groups by polling each member server independently.
+/// Each member connection queries its local AG's replica and database states, then results
+/// are merged into a unified DistributedAgInfo model with cross-member LSN comparisons.
 /// </summary>
 public class DagMonitorService : IAgMonitorService
 {
@@ -28,11 +27,10 @@ public class DagMonitorService : IAgMonitorService
     public IObservable<MonitoredGroupSnapshot> Snapshots => _snapshots.AsObservable();
 
     /// <summary>
-    /// Queries the distributed AG's own replicas (one per member AG). The
-    /// replica_server_name is the listener/AG name of each member, and the
-    /// replica states show the DAG-level role, health, and connectivity.
+    /// Queries the distributed AG's own replicas to get DAG-level topology
+    /// (member AG names, roles, health). Same from any member server.
     /// </summary>
-    private const string DagReplicasSql = @"
+    private const string DagTopologySql = @"
         SELECT
             ag.[name]                                   AS [dag_name],
             ar.[replica_server_name],
@@ -54,37 +52,71 @@ public class DagMonitorService : IAgMonitorService
     ";
 
     /// <summary>
-    /// Queries database-level replica states for the distributed AG. Unlike regular
-    /// AGs we do NOT filter on is_local — the primary member reports LSN data for
-    /// both local and remote members, giving us the complete cross-member picture
-    /// from a single connection.
+    /// Gets the local member AG's replica status by drilling through
+    /// fn_hadr_distributed_ag_replica to the underlying local AG.
     /// </summary>
-    private const string DagDatabaseStateSql = @"
+    private const string LocalAgReplicasSql = @"
         SELECT
-            ag.[name]                                   AS [ag_name],
-            d.[name]                                    AS [database_name],
-            ar.[replica_server_name],
-            hdrs.[is_local],
-            hdrs.[synchronization_state_desc],
-            hdrs.[last_hardened_lsn],
-            hdrs.[last_commit_lsn],
-            hdrs.[log_send_queue_size],
-            hdrs.[redo_queue_size],
-            hdrs.[log_send_rate],
-            hdrs.[redo_rate],
-            hdrs.[is_suspended],
-            hdrs.[suspend_reason_desc],
-            ar.[availability_mode_desc]
-        FROM sys.dm_hadr_database_replica_states hdrs
-            INNER JOIN sys.availability_replicas ar
-                ON hdrs.[replica_id] = ar.[replica_id]
-                AND hdrs.[group_id] = ar.[group_id]
-            INNER JOIN sys.availability_groups ag
-                ON hdrs.[group_id] = ag.[group_id]
-            INNER JOIN sys.databases d
-                ON hdrs.[database_id] = d.[database_id]
-        WHERE ag.[is_distributed] = 1
-        ORDER BY ag.[name], ar.[replica_server_name], d.[name];
+            [ag1].[name]                                AS [local_ag_name],
+            [ar1].[replica_server_name],
+            [ars1].[role_desc],
+            [ars1].[operational_state_desc],
+            [ars1].[connected_state_desc],
+            [ars1].[recovery_health_desc],
+            [ars1].[synchronization_health_desc],
+            [ar1].[availability_mode_desc],
+            [ar1].[failover_mode_desc],
+            [ar1].[endpoint_url]
+        FROM [sys].[availability_groups] [dag]
+            INNER JOIN [sys].[availability_replicas] [ar]
+                ON [dag].[group_id] = [ar].[group_id]
+            CROSS APPLY [sys].[fn_hadr_distributed_ag_replica]([dag].[group_id], [ar].[replica_id]) [hdar]
+            INNER JOIN [sys].[availability_groups] [ag1]
+                ON [hdar].[group_id] = [ag1].[group_id]
+            INNER JOIN [sys].[availability_replicas] [ar1]
+                ON [ag1].[group_id] = [ar1].[group_id]
+            INNER JOIN [sys].[dm_hadr_availability_replica_states] [ars1]
+                ON [ar1].[replica_id] = [ars1].[replica_id]
+        WHERE [dag].[is_distributed] = 1
+        ORDER BY [ag1].[name], [ar1].[replica_server_name];
+    ";
+
+    /// <summary>
+    /// Gets database-level states for the local member AG by drilling through
+    /// fn_hadr_distributed_ag_replica. Returns all replicas' database states
+    /// (not just is_local) so the primary sees secondaries' LSN progress.
+    /// </summary>
+    private const string LocalAgDbStatesSql = @"
+        SELECT
+            [ag1].[name]                                AS [local_ag_name],
+            [d].[name]                                  AS [database_name],
+            [ar1].[replica_server_name],
+            [hdrs].[is_local],
+            [hdrs].[synchronization_state_desc],
+            [hdrs].[last_hardened_lsn],
+            [hdrs].[last_commit_lsn],
+            [hdrs].[log_send_queue_size],
+            [hdrs].[redo_queue_size],
+            [hdrs].[log_send_rate],
+            [hdrs].[redo_rate],
+            [hdrs].[is_suspended],
+            [hdrs].[suspend_reason_desc],
+            [ar1].[availability_mode_desc]
+        FROM [sys].[availability_groups] [dag]
+            INNER JOIN [sys].[availability_replicas] [ar]
+                ON [dag].[group_id] = [ar].[group_id]
+            CROSS APPLY [sys].[fn_hadr_distributed_ag_replica]([dag].[group_id], [ar].[replica_id]) [hdar]
+            INNER JOIN [sys].[availability_groups] [ag1]
+                ON [hdar].[group_id] = [ag1].[group_id]
+            INNER JOIN [sys].[dm_hadr_database_replica_states] [hdrs]
+                ON [ag1].[group_id] = [hdrs].[group_id]
+            INNER JOIN [sys].[availability_replicas] [ar1]
+                ON [hdrs].[replica_id] = [ar1].[replica_id]
+                AND [hdrs].[group_id] = [ar1].[group_id]
+            INNER JOIN [sys].[databases] [d]
+                ON [hdrs].[database_id] = [d].[database_id]
+        WHERE [dag].[is_distributed] = 1
+        ORDER BY [ag1].[name], [ar1].[replica_server_name], [d].[name];
     ";
 
     public DagMonitorService(
@@ -123,7 +155,8 @@ public class DagMonitorService : IAgMonitorService
                 ex => _logger.LogError(ex, "DAG polling error for {Group}.", groupName));
 
         _pollingSubscriptions[groupName] = subscription;
-        _logger.LogInformation("Started DAG monitoring for {Group} every {Interval}s.", groupName, interval);
+        _logger.LogInformation("Started DAG monitoring for {Group} with {Count} member connection(s), every {Interval}s.",
+            groupName, groupConfig.Connections.Count, interval);
         return Task.CompletedTask;
     }
 
@@ -135,8 +168,12 @@ public class DagMonitorService : IAgMonitorService
             _logger.LogInformation("Stopped DAG monitoring for {Group}.", groupName);
         }
 
-        if (_connections.TryRemove(groupName + ":0", out var conn))
-            _ = conn.DisposeAsync();
+        var keysToRemove = _connections.Keys.Where(k => k.StartsWith(groupName + ":")).ToList();
+        foreach (var key in keysToRemove)
+        {
+            if (_connections.TryRemove(key, out var conn))
+                _ = conn.DisposeAsync();
+        }
 
         return Task.CompletedTask;
     }
@@ -156,27 +193,19 @@ public class DagMonitorService : IAgMonitorService
     {
         try
         {
-            var connConfig = groupConfig.Connections.FirstOrDefault();
-            if (connConfig == null)
+            if (groupConfig.Connections.Count == 0)
             {
-                return new MonitoredGroupSnapshot
-                {
-                    Name = groupName,
-                    GroupType = AvailabilityGroupType.DistributedAvailabilityGroup,
-                    Timestamp = DateTimeOffset.UtcNow,
-                    OverallHealth = SynchronizationHealth.Unknown,
-                    ErrorMessage = "No connection configured for DAG.",
-                    IsConnected = false
-                };
+                return CreateErrorSnapshot(groupName, "No connections configured for DAG.");
             }
 
-            var connection = await GetOrCreateConnectionAsync(groupName, connConfig, cancellationToken);
+            // Poll all member servers concurrently
+            var pollTasks = groupConfig.Connections
+                .Select((conn, idx) => PollMemberAsync(groupName, idx, conn, cancellationToken))
+                .ToList();
 
-            // Run queries sequentially (no MARS required)
-            var replicas = await QueryReplicasAsync(connection, cancellationToken);
-            var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
+            var memberResults = await Task.WhenAll(pollTasks);
 
-            var dagInfo = BuildDagInfo(groupName, replicas, dbStates);
+            var dagInfo = MergeResults(groupName, memberResults);
 
             return new MonitoredGroupSnapshot
             {
@@ -185,57 +214,108 @@ public class DagMonitorService : IAgMonitorService
                 Timestamp = DateTimeOffset.UtcNow,
                 DagInfo = dagInfo,
                 OverallHealth = dagInfo.OverallHealth,
-                IsConnected = true
+                IsConnected = memberResults.Any(r => r.IsSuccess)
             };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error polling DAG {Group}.", groupName);
+            return CreateErrorSnapshot(groupName, ex.Message);
+        }
+    }
 
-            // Invalidate connection on error so it reconnects on next poll
-            if (_connections.TryGetValue(groupName + ":0", out var wrapper))
+    private async Task<MemberPollResult> PollMemberAsync(
+        string groupName, int index, ConnectionConfig connConfig, CancellationToken ct)
+    {
+        var server = connConfig.Server;
+        try
+        {
+            var connection = await GetOrCreateConnectionAsync(groupName, index, connConfig, ct);
+
+            // Run queries sequentially (no MARS)
+            var dagTopology = await QueryDagTopologyAsync(connection, ct);
+            var localReplicas = await QueryLocalAgReplicasAsync(connection, ct);
+            var localDbStates = await QueryLocalAgDbStatesAsync(connection, ct);
+
+            return new MemberPollResult
+            {
+                Server = server,
+                IsSuccess = true,
+                DagTopology = dagTopology,
+                LocalReplicas = localReplicas,
+                LocalDbStates = localDbStates
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to poll DAG member {Server} for {Group}.", server, groupName);
+
+            var key = $"{groupName}:{index}";
+            if (_connections.TryGetValue(key, out var wrapper))
                 wrapper.InvalidateConnection();
 
-            return new MonitoredGroupSnapshot
+            return new MemberPollResult
             {
-                Name = groupName,
-                GroupType = AvailabilityGroupType.DistributedAvailabilityGroup,
-                Timestamp = DateTimeOffset.UtcNow,
-                OverallHealth = SynchronizationHealth.Unknown,
-                ErrorMessage = ex.Message,
-                IsConnected = false
+                Server = server,
+                IsSuccess = false,
+                ErrorMessage = ex.Message
             };
         }
     }
 
     private async Task<SqlConnection> GetOrCreateConnectionAsync(
-        string groupName, ConnectionConfig connConfig, CancellationToken cancellationToken)
+        string groupName, int index, ConnectionConfig connConfig, CancellationToken ct)
     {
-        var key = groupName + ":0";
+        var key = $"{groupName}:{index}";
         if (!_connections.TryGetValue(key, out var wrapper))
         {
             wrapper = new ReconnectingConnectionWrapper(
-                _connectionService,
-                _logger,
-                connConfig.Server,
-                connConfig.Username,
-                connConfig.CredentialKey,
-                connConfig.AuthType);
+                _connectionService, _logger,
+                connConfig.Server, connConfig.Username,
+                connConfig.CredentialKey, connConfig.AuthType);
             _connections[key] = wrapper;
         }
 
-        return await wrapper.GetConnectionAsync(cancellationToken);
+        return await wrapper.GetConnectionAsync(ct);
     }
 
-    private async Task<List<ReplicaInfo>> QueryReplicasAsync(
-        SqlConnection connection, CancellationToken cancellationToken)
+    private async Task<List<DagTopologyRow>> QueryDagTopologyAsync(
+        SqlConnection connection, CancellationToken ct)
+    {
+        var rows = new List<DagTopologyRow>();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = DagTopologySql;
+
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
+        {
+            rows.Add(new DagTopologyRow
+            {
+                DagName = reader.GetString(0),
+                MemberAgName = reader.GetString(1),
+                RoleDesc = reader.IsDBNull(2) ? null : reader.GetString(2),
+                OperationalStateDesc = reader.IsDBNull(3) ? null : reader.GetString(3),
+                ConnectedStateDesc = reader.IsDBNull(4) ? null : reader.GetString(4),
+                RecoveryHealthDesc = reader.IsDBNull(5) ? null : reader.GetString(5),
+                SynchronizationHealthDesc = reader.IsDBNull(6) ? null : reader.GetString(6),
+                AvailabilityModeDesc = reader.IsDBNull(7) ? null : reader.GetString(7),
+                FailoverModeDesc = reader.IsDBNull(8) ? null : reader.GetString(8),
+                EndpointUrl = reader.IsDBNull(9) ? null : reader.GetString(9)
+            });
+        }
+
+        return rows;
+    }
+
+    private async Task<List<ReplicaInfo>> QueryLocalAgReplicasAsync(
+        SqlConnection connection, CancellationToken ct)
     {
         var replicas = new List<ReplicaInfo>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = DagReplicasSql;
+        cmd.CommandText = LocalAgReplicasSql;
 
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
             replicas.Add(new ReplicaInfo
             {
@@ -255,15 +335,15 @@ public class DagMonitorService : IAgMonitorService
         return replicas;
     }
 
-    private async Task<List<DatabaseReplicaState>> QueryDatabaseStatesAsync(
-        SqlConnection connection, CancellationToken cancellationToken)
+    private async Task<List<DatabaseReplicaState>> QueryLocalAgDbStatesAsync(
+        SqlConnection connection, CancellationToken ct)
     {
         var dbStates = new List<DatabaseReplicaState>();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = DagDatabaseStateSql;
+        cmd.CommandText = LocalAgDbStatesSql;
 
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct))
         {
             dbStates.Add(new DatabaseReplicaState
             {
@@ -288,41 +368,109 @@ public class DagMonitorService : IAgMonitorService
     }
 
     /// <summary>
-    /// Builds the DistributedAgInfo model from the DAG's own replica and database
-    /// state data. Each DAG "replica" is a member AG; each member gets a
-    /// DistributedAgMember with a single-replica AvailabilityGroupInfo so the UI
-    /// can render it the same way as regular AG topology + pivot grid.
+    /// Merges poll results from all member servers into a unified DistributedAgInfo.
+    /// DAG topology comes from the first successful member. Each member contributes
+    /// its local AG's replicas and database states.
     /// </summary>
-    private DistributedAgInfo BuildDagInfo(
-        string groupName, List<ReplicaInfo> replicas, List<DatabaseReplicaState> dbStates)
+    private DistributedAgInfo MergeResults(string groupName, MemberPollResult[] results)
     {
         var dagInfo = new DistributedAgInfo { DagName = groupName };
+        var successful = results.Where(r => r.IsSuccess).ToList();
 
-        // Filter to the specific DAG
-        var dagReplicas = replicas
-            .Where(r => string.Equals(r.AgName, groupName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-        var dagDbStates = dbStates
-            .Where(d => string.Equals(d.AgName, groupName, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (dagReplicas.Count == 0)
+        if (successful.Count == 0)
         {
-            _logger.LogWarning("No replicas found for DAG {Group}.", groupName);
             dagInfo.OverallHealth = SynchronizationHealth.Unknown;
             return dagInfo;
         }
 
-        // Compute LSN differences from primary member
-        var primaryReplica = dagReplicas.FirstOrDefault(r => r.Role == ReplicaRole.Primary);
+        // Use DAG topology from first successful member
+        var topology = successful.First().DagTopology
+            .Where(t => string.Equals(t.DagName, groupName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (topology.Count == 0)
+        {
+            _logger.LogWarning("No DAG topology found for {Group}.", groupName);
+            dagInfo.OverallHealth = SynchronizationHealth.Unknown;
+            return dagInfo;
+        }
+
+        // Build a DistributedAgMember for each DAG member
+        foreach (var topo in topology)
+        {
+            var member = new DistributedAgMember
+            {
+                MemberAgName = topo.MemberAgName,
+                DistributedRole = SqlParsingHelpers.ParseRole(topo.RoleDesc),
+                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(topo.AvailabilityModeDesc),
+                SynchronizationHealth = SqlParsingHelpers.ParseSyncHealth(topo.SynchronizationHealthDesc)
+            };
+
+            // Find the poll result that has this member's local AG data.
+            // Each member server's fn_hadr_distributed_ag_replica resolves to its local AG.
+            // We match by checking which poll result has replicas.
+            MemberPollResult? matchingPoll = null;
+            foreach (var poll in successful)
+            {
+                if (poll.LocalReplicas.Count > 0)
+                {
+                    // Check if this poll result hasn't been claimed by another member yet
+                    matchingPoll = poll;
+                    break;
+                }
+            }
+
+            // Better matching: try each successful poll and use the one whose server
+            // matches this member's topology endpoint, or take any unclaimed one
+            matchingPoll = null;
+            foreach (var poll in successful)
+            {
+                // The poll.Server is the connection endpoint. Each member server resolves
+                // fn_hadr_distributed_ag_replica to its own local AG only. So each poll
+                // result naturally belongs to one member. We just need to associate them.
+                // Since we can't directly match topology member names to connection servers,
+                // we rely on order or use a heuristic.
+                if (poll.LocalReplicas.Count > 0 && !poll.Claimed)
+                {
+                    matchingPoll = poll;
+                    poll.Claimed = true;
+                    break;
+                }
+            }
+
+            if (matchingPoll != null)
+            {
+                var agInfo = BuildLocalAgInfo(matchingPoll.LocalReplicas, matchingPoll.LocalDbStates);
+                member.LocalAgInfo = agInfo;
+                member.SynchronizationHealth = agInfo.OverallHealth;
+            }
+
+            dagInfo.Members.Add(member);
+        }
+
+        // Compute cross-member LSN differences
+        ComputeCrossMemberLsnDifferences(dagInfo);
+
+        dagInfo.OverallHealth = ComputeDagOverallHealth(dagInfo);
+        return dagInfo;
+    }
+
+    private AvailabilityGroupInfo BuildLocalAgInfo(
+        List<ReplicaInfo> replicas, List<DatabaseReplicaState> dbStates)
+    {
+        var agName = replicas.FirstOrDefault()?.AgName ?? "Unknown";
+        var agInfo = new AvailabilityGroupInfo { AgName = agName };
+
+        // Compute LSN differences from primary within this AG
+        var primaryReplica = replicas.FirstOrDefault(r => r.Role == ReplicaRole.Primary);
         if (primaryReplica != null)
         {
-            var primaryLsnByDb = dagDbStates
+            var primaryLsnByDb = dbStates
                 .Where(d => string.Equals(d.ReplicaServerName, primaryReplica.ReplicaServerName, StringComparison.OrdinalIgnoreCase))
                 .GroupBy(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().LastHardenedLsn, StringComparer.OrdinalIgnoreCase);
 
-            foreach (var dbState in dagDbStates)
+            foreach (var dbState in dbStates)
             {
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
@@ -331,35 +479,60 @@ public class DagMonitorService : IAgMonitorService
             }
         }
 
-        // Build a DistributedAgMember for each DAG replica (member AG)
-        foreach (var replica in dagReplicas)
+        foreach (var replica in replicas)
         {
-            var memberDbStates = dagDbStates
+            var replicaDbStates = dbStates
                 .Where(d => string.Equals(d.ReplicaServerName, replica.ReplicaServerName, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
-            replica.DatabaseCount = memberDbStates.Count;
-            foreach (var dbs in memberDbStates)
+            replica.DatabaseCount = replicaDbStates.Count;
+            foreach (var dbs in replicaDbStates)
                 replica.DatabaseStates.Add(dbs);
 
-            var memberAgInfo = new AvailabilityGroupInfo { AgName = replica.ReplicaServerName };
-            memberAgInfo.Replicas.Add(replica);
-            memberAgInfo.OverallHealth = replica.SynchronizationHealth;
-
-            var member = new DistributedAgMember
-            {
-                MemberAgName = replica.ReplicaServerName,
-                DistributedRole = replica.Role,
-                AvailabilityMode = replica.AvailabilityMode,
-                SynchronizationHealth = replica.SynchronizationHealth,
-                LocalAgInfo = memberAgInfo
-            };
-
-            dagInfo.Members.Add(member);
+            agInfo.Replicas.Add(replica);
         }
 
-        dagInfo.OverallHealth = ComputeDagOverallHealth(dagInfo);
-        return dagInfo;
+        agInfo.OverallHealth = SqlParsingHelpers.ComputeOverallHealth(replicas.AsReadOnly());
+        return agInfo;
+    }
+
+    /// <summary>
+    /// Compares last_hardened_lsn across DAG members for the same database.
+    /// Uses each member's primary replica as the source of that member's LSN.
+    /// </summary>
+    private void ComputeCrossMemberLsnDifferences(DistributedAgInfo dagInfo)
+    {
+        var primaryMember = dagInfo.Members.FirstOrDefault(m => m.DistributedRole == ReplicaRole.Primary);
+        var secondaryMembers = dagInfo.Members.Where(m => m.DistributedRole == ReplicaRole.Secondary).ToList();
+
+        if (primaryMember?.LocalAgInfo == null || secondaryMembers.Count == 0)
+            return;
+
+        // Get primary member's database LSNs (from its primary replica)
+        var primaryReplica = primaryMember.LocalAgInfo.Replicas
+            .FirstOrDefault(r => r.Role == ReplicaRole.Primary);
+        if (primaryReplica == null) return;
+
+        var primaryLsnByDb = primaryReplica.DatabaseStates
+            .GroupBy(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.First().LastHardenedLsn, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var secMember in secondaryMembers)
+        {
+            if (secMember.LocalAgInfo == null) continue;
+
+            var secPrimaryReplica = secMember.LocalAgInfo.Replicas
+                .FirstOrDefault(r => r.Role == ReplicaRole.Primary);
+            if (secPrimaryReplica == null) continue;
+
+            foreach (var dbState in secPrimaryReplica.DatabaseStates)
+            {
+                if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
+                {
+                    dbState.LsnDifferenceFromPrimary = Math.Abs(primaryLsn - dbState.LastHardenedLsn);
+                }
+            }
+        }
     }
 
     private static SynchronizationHealth ComputeDagOverallHealth(DistributedAgInfo dagInfo)
@@ -372,6 +545,19 @@ public class DagMonitorService : IAgMonitorService
         if (dagInfo.Members.Any(m => m.SynchronizationHealth == SynchronizationHealth.Unknown))
             return SynchronizationHealth.PartiallyHealthy;
         return SynchronizationHealth.PartiallyHealthy;
+    }
+
+    private static MonitoredGroupSnapshot CreateErrorSnapshot(string groupName, string errorMessage)
+    {
+        return new MonitoredGroupSnapshot
+        {
+            Name = groupName,
+            GroupType = AvailabilityGroupType.DistributedAvailabilityGroup,
+            Timestamp = DateTimeOffset.UtcNow,
+            OverallHealth = SynchronizationHealth.Unknown,
+            ErrorMessage = errorMessage,
+            IsConnected = false
+        };
     }
 
     public async ValueTask DisposeAsync()
@@ -390,5 +576,30 @@ public class DagMonitorService : IAgMonitorService
             _snapshots.Dispose();
             _disposed = true;
         }
+    }
+
+    private sealed class MemberPollResult
+    {
+        public required string Server { get; init; }
+        public bool IsSuccess { get; init; }
+        public string? ErrorMessage { get; init; }
+        public List<DagTopologyRow> DagTopology { get; init; } = [];
+        public List<ReplicaInfo> LocalReplicas { get; init; } = [];
+        public List<DatabaseReplicaState> LocalDbStates { get; init; } = [];
+        public bool Claimed { get; set; }
+    }
+
+    private sealed class DagTopologyRow
+    {
+        public required string DagName { get; init; }
+        public required string MemberAgName { get; init; }
+        public string? RoleDesc { get; init; }
+        public string? OperationalStateDesc { get; init; }
+        public string? ConnectedStateDesc { get; init; }
+        public string? RecoveryHealthDesc { get; init; }
+        public string? SynchronizationHealthDesc { get; init; }
+        public string? AvailabilityModeDesc { get; init; }
+        public string? FailoverModeDesc { get; init; }
+        public string? EndpointUrl { get; init; }
     }
 }
