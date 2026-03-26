@@ -61,10 +61,7 @@
                         <TextBox Text="{Binding Password}" PasswordChar="*" Watermark="Password" />
                     </StackPanel>
 
-                    <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" />
-                        <Button Content="Discover AGs/DAGs" Command="{Binding DiscoverCommand}" />
-                    </StackPanel>
+                    <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" />
                 </StackPanel>
 
                 <!-- Step 1: Select group -->

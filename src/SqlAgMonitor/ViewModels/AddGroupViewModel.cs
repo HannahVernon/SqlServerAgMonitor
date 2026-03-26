@@ -32,6 +32,7 @@ public class AddGroupViewModel : ViewModelBase
     private int _pollingIntervalSeconds;
     private int _currentStep;
     private bool _hasSelectedGroups;
+    private bool _hasDiscoveredGroups;
     private bool _allDagMembersTested;
 
     public List<string> AuthTypeOptions { get; } = new() { "Windows", "SQL Server" };
@@ -39,7 +40,11 @@ public class AddGroupViewModel : ViewModelBase
     public string Server
     {
         get => _server;
-        set => this.RaiseAndSetIfChanged(ref _server, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _server, value);
+            ResetConnectionState();
+        }
     }
 
     public string AuthType
@@ -49,19 +54,28 @@ public class AddGroupViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _authType, value);
             this.RaisePropertyChanged(nameof(IsSqlAuth));
+            ResetConnectionState();
         }
     }
 
     public string? Username
     {
         get => _username;
-        set => this.RaiseAndSetIfChanged(ref _username, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _username, value);
+            ResetConnectionState();
+        }
     }
 
     public string? Password
     {
         get => _password;
-        set => this.RaiseAndSetIfChanged(ref _password, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _password, value);
+            ResetConnectionState();
+        }
     }
 
     public bool IsDiscovering
@@ -92,6 +106,12 @@ public class AddGroupViewModel : ViewModelBase
     {
         get => _hasSelectedGroups;
         set => this.RaiseAndSetIfChanged(ref _hasSelectedGroups, value);
+    }
+
+    public bool HasDiscoveredGroups
+    {
+        get => _hasDiscoveredGroups;
+        set => this.RaiseAndSetIfChanged(ref _hasDiscoveredGroups, value);
     }
 
     public bool AllDagMembersTested
@@ -152,7 +172,6 @@ public class AddGroupViewModel : ViewModelBase
     public ObservableCollection<DagMemberConnectionVm> DagMemberConnections { get; } = new();
 
     public ReactiveCommand<Unit, Unit> TestConnectionCommand { get; }
-    public ReactiveCommand<Unit, Unit> DiscoverCommand { get; }
     public ReactiveCommand<Unit, Unit> NextStepCommand { get; }
     public ReactiveCommand<Unit, Unit> PreviousStepCommand { get; }
     public ReactiveCommand<Unit, Unit> FinishCommand { get; }
@@ -180,11 +199,17 @@ public class AddGroupViewModel : ViewModelBase
         CurrentStep = 0;
 
         var canTest = this.WhenAnyValue(
-            x => x.Server, x => x.IsTestingConnection,
-            (server, testing) => !string.IsNullOrWhiteSpace(server) && !testing);
+            x => x.Server, x => x.IsTestingConnection, x => x.IsDiscovering,
+            (server, testing, discovering) => !string.IsNullOrWhiteSpace(server) && !testing && !discovering);
 
-        var canDiscover = this.WhenAnyValue(x => x.ConnectionTested, x => x.IsDiscovering,
-            (tested, discovering) => tested && !discovering);
+        var canNext = this.WhenAnyValue(
+            x => x.CurrentStep, x => x.ConnectionTested, x => x.HasDiscoveredGroups, x => x.HasSelectedGroups,
+            (step, connected, discovered, selected) => step switch
+            {
+                0 => connected && discovered,
+                1 => selected,
+                _ => true
+            });
 
         var canFinish = this.WhenAnyValue(
                 x => x.HasSelectedGroups, x => x.AllDagMembersTested, x => x.CurrentStep,
@@ -196,8 +221,7 @@ public class AddGroupViewModel : ViewModelBase
                 });
 
         TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync, canTest);
-        DiscoverCommand = ReactiveCommand.CreateFromTask(OnDiscoverAsync, canDiscover);
-        NextStepCommand = ReactiveCommand.Create(OnNextStep);
+        NextStepCommand = ReactiveCommand.Create(OnNextStep, canNext);
         PreviousStepCommand = ReactiveCommand.Create(OnPreviousStep);
         FinishCommand = ReactiveCommand.Create(OnFinish, canFinish);
         CancelCommand = ReactiveCommand.Create(OnCancel);
@@ -208,6 +232,14 @@ public class AddGroupViewModel : ViewModelBase
 
     private string ResolvedAuthType =>
         string.Equals(AuthType, "SQL Server", StringComparison.OrdinalIgnoreCase) ? "sql" : "windows";
+
+    private void ResetConnectionState()
+    {
+        ConnectionTested = false;
+        HasDiscoveredGroups = false;
+        HasSelectedGroups = false;
+        DiscoveredGroups.Clear();
+    }
 
     private async Task OnTestConnectionAsync(CancellationToken cancellationToken)
     {
@@ -232,17 +264,28 @@ public class AddGroupViewModel : ViewModelBase
                 Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken);
 
             ConnectionTested = success;
-            StatusMessage = success ? "Connection successful." : "Connection failed. Check server name and credentials.";
+
+            if (!success)
+            {
+                StatusMessage = "Connection failed. Check server name and credentials.";
+                return;
+            }
+
+            StatusMessage = "Connected. Discovering AGs/DAGs...";
         }
         catch (Exception ex)
         {
             ConnectionTested = false;
             StatusMessage = $"Connection failed: {ex.Message}";
+            return;
         }
         finally
         {
             IsTestingConnection = false;
         }
+
+        // Auto-discover after successful connection
+        await OnDiscoverAsync(cancellationToken);
     }
 
     private async Task OnDiscoverAsync(CancellationToken cancellationToken)
@@ -277,7 +320,10 @@ public class AddGroupViewModel : ViewModelBase
             }
 
             HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected);
-            StatusMessage = $"Found {DiscoveredGroups.Count} group(s).";
+            HasDiscoveredGroups = DiscoveredGroups.Count > 0;
+            StatusMessage = DiscoveredGroups.Count > 0
+                ? $"Connected. Found {DiscoveredGroups.Count} group(s)."
+                : "Connected, but no Availability Groups found on this server.";
         }
         catch (Exception ex)
         {
