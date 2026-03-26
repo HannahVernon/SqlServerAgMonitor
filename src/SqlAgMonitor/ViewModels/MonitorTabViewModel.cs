@@ -190,25 +190,21 @@ public class MonitorTabViewModel : ViewModelBase
         PivotRows.Clear();
         DatabaseStates.Clear();
 
-        var filtered = _allDatabaseStates.AsEnumerable();
+        // Pivot always uses all database states — each replica has its own column
+        foreach (var state in _allDatabaseStates)
+            DatabaseStates.Add(state);
 
         if (!string.IsNullOrEmpty(SelectedReplicaName))
         {
-            filtered = filtered.Where(d =>
-                string.Equals(d.ReplicaServerName, SelectedReplicaName, StringComparison.OrdinalIgnoreCase));
-            FilterDescription = $"Filtered: {SelectedReplicaName}";
+            FilterDescription = $"Selected: {SelectedReplicaName}";
         }
         else
         {
             FilterDescription = "All replicas";
         }
 
-        var statesList = filtered.ToList();
-        foreach (var state in statesList)
-            DatabaseStates.Add(state);
-
         // Build pivot: group by database name
-        var dbGroups = statesList
+        var dbGroups = _allDatabaseStates
             .GroupBy(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
             .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase);
 
