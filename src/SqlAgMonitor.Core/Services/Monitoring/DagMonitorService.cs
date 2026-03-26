@@ -191,16 +191,15 @@ public class DagMonitorService : IAgMonitorService
         {
             var connection = await GetOrCreateConnectionAsync(groupName, connectionIndex, connConfig, cancellationToken);
 
-            var topologyTask = QueryDagTopologyAsync(connection, cancellationToken);
-            var dbStatesTask = QueryDatabaseStatesAsync(connection, cancellationToken);
-            await Task.WhenAll(topologyTask, dbStatesTask);
+            var topologyRows = await QueryDagTopologyAsync(connection, cancellationToken);
+            var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
 
             return new ServerPollResult
             {
                 ServerName = serverName,
                 IsSuccess = true,
-                TopologyRows = topologyTask.Result,
-                DatabaseStates = dbStatesTask.Result
+                TopologyRows = topologyRows,
+                DatabaseStates = dbStates
             };
         }
         catch (Exception ex)
