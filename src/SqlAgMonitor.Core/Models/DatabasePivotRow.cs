@@ -14,6 +14,16 @@ public class DatabasePivotRow
     public string WorstSyncState { get; init; } = string.Empty;
     public bool AnySuspended { get; init; }
 
+    /// <summary>Health color hex for the database row dot, based on MaxLsnDiff.</summary>
+    public string HealthColorHex => HealthLevelExtensions.FromLsnDifference(MaxLsnDiff) switch
+    {
+        HealthLevel.InSync => "#4CAF50",
+        HealthLevel.SlightlyBehind => "#FFC107",
+        HealthLevel.ModeratelyBehind => "#FF9800",
+        HealthLevel.DangerZone => "#F44336",
+        _ => "#9E9E9E"
+    };
+
     public void SetReplicaValues(decimal[] lsns, string[] syncStates)
     {
         _replicaLsns = lsns;

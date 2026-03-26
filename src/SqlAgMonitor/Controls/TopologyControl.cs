@@ -417,38 +417,35 @@ public class TopologyControl : Control
             context.DrawText(modeText, new Point(node.Bounds.X + 10, node.Bounds.Y + 72));
         }
 
-        // Mini health dots for each database
+        // Single health dot showing the worst (most behind) database
         if (node.Replica != null && node.Replica.DatabaseStates.Count > 0)
         {
-            double dotX = node.Bounds.X + 10;
-            double dotY = node.Bounds.Y + NodeHeight - 16;
-            int maxDots = Math.Min(node.Replica.DatabaseStates.Count, 12);
-
-            for (int i = 0; i < maxDots; i++)
+            var worstLsnDiff = node.Replica.DatabaseStates.Max(d => d.LsnDifferenceFromPrimary);
+            bool anyDisconnected = node.Replica.ConnectedState == ConnectedState.Disconnected;
+            var worstHealth = HealthLevelExtensions.FromLsnDifference(worstLsnDiff, anyDisconnected);
+            var dotColor = worstHealth switch
             {
-                var dbState = node.Replica.DatabaseStates[i];
-                var dbHealthLevel = HealthLevelExtensions.FromLsnDifference(dbState.LsnDifferenceFromPrimary);
-                var dotColor = dbHealthLevel switch
-                {
-                    HealthLevel.InSync => GreenColor,
-                    HealthLevel.SlightlyBehind => YellowColor,
-                    HealthLevel.ModeratelyBehind => OrangeColor,
-                    HealthLevel.DangerZone => RedColor,
-                    _ => GrayColor
-                };
+                HealthLevel.InSync => GreenColor,
+                HealthLevel.SlightlyBehind => YellowColor,
+                HealthLevel.ModeratelyBehind => OrangeColor,
+                HealthLevel.DangerZone => RedColor,
+                _ => GrayColor
+            };
 
-                context.DrawEllipse(new SolidColorBrush(dotColor), null,
-                    new Point(dotX + i * 12, dotY), 3, 3);
-            }
+            var dotCenter = new Point(node.Bounds.X + 14, node.Bounds.Y + NodeHeight - 14);
+            context.DrawEllipse(new SolidColorBrush(dotColor), null, dotCenter, 5, 5);
 
-            if (node.Replica.DatabaseStates.Count > maxDots)
+            var label = worstHealth switch
             {
-                var moreText = CreateFormattedText(
-                    $"+{node.Replica.DatabaseStates.Count - maxDots}",
-                    8,
-                    new SolidColorBrush(Color.Parse("#888899")));
-                context.DrawText(moreText, new Point(dotX + maxDots * 12, dotY - 4));
-            }
+                HealthLevel.InSync => "IN SYNC",
+                HealthLevel.SlightlyBehind => "SLIGHTLY BEHIND",
+                HealthLevel.ModeratelyBehind => "BEHIND",
+                HealthLevel.DangerZone => "CRITICAL",
+                _ => ""
+            };
+            var labelBrush = new SolidColorBrush(dotColor);
+            var labelText = CreateFormattedText(label, 9, labelBrush, FontWeight.SemiBold);
+            context.DrawText(labelText, new Point(node.Bounds.X + 24, node.Bounds.Y + NodeHeight - 20));
         }
     }
 

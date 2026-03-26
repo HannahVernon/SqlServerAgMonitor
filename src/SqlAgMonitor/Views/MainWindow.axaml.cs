@@ -3,8 +3,14 @@ using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
+using Avalonia.Controls.Shapes;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.ReactiveUI;
 using Avalonia.VisualTree;
+using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 
@@ -175,11 +181,39 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
         dataGrid.Columns.Clear();
 
-        // Fixed: Database Name
-        dataGrid.Columns.Add(new DataGridTextColumn
+        // Fixed: Database Name with health dot
+        dataGrid.Columns.Add(new DataGridTemplateColumn
         {
             Header = "Database",
-            Binding = new Avalonia.Data.Binding("DatabaseName"),
+            CellTemplate = new FuncDataTemplate<DatabasePivotRow>((row, _) =>
+            {
+                var panel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    Spacing = 6,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 0)
+                };
+
+                var dot = new Ellipse
+                {
+                    Width = 8,
+                    Height = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                dot.Bind(Ellipse.FillProperty,
+                    new Binding("HealthColorHex")
+                    {
+                        Converter = HealthColorConverter.Instance
+                    });
+
+                var text = new TextBlock { VerticalAlignment = VerticalAlignment.Center };
+                text.Bind(TextBlock.TextProperty, new Binding("DatabaseName"));
+
+                panel.Children.Add(dot);
+                panel.Children.Add(text);
+                return panel;
+            }),
             Width = new DataGridLength(1, DataGridLengthUnitType.Star)
         });
 
@@ -189,7 +223,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             dataGrid.Columns.Add(new DataGridTextColumn
             {
                 Header = col.Header,
-                Binding = new Avalonia.Data.Binding($"[{col.Index}]"),
+                Binding = new Binding($"[{col.Index}]"),
                 Width = new DataGridLength(160)
             });
         }
@@ -198,22 +232,39 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Max LSN Diff",
-            Binding = new Avalonia.Data.Binding("MaxLsnDiff"),
+            Binding = new Binding("MaxLsnDiff"),
             Width = new DataGridLength(100)
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Sync State",
-            Binding = new Avalonia.Data.Binding("WorstSyncState"),
+            Binding = new Binding("WorstSyncState"),
             Width = new DataGridLength(120)
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Suspended",
-            Binding = new Avalonia.Data.Binding("AnySuspended"),
+            Binding = new Binding("AnySuspended"),
             Width = new DataGridLength(80)
         });
+    }
+
+    /// <summary>Converts a hex color string to an IBrush for the health dot.</summary>
+    private sealed class HealthColorConverter : Avalonia.Data.Converters.IValueConverter
+    {
+        public static readonly HealthColorConverter Instance = new();
+
+        public object? Convert(object? value, Type targetType, object? parameter,
+            System.Globalization.CultureInfo culture)
+        {
+            if (value is string hex && !string.IsNullOrEmpty(hex))
+                return new SolidColorBrush(Color.Parse(hex));
+            return new SolidColorBrush(Color.Parse("#9E9E9E"));
+        }
+
+        public object? ConvertBack(object? value, Type targetType, object? parameter,
+            System.Globalization.CultureInfo culture) => throw new NotSupportedException();
     }
 }
