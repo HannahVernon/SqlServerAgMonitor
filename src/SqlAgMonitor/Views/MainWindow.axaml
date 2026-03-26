@@ -19,8 +19,6 @@
         <!-- Top Menu Bar -->
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="_File">
-                <MenuItem Header="_Add AG/DAG..." Command="{Binding AddGroupCommand}" />
-                <Separator />
                 <MenuItem Header="_Settings..." Command="{Binding OpenSettingsCommand}" />
                 <Separator />
                 <MenuItem Header="E_xit" Command="{Binding ExitCommand}" />
@@ -31,12 +29,13 @@
                 <MenuItem Header="_High Contrast" Command="{Binding SetThemeCommand}" CommandParameter="highContrast" />
             </MenuItem>
             <MenuItem Header="_Monitoring">
+                <MenuItem Header="_Add AG/DAG..." Command="{Binding AddGroupCommand}" />
+                <MenuItem Header="_Remove Current AG/DAG..." Command="{Binding RemoveGroupCommand}" />
+                <Separator />
                 <MenuItem Header="_Pause All" Command="{Binding PauseAllCommand}" 
                           IsEnabled="{Binding IsNotAllPaused}" />
                 <MenuItem Header="_Resume All" Command="{Binding ResumeAllCommand}" 
                           IsEnabled="{Binding IsAllPaused}" />
-                <Separator />
-                <MenuItem Header="_Remove Current AG/DAG..." Command="{Binding RemoveGroupCommand}" />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_About" Command="{Binding AboutCommand}" />
@@ -67,7 +66,7 @@
                         IsVisible="{Binding !MonitorTabs.Count}">
                 <TextBlock Text="No Availability Groups Monitored" FontSize="24" FontWeight="Light"
                            HorizontalAlignment="Center" Opacity="0.5" />
-                <TextBlock Text="Click File → Add AG/DAG to get started, or use the button below."
+                <TextBlock Text="Click Monitoring → Add AG/DAG to get started, or use the button below."
                            HorizontalAlignment="Center" Opacity="0.4" FontSize="14" />
                 <Button Content="  ＋  Add AG / DAG  " Command="{Binding AddGroupCommand}"
                         HorizontalAlignment="Center" FontSize="16" Padding="20,10"
