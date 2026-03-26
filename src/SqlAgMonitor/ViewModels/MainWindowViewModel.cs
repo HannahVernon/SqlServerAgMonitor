@@ -217,33 +217,48 @@ public class MainWindowViewModel : ViewModelBase
         var addWindow = new AddGroupWindow { DataContext = vm };
         var result = await addWindow.ShowDialog<object?>(window);
 
-        if (result is true && vm.SelectedGroup is { } group)
+        if (result is true && vm.SelectedGroups is { Count: > 0 } groups)
         {
             var configService = App.Services.GetRequiredService<IConfigurationService>();
             var config = configService.Load();
 
-            var groupConfig = new MonitoredGroupConfig
+            foreach (var group in groups)
             {
-                Name = group.Name,
-                GroupType = group.GroupType.ToString(),
-                PollingIntervalSeconds = vm.PollingIntervalSeconds,
-                Connections = new List<ConnectionConfig>
-                {
-                    new ConnectionConfig
-                    {
-                        Server = vm.Server,
-                        AuthType = vm.IsSqlAuth ? "sql" : "windows",
-                        Username = vm.IsSqlAuth ? vm.Username : null,
-                        CredentialKey = vm.IsSqlAuth ? $"agmon:{vm.Server}:{vm.Username}" : null
-                    }
-                }
-            };
+                // Skip if already monitored
+                if (config.MonitoredGroups.Any(g =>
+                    string.Equals(g.Name, group.Name, StringComparison.OrdinalIgnoreCase)))
+                    continue;
 
-            config.MonitoredGroups.Add(groupConfig);
+                var groupConfig = new MonitoredGroupConfig
+                {
+                    Name = group.Name,
+                    GroupType = group.GroupType.ToString(),
+                    PollingIntervalSeconds = vm.PollingIntervalSeconds,
+                    Connections = new List<ConnectionConfig>
+                    {
+                        new ConnectionConfig
+                        {
+                            Server = vm.Server,
+                            AuthType = vm.IsSqlAuth ? "sql" : "windows",
+                            Username = vm.IsSqlAuth ? vm.Username : null,
+                            CredentialKey = vm.IsSqlAuth ? $"agmon:{vm.Server}:{vm.Username}" : null
+                        }
+                    }
+                };
+
+                config.MonitoredGroups.Add(groupConfig);
+            }
+
             configService.Save(config);
 
-            await StartMonitoringGroupAsync(group.Name, group.GroupType);
-            StatusText = $"Now monitoring {group.Name}";
+            foreach (var group in groups)
+            {
+                await StartMonitoringGroupAsync(group.Name, group.GroupType);
+            }
+
+            StatusText = groups.Count == 1
+                ? $"Now monitoring {groups[0].Name}"
+                : $"Now monitoring {groups.Count} group(s)";
         }
     }
 

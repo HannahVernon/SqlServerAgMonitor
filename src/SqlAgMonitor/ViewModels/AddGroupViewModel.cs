@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Threading;
@@ -28,9 +29,9 @@ public class AddGroupViewModel : ViewModelBase
     private string? _statusMessage;
     private bool _connectionTested;
     private bool _credentialStored;
-    private DiscoveredGroup? _selectedGroup;
     private int _pollingIntervalSeconds;
     private int _currentStep;
+    private bool _hasSelectedGroups;
 
     public List<string> AuthTypeOptions { get; } = new() { "Windows", "SQL Server" };
 
@@ -86,11 +87,18 @@ public class AddGroupViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _connectionTested, value);
     }
 
-    public DiscoveredGroup? SelectedGroup
+    public bool HasSelectedGroups
     {
-        get => _selectedGroup;
-        set => this.RaiseAndSetIfChanged(ref _selectedGroup, value);
+        get => _hasSelectedGroups;
+        set => this.RaiseAndSetIfChanged(ref _hasSelectedGroups, value);
     }
+
+    /// <summary>Returns all groups the user has checked for monitoring.</summary>
+    public IReadOnlyList<DiscoveredGroup> SelectedGroups =>
+        DiscoveredGroups.Where(g => g.IsSelected).ToList();
+
+    /// <summary>For backward compat — returns the first selected group or null.</summary>
+    public DiscoveredGroup? SelectedGroup => SelectedGroups.FirstOrDefault();
 
     public int PollingIntervalSeconds
     {
@@ -158,8 +166,8 @@ public class AddGroupViewModel : ViewModelBase
         var canDiscover = this.WhenAnyValue(x => x.ConnectionTested, x => x.IsDiscovering,
             (tested, discovering) => tested && !discovering);
 
-        var canFinish = this.WhenAnyValue(x => x.SelectedGroup)
-            .Select(group => group != null);
+        var canFinish = this.WhenAnyValue(x => x.HasSelectedGroups)
+            .Select(has => has);
 
         TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync, canTest);
         DiscoverCommand = ReactiveCommand.CreateFromTask(OnDiscoverAsync, canDiscover);
@@ -228,12 +236,15 @@ public class AddGroupViewModel : ViewModelBase
                 Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken);
 
             foreach (var group in groups)
+            {
+                group.IsSelected = true;
+                group.WhenAnyValue(g => g.IsSelected)
+                    .Subscribe(_ => HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected));
                 DiscoveredGroups.Add(group);
+            }
 
+            HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected);
             StatusMessage = $"Found {DiscoveredGroups.Count} group(s).";
-
-            if (DiscoveredGroups.Count == 1)
-                SelectedGroup = DiscoveredGroups[0];
         }
         catch (Exception ex)
         {

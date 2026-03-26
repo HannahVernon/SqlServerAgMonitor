@@ -72,18 +72,23 @@
                     <TextBlock Text="Step 2: Select AG or DAG" FontWeight="Bold" FontSize="18" />
                     <TextBlock Text="Select the Availability Group or Distributed AG to monitor." Opacity="0.7" />
 
-                    <ListBox ItemsSource="{Binding DiscoveredGroups}" SelectedItem="{Binding SelectedGroup}"
-                             MinHeight="200" x:CompileBindings="False">
-                        <ListBox.ItemTemplate>
+                    <ItemsControl ItemsSource="{Binding DiscoveredGroups}"
+                                  x:CompileBindings="False" Margin="0,4">
+                        <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Spacing="8" Margin="4">
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding GroupType}" Opacity="0.6" />
-                                    <TextBlock Text="{Binding LocalRole}" Opacity="0.6" />
-                                </StackPanel>
+                                <CheckBox IsChecked="{Binding IsSelected}" Margin="4,2">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" 
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding GroupType}" Opacity="0.6"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding LocalRole}" Opacity="0.6"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </CheckBox>
                             </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
                 </StackPanel>
 
                 <!-- Step 2: Configure -->
