@@ -101,7 +101,8 @@ public class DagMonitorService : IAgMonitorService
             [hdrs].[redo_rate],
             [hdrs].[is_suspended],
             [hdrs].[suspend_reason_desc],
-            [ar1].[availability_mode_desc]
+            [ar1].[availability_mode_desc],
+            [hdrs].[secondary_lag_seconds]
         FROM [sys].[availability_groups] [dag]
             INNER JOIN [sys].[availability_replicas] [ar]
                 ON [dag].[group_id] = [ar].[group_id]
@@ -360,7 +361,8 @@ public class DagMonitorService : IAgMonitorService
                 RedoRateKbPerSec = reader.IsDBNull(10) ? 0 : Convert.ToInt64(reader.GetValue(10)),
                 IsSuspended = !reader.IsDBNull(11) && reader.GetBoolean(11),
                 SuspendReason = reader.IsDBNull(12) ? null : reader.GetString(12),
-                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(13) ? null : reader.GetString(13))
+                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(13) ? null : reader.GetString(13)),
+                SecondaryLagSeconds = reader.IsDBNull(14) ? 0 : Convert.ToInt64(reader.GetValue(14))
             });
         }
 
@@ -461,7 +463,7 @@ public class DagMonitorService : IAgMonitorService
         var agName = replicas.FirstOrDefault()?.AgName ?? "Unknown";
         var agInfo = new AvailabilityGroupInfo { AgName = agName };
 
-        // Compute LSN differences from primary within this AG
+        // Compute log block differences from primary within this AG
         var primaryReplica = replicas.FirstOrDefault(r => r.Role == ReplicaRole.Primary);
         if (primaryReplica != null)
         {
@@ -474,7 +476,7 @@ public class DagMonitorService : IAgMonitorService
             {
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
-                    dbState.LsnDifferenceFromPrimary = Math.Abs(primaryLsn - dbState.LastHardenedLsn);
+                    dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }
@@ -497,7 +499,8 @@ public class DagMonitorService : IAgMonitorService
     }
 
     /// <summary>
-    /// Compares last_hardened_lsn across DAG members for the same database.
+    /// Compares last_hardened_lsn across DAG members for the same database,
+    /// using slot-stripped log block position differences.
     /// Uses each member's primary replica as the source of that member's LSN.
     /// </summary>
     private void ComputeCrossMemberLsnDifferences(DistributedAgInfo dagInfo)
@@ -529,7 +532,7 @@ public class DagMonitorService : IAgMonitorService
             {
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
-                    dbState.LsnDifferenceFromPrimary = Math.Abs(primaryLsn - dbState.LastHardenedLsn);
+                    dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }

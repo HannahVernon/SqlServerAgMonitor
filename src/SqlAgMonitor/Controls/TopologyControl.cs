@@ -195,8 +195,8 @@ public class TopologyControl : Control
                 };
                 _nodeLayouts.Add(secLayout);
 
-                decimal maxLsnDiff = secondaries[i].DatabaseStates.Count > 0
-                    ? secondaries[i].DatabaseStates.Max(d => d.LsnDifferenceFromPrimary)
+                decimal maxLogBlockDiff = secondaries[i].DatabaseStates.Count > 0
+                    ? secondaries[i].DatabaseStates.Max(d => d.LogBlockDifference)
                     : 0;
                 bool isDisconnected = secondaries[i].ConnectedState == ConnectedState.Disconnected;
 
@@ -205,7 +205,7 @@ public class TopologyControl : Control
                     From = new Point(primaryLayout.Bounds.Right, primaryLayout.Bounds.Center.Y),
                     To = new Point(secLayout.Bounds.Left, secLayout.Bounds.Center.Y),
                     IsSynchronous = secondaries[i].AvailabilityMode == AvailabilityMode.SynchronousCommit,
-                    HealthLevel = HealthLevelExtensions.FromLsnDifference(maxLsnDiff, isDisconnected)
+                    HealthLevel = HealthLevelExtensions.FromLogBlockDifference(maxLogBlockDiff, isDisconnected)
                 });
             }
         }
@@ -289,13 +289,13 @@ public class TopologyControl : Control
 
                 if (forwarderNode != null && receiverNode != null)
                 {
-                    // Compute max LSN difference across the receiver member's databases
-                    decimal maxLsnDiff = 0;
+                    // Compute max log block difference across the receiver member's databases
+                    decimal maxLogBlockDiff = 0;
                     foreach (var replica in receiver.LocalAgInfo.Replicas)
                     {
                         if (replica.DatabaseStates.Count > 0)
-                            maxLsnDiff = Math.Max(maxLsnDiff,
-                                replica.DatabaseStates.Max(d => d.LsnDifferenceFromPrimary));
+                            maxLogBlockDiff = Math.Max(maxLogBlockDiff,
+                                replica.DatabaseStates.Max(d => d.LogBlockDifference));
                     }
 
                     _arrowLayouts.Add(new ArrowLayout
@@ -303,7 +303,7 @@ public class TopologyControl : Control
                         From = new Point(forwarderNode.Bounds.Right + 10, forwarderNode.Bounds.Center.Y),
                         To = new Point(receiverNode.Bounds.Left - 10, receiverNode.Bounds.Center.Y),
                         IsSynchronous = forwarder.AvailabilityMode == AvailabilityMode.SynchronousCommit,
-                        HealthLevel = HealthLevelExtensions.FromLsnDifference(maxLsnDiff),
+                        HealthLevel = HealthLevelExtensions.FromLogBlockDifference(maxLogBlockDiff),
                         IsDagLink = true
                     });
                 }
@@ -406,9 +406,9 @@ public class TopologyControl : Control
         // Single health dot showing the worst (most behind) database
         if (node.Replica != null && node.Replica.DatabaseStates.Count > 0)
         {
-            var worstLsnDiff = node.Replica.DatabaseStates.Max(d => d.LsnDifferenceFromPrimary);
+            var worstLogBlockDiff = node.Replica.DatabaseStates.Max(d => d.LogBlockDifference);
             bool anyDisconnected = node.Replica.ConnectedState == ConnectedState.Disconnected;
-            var worstHealth = HealthLevelExtensions.FromLsnDifference(worstLsnDiff, anyDisconnected);
+            var worstHealth = HealthLevelExtensions.FromLogBlockDifference(worstLogBlockDiff, anyDisconnected);
             var dotColor = worstHealth switch
             {
                 HealthLevel.InSync => GreenColor,

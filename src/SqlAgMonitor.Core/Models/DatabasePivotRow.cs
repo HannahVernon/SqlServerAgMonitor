@@ -3,19 +3,26 @@ namespace SqlAgMonitor.Core.Models;
 /// <summary>
 /// A pivoted row representing one database, with Last Hardened LSN values
 /// per replica stored in an indexer for dynamic column binding.
+/// LSN values are formatted as VLF:Block hex notation (slot stripped).
 /// </summary>
 public class DatabasePivotRow
 {
-    private decimal[] _replicaLsns = [];
+    private string[] _replicaLsnDisplay = [];
     private string[] _replicaSyncStates = [];
 
     public string DatabaseName { get; init; } = string.Empty;
-    public decimal MaxLsnDiff { get; init; }
+
+    /// <summary>Maximum log block position difference from primary across all secondaries.</summary>
+    public decimal MaxLogBlockDiff { get; init; }
+
+    /// <summary>Worst secondary lag in seconds across all secondaries for this database.</summary>
+    public long SecondaryLagSeconds { get; init; }
+
     public string WorstSyncState { get; init; } = string.Empty;
     public bool AnySuspended { get; init; }
 
-    /// <summary>Health color hex for the database row dot, based on MaxLsnDiff.</summary>
-    public string HealthColorHex => HealthLevelExtensions.FromLsnDifference(MaxLsnDiff) switch
+    /// <summary>Health color hex for the database row dot, based on MaxLogBlockDiff.</summary>
+    public string HealthColorHex => HealthLevelExtensions.FromLogBlockDifference(MaxLogBlockDiff) switch
     {
         HealthLevel.InSync => "#4CAF50",
         HealthLevel.SlightlyBehind => "#FFC107",
@@ -24,18 +31,18 @@ public class DatabasePivotRow
         _ => "#9E9E9E"
     };
 
-    public void SetReplicaValues(decimal[] lsns, string[] syncStates)
+    public void SetReplicaValues(string[] lsnDisplayValues, string[] syncStates)
     {
-        _replicaLsns = lsns;
+        _replicaLsnDisplay = lsnDisplayValues;
         _replicaSyncStates = syncStates;
     }
 
     /// <summary>
-    /// Integer indexer for DataGrid column binding (e.g. Binding path "[0]", "[1]").
-    /// Returns the Last Hardened LSN for the replica at the given position.
+    /// String indexer for DataGrid column binding (e.g. Binding path "[0]", "[1]").
+    /// Returns the Last Hardened LSN formatted as VLF:Block hex for the replica at the given position.
     /// </summary>
-    public decimal this[int index] =>
-        index >= 0 && index < _replicaLsns.Length ? _replicaLsns[index] : 0;
+    public string this[int index] =>
+        index >= 0 && index < _replicaLsnDisplay.Length ? _replicaLsnDisplay[index] : "00000000:00000000";
 
     /// <summary>
     /// Gets the sync state for the replica at the given position.

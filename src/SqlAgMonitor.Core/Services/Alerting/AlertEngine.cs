@@ -294,16 +294,16 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
             .ToDictionary(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, DatabaseReplicaState>(StringComparer.OrdinalIgnoreCase);
 
-        var syncBehindThreshold = GetThreshold(alertSettings, AlertType.SyncFellBehind, defaultValue: 100);
+        var syncBehindThreshold = GetThreshold(alertSettings, AlertType.SyncFellBehind, defaultValue: 1_000_000);
 
         foreach (var db in currentReplica.DatabaseStates)
         {
             previousDbByName.TryGetValue(db.DatabaseName, out var prevDb);
 
-            // SyncFellBehind: LSN difference exceeds threshold
-            if (db.LsnDifferenceFromPrimary > syncBehindThreshold)
+            // SyncFellBehind: log block difference exceeds threshold
+            if (db.LogBlockDifference > syncBehindThreshold)
             {
-                var wasBelowThreshold = prevDb == null || prevDb.LsnDifferenceFromPrimary <= syncBehindThreshold;
+                var wasBelowThreshold = prevDb == null || prevDb.LogBlockDifference <= syncBehindThreshold;
                 if (wasBelowThreshold)
                 {
                     alerts.Add(CreateAlert(
@@ -311,7 +311,7 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
                         groupName,
                         currentReplica.ReplicaServerName,
                         db.DatabaseName,
-                        $"Database '{db.DatabaseName}' on replica '{currentReplica.ReplicaServerName}' fell behind (LSN diff: {db.LsnDifferenceFromPrimary}, threshold: {syncBehindThreshold})",
+                        $"Database '{db.DatabaseName}' on replica '{currentReplica.ReplicaServerName}' fell behind (log block diff: {db.LogBlockDifference:N0}, threshold: {syncBehindThreshold:N0})",
                         AlertSeverity.Warning));
                 }
             }

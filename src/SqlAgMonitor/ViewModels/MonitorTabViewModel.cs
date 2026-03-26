@@ -213,7 +213,7 @@ public class MonitorTabViewModel : ViewModelBase
 
         foreach (var dbGroup in dbGroups)
         {
-            var lsns = new decimal[replicaCount];
+            var lsnDisplay = new string[replicaCount];
             var syncStates = new string[replicaCount];
 
             for (int i = 0; i < replicaCount; i++)
@@ -222,13 +222,16 @@ public class MonitorTabViewModel : ViewModelBase
                 var match = dbGroup.FirstOrDefault(d =>
                     string.Equals(d.ReplicaServerName, colInfo.ReplicaName, StringComparison.OrdinalIgnoreCase));
 
-                lsns[i] = match?.LastHardenedLsn ?? 0;
+                lsnDisplay[i] = match != null ? LsnHelper.FormatAsVlfBlock(match.LastHardenedLsn) : "00000000:00000000";
                 syncStates[i] = match?.SynchronizationState.ToString() ?? "";
             }
 
             var allStates = dbGroup.ToList();
             var maxDiff = allStates.Count > 0
-                ? allStates.Max(d => d.LsnDifferenceFromPrimary)
+                ? allStates.Max(d => d.LogBlockDifference)
+                : 0;
+            var maxLagSeconds = allStates.Count > 0
+                ? allStates.Max(d => d.SecondaryLagSeconds)
                 : 0;
             var worstSync = allStates
                 .OrderByDescending(d => d.SynchronizationState)
@@ -238,11 +241,12 @@ public class MonitorTabViewModel : ViewModelBase
             var row = new DatabasePivotRow
             {
                 DatabaseName = dbGroup.Key,
-                MaxLsnDiff = maxDiff,
+                MaxLogBlockDiff = maxDiff,
+                SecondaryLagSeconds = maxLagSeconds,
                 WorstSyncState = worstSync,
                 AnySuspended = anySuspended
             };
-            row.SetReplicaValues(lsns, syncStates);
+            row.SetReplicaValues(lsnDisplay, syncStates);
             PivotRows.Add(row);
         }
     }

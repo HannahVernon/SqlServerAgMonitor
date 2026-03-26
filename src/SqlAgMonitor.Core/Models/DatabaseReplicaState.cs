@@ -18,7 +18,8 @@ public class DatabaseReplicaState : ReactiveObject
     private bool _isSuspended;
     private string? _suspendReason;
     private AvailabilityMode _availabilityMode;
-    private decimal _lsnDifferenceFromPrimary;
+    private decimal _logBlockDifference;
+    private long _secondaryLagSeconds;
 
     public string DatabaseName { get => _databaseName; set => this.RaiseAndSetIfChanged(ref _databaseName, value); }
     public string ReplicaServerName { get => _replicaServerName; set => this.RaiseAndSetIfChanged(ref _replicaServerName, value); }
@@ -34,5 +35,16 @@ public class DatabaseReplicaState : ReactiveObject
     public bool IsSuspended { get => _isSuspended; set => this.RaiseAndSetIfChanged(ref _isSuspended, value); }
     public string? SuspendReason { get => _suspendReason; set => this.RaiseAndSetIfChanged(ref _suspendReason, value); }
     public AvailabilityMode AvailabilityMode { get => _availabilityMode; set => this.RaiseAndSetIfChanged(ref _availabilityMode, value); }
-    public decimal LsnDifferenceFromPrimary { get => _lsnDifferenceFromPrimary; set => this.RaiseAndSetIfChanged(ref _lsnDifferenceFromPrimary, value); }
+
+    /// <summary>
+    /// Log block position difference from the primary replica, computed by stripping
+    /// the slot component from the numeric(25,0) LSN before subtracting.
+    /// </summary>
+    public decimal LogBlockDifference { get => _logBlockDifference; set => this.RaiseAndSetIfChanged(ref _logBlockDifference, value); }
+
+    /// <summary>
+    /// Synchronization delay in seconds (from sys.dm_hadr_database_replica_states.secondary_lag_seconds).
+    /// Only populated on the primary replica for secondary database rows. SQL Server 2016+.
+    /// </summary>
+    public long SecondaryLagSeconds { get => _secondaryLagSeconds; set => this.RaiseAndSetIfChanged(ref _secondaryLagSeconds, value); }
 }

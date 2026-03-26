@@ -57,7 +57,8 @@ public class AgMonitorService : IAgMonitorService
             hdrs.[redo_rate],
             hdrs.[is_suspended],
             hdrs.[suspend_reason_desc],
-            ar.[availability_mode_desc]
+            ar.[availability_mode_desc],
+            hdrs.[secondary_lag_seconds]
         FROM sys.dm_hadr_database_replica_states hdrs
             INNER JOIN sys.availability_replicas ar
                 ON hdrs.[replica_id] = ar.[replica_id]
@@ -259,7 +260,8 @@ public class AgMonitorService : IAgMonitorService
                 RedoRateKbPerSec = reader.IsDBNull(10) ? 0 : Convert.ToInt64(reader.GetValue(10)),
                 IsSuspended = !reader.IsDBNull(11) && reader.GetBoolean(11),
                 SuspendReason = reader.IsDBNull(12) ? null : reader.GetString(12),
-                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(13) ? null : reader.GetString(13))
+                AvailabilityMode = SqlParsingHelpers.ParseAvailabilityMode(reader.IsDBNull(13) ? null : reader.GetString(13)),
+                SecondaryLagSeconds = reader.IsDBNull(14) ? 0 : Convert.ToInt64(reader.GetValue(14))
             });
         }
 
@@ -279,7 +281,7 @@ public class AgMonitorService : IAgMonitorService
             .Where(d => string.Equals(d.AgName, groupName, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        // Compute LSN differences from primary
+        // Compute log block differences from primary (slot-stripped)
         var primaryStates = agDbStates
             .Where(d => agReplicas.Any(r => r.ReplicaServerName == d.ReplicaServerName && r.Role == ReplicaRole.Primary))
             .GroupBy(d => d.DatabaseName)
@@ -289,7 +291,7 @@ public class AgMonitorService : IAgMonitorService
         {
             if (primaryStates.TryGetValue(dbState.DatabaseName, out var primaryLsn))
             {
-                dbState.LsnDifferenceFromPrimary = Math.Abs(primaryLsn - dbState.LastHardenedLsn);
+                dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
             }
         }
 

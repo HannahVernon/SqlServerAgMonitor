@@ -231,9 +231,16 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         // Fixed summary columns
         dataGrid.Columns.Add(new DataGridTextColumn
         {
-            Header = "Max LSN Diff",
-            Binding = new Binding("MaxLsnDiff"),
-            Width = new DataGridLength(100)
+            Header = "Log Block Diff",
+            Binding = new Binding("MaxLogBlockDiff") { StringFormat = "{0:N0}" },
+            Width = new DataGridLength(120)
+        });
+
+        dataGrid.Columns.Add(new DataGridTextColumn
+        {
+            Header = "Lag (sec)",
+            Binding = new Binding("SecondaryLagSeconds"),
+            Width = new DataGridLength(80)
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn

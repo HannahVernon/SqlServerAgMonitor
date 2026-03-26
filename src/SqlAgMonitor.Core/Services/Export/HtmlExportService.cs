@@ -121,7 +121,7 @@ public class HtmlExportService : IHtmlExportService
                     foreach (var d in r.DatabaseStates)
                     {
                         sb.AppendLine($"<tr><td>{d.DatabaseName}</td><td>{d.ReplicaServerName}</td><td>{d.SynchronizationState}</td>");
-                        sb.AppendLine($"<td>{d.LastHardenedLsn}</td><td>{d.LsnDifferenceFromPrimary}</td>");
+                        sb.AppendLine($"<td>{LsnHelper.FormatAsVlfBlock(d.LastHardenedLsn)}</td><td>{d.LogBlockDifference:N0}</td><td>{d.SecondaryLagSeconds}s</td>");
                         sb.AppendLine($"<td>{d.LogSendQueueSizeKb} KB</td><td>{d.RedoQueueSizeKb} KB</td></tr>");
                     }
                 }
