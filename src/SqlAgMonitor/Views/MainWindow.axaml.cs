@@ -92,7 +92,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     }
 
     /// <summary>
-    /// Restores saved column widths and display indices for the given tab's DataGrid.
+    /// Restores saved column widths (as proportional Star values) and display indices
+    /// for the given tab's DataGrid.
     /// </summary>
     public void RestoreDataGridLayout(DataGrid dataGrid)
     {
@@ -105,20 +106,36 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         if (!_layoutState.TabLayouts.TryGetValue(tabKey, out var tabLayout))
             return;
 
+        // Restore column display order
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
             if (header == null) continue;
 
-            if (tabLayout.ColumnWidths.TryGetValue(header, out var width) && width > 10)
-            {
-                col.Width = new DataGridLength(width);
-            }
-
             if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
                 && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
             {
                 col.DisplayIndex = displayIndex;
+            }
+        }
+
+        // Restore widths as proportional Star values so columns always fit on screen.
+        // Saved values are pixel widths — convert to Star weights relative to the
+        // narrowest saved column (which becomes 1*).
+        var matchedWidths = new System.Collections.Generic.List<(DataGridColumn col, double saved)>();
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
+                matchedWidths.Add((col, w));
+        }
+
+        if (matchedWidths.Count > 0)
+        {
+            var minWidth = matchedWidths.Min(x => x.saved);
+            foreach (var (col, saved) in matchedWidths)
+            {
+                col.Width = new DataGridLength(saved / minWidth, DataGridLengthUnitType.Star);
             }
         }
     }
@@ -282,7 +299,11 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
         dataGrid.Columns.Clear();
 
-        // Fixed: Database Name with health dot
+        // All columns use Star sizing so they share available width proportionally
+        // and always fit on screen. MinWidth prevents columns from shrinking
+        // below readability.
+
+        // Database Name with health dot
         dataGrid.Columns.Add(new DataGridTemplateColumn
         {
             Header = "Database",
@@ -315,7 +336,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                 panel.Children.Add(text);
                 return panel;
             }),
-            Width = new DataGridLength(1, DataGridLengthUnitType.Star)
+            Width = new DataGridLength(1.5, DataGridLengthUnitType.Star),
+            MinWidth = 120
         });
 
         // Dynamic: one LSN column per replica (primary first)
@@ -325,23 +347,26 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             {
                 Header = col.Header,
                 Binding = new Binding($"[{col.Index}]"),
-                Width = new DataGridLength(160)
+                Width = new DataGridLength(1.3, DataGridLengthUnitType.Star),
+                MinWidth = 110
             });
         }
 
-        // Fixed summary columns
+        // Summary columns
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Log Block Diff",
             Binding = new Binding("MaxLogBlockDiff") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(120)
+            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
+            MinWidth = 80
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Lag (sec)",
             Binding = new Binding("SecondaryLagSeconds"),
-            Width = new DataGridLength(80)
+            Width = new DataGridLength(0.6, DataGridLengthUnitType.Star),
+            MinWidth = 55
         });
 
         // Color-coded sync state
@@ -361,43 +386,48 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     new Binding("SyncStateColorHex") { Converter = HealthColorConverter.Instance });
                 return text;
             }),
-            Width = new DataGridLength(130)
+            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
+            MinWidth = 80
         });
 
-        // Suspend reason instead of boolean
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Suspended",
             Binding = new Binding("SuspendReasonDisplay"),
-            Width = new DataGridLength(110)
+            Width = new DataGridLength(0.8, DataGridLengthUnitType.Star),
+            MinWidth = 65
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Queue (KB)",
             Binding = new Binding("SendQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(110)
+            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
+            MinWidth = 70
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Queue (KB)",
             Binding = new Binding("RedoQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(110)
+            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
+            MinWidth = 70
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Rate (KB/s)",
             Binding = new Binding("SendRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(110)
+            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
+            MinWidth = 70
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Rate (KB/s)",
             Binding = new Binding("RedoRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(110)
+            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
+            MinWidth = 70
         });
     }
 
