@@ -70,9 +70,25 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         // Save outgoing tab's column state
         SaveCurrentTabColumnState();
 
-        // Restore incoming tab's column state (columns are rebuilt in WireUpDataGrid,
-        // but we also need to apply saved widths/order after that rebuild completes)
         _lastActiveTabTitle = newTab?.TabTitle;
+
+        // Rebuild columns for the incoming tab after the visual tree updates.
+        // Avalonia's TabControl with ContentTemplate may recreate the DataGrid
+        // (orphaning any DataContextChanged handler on the old instance) or may
+        // recycle it but not fire DataContextChanged reliably. Post to the
+        // dispatcher so we run after the template is applied and DataContext
+        // has propagated.
+        if (newTab != null)
+        {
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var dg = this.GetVisualDescendants()
+                    .OfType<DataGrid>()
+                    .FirstOrDefault();
+                if (dg != null)
+                    WireUpDataGrid(dg);
+            }, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
     }
 
     /// <summary>
