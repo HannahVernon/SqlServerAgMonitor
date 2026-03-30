@@ -242,7 +242,12 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         dbs.IsSuspended ? "true" : "false"));
                 }
 
-                if (rows.Count == 0) return;
+                if (rows.Count == 0)
+                {
+                    _logger.LogDebug("No replica/database pairs found in snapshot for group {Group} (AgInfo={HasAg}, DagInfo={HasDag}).",
+                        snapshot.Name, snapshot.AgInfo != null, snapshot.DagInfo != null);
+                    return;
+                }
 
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = "INSERT INTO snapshots VALUES " + string.Join(",\n", rows);

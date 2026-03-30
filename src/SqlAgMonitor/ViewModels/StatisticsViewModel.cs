@@ -33,6 +33,7 @@ public class StatisticsViewModel : ViewModelBase
     private string _statusText = "Select a time range to load data.";
     private bool _isCustomRange;
     private SnapshotTier _activeTier;
+    private bool _initializing;
 
     public static string[] TimeRangeOptions { get; } =
         ["24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
@@ -44,7 +45,7 @@ public class StatisticsViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _selectedTimeRange, value);
             IsCustomRange = value == "Custom";
-            if (!IsCustomRange)
+            if (!IsCustomRange && !_initializing)
                 _ = LoadDataAsync();
         }
     }
@@ -73,7 +74,7 @@ public class StatisticsViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedGroup, value);
-            _ = LoadDataAsync();
+            if (!_initializing) _ = LoadDataAsync();
         }
     }
 
@@ -83,7 +84,7 @@ public class StatisticsViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedReplica, value);
-            _ = LoadDataAsync();
+            if (!_initializing) _ = LoadDataAsync();
         }
     }
 
@@ -93,7 +94,7 @@ public class StatisticsViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedDatabase, value);
-            _ = LoadDataAsync();
+            if (!_initializing) _ = LoadDataAsync();
         }
     }
 
@@ -178,28 +179,42 @@ public class StatisticsViewModel : ViewModelBase
     public async Task InitializeAsync()
     {
         var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null) return;
+        if (svc == null)
+        {
+            StatusText = "History service unavailable.";
+            return;
+        }
 
-        var filters = await svc.GetSnapshotFiltersAsync();
+        _initializing = true;
+        try
+        {
+            var filters = await svc.GetSnapshotFiltersAsync();
 
-        GroupNames.Clear();
-        GroupNames.Add("(All)");
-        foreach (var g in filters.GroupNames) GroupNames.Add(g);
+            GroupNames.Clear();
+            GroupNames.Add("(All)");
+            foreach (var g in filters.GroupNames) GroupNames.Add(g);
 
-        ReplicaNames.Clear();
-        ReplicaNames.Add("(All)");
-        foreach (var r in filters.ReplicaNames) ReplicaNames.Add(r);
+            ReplicaNames.Clear();
+            ReplicaNames.Add("(All)");
+            foreach (var r in filters.ReplicaNames) ReplicaNames.Add(r);
 
-        DatabaseNames.Clear();
-        DatabaseNames.Add("(All)");
-        foreach (var d in filters.DatabaseNames) DatabaseNames.Add(d);
+            DatabaseNames.Clear();
+            DatabaseNames.Add("(All)");
+            foreach (var d in filters.DatabaseNames) DatabaseNames.Add(d);
 
-        _selectedGroup = "(All)";
-        _selectedReplica = "(All)";
-        _selectedDatabase = "(All)";
-        this.RaisePropertyChanged(nameof(SelectedGroup));
-        this.RaisePropertyChanged(nameof(SelectedReplica));
-        this.RaisePropertyChanged(nameof(SelectedDatabase));
+            _selectedGroup = "(All)";
+            _selectedReplica = "(All)";
+            _selectedDatabase = "(All)";
+            this.RaisePropertyChanged(nameof(SelectedGroup));
+            this.RaisePropertyChanged(nameof(SelectedReplica));
+            this.RaisePropertyChanged(nameof(SelectedDatabase));
+        }
+        finally
+        {
+            _initializing = false;
+        }
+
+        await LoadDataAsync();
     }
 
     private (DateTimeOffset since, DateTimeOffset until) GetTimeRange()
