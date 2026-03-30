@@ -24,7 +24,6 @@ using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Core.Services.Notifications;
-using SqlAgMonitor.Services;
 using SqlAgMonitor.Views;
 
 namespace SqlAgMonitor.ViewModels;
@@ -91,7 +90,6 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> RemoveGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
     public ReactiveCommand<Unit, Unit> ExitCommand { get; }
-    public ReactiveCommand<string, Unit> SetThemeCommand { get; }
     public ReactiveCommand<Unit, Unit> PauseAllCommand { get; }
     public ReactiveCommand<Unit, Unit> ResumeAllCommand { get; }
     public ReactiveCommand<Unit, Unit> AboutCommand { get; }
@@ -118,7 +116,6 @@ public class MainWindowViewModel : ViewModelBase
         RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
         OpenSettingsCommand = ReactiveCommand.Create(OnOpenSettings);
         ExitCommand = ReactiveCommand.Create(OnExit);
-        SetThemeCommand = ReactiveCommand.Create<string>(OnSetTheme);
         PauseAllCommand = ReactiveCommand.Create(OnPauseAll);
         ResumeAllCommand = ReactiveCommand.Create(OnResumeAll);
         AboutCommand = ReactiveCommand.Create(OnAbout);
@@ -505,19 +502,6 @@ public class MainWindowViewModel : ViewModelBase
         {
             Program.WriteLog("ERROR", $"Failed to open log directory: {ex.Message}");
         }
-    }
-
-    private void OnSetTheme(string theme)
-    {
-        var themeService = new ThemeService();
-        themeService.SetTheme(theme);
-
-        var configService = App.Services.GetRequiredService<IConfigurationService>();
-        var config = configService.Load();
-        config.Theme = theme;
-        configService.Save(config);
-
-        StatusText = $"Theme changed to {theme}";
     }
 
     private void OnPauseAll()
