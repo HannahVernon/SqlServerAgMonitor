@@ -92,4 +92,15 @@ public class HistorySettings
     public int? MaxRetentionDays { get; set; } = 90;
     public int? MaxRecords { get; set; }
     public bool AutoPruneEnabled { get; set; } = true;
+    public SnapshotRetentionSettings SnapshotRetention { get; set; } = new();
+}
+
+public class SnapshotRetentionSettings
+{
+    /// <summary>Hours to keep raw per-poll snapshots before summarizing to hourly. Default: 48.</summary>
+    public int RawRetentionHours { get; set; } = 48;
+    /// <summary>Days to keep hourly summaries before summarizing to daily. Default: 90.</summary>
+    public int HourlyRetentionDays { get; set; } = 90;
+    /// <summary>Days to keep daily summaries. Default: 730 (2 years).</summary>
+    public int DailyRetentionDays { get; set; } = 730;
 }

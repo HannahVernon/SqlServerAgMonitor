@@ -142,6 +142,12 @@ public class MainWindowViewModel : ViewModelBase
             .Subscribe();
         _subscriptions.Add(pruneSub);
 
+        // Summarize snapshots after 5 minutes, then every hour
+        var summarizeSub = Observable.Timer(TimeSpan.FromMinutes(5), TimeSpan.FromHours(1))
+            .SelectMany(_ => Observable.FromAsync(SummarizeSnapshotsAsync))
+            .Subscribe();
+        _subscriptions.Add(summarizeSub);
+
         SubscribeToSnapshots();
         LoadAndStartMonitoredGroups();
     }
@@ -255,6 +261,10 @@ public class MainWindowViewModel : ViewModelBase
             alertEngine.EvaluateSnapshot(snapshot, previous);
             _previousSnapshots[snapshot.Name] = snapshot;
         }
+
+        // Record snapshot statistics to DuckDB
+        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
+        _ = historyService?.RecordSnapshotAsync(snapshot);
     }
 
     private MonitorTabViewModel? FindTab(string name)
@@ -639,6 +649,28 @@ public class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Failed to prune old events.");
+        }
+    }
+
+    private async Task SummarizeSnapshotsAsync(CancellationToken cancellationToken = default)
+    {
+        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
+        var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
+        if (historyService == null || configService == null) return;
+
+        try
+        {
+            var config = configService.Load();
+            var retention = config.History.SnapshotRetention;
+            await historyService.SummarizeSnapshotsAsync(
+                retention.RawRetentionHours,
+                retention.HourlyRetentionDays,
+                retention.DailyRetentionDays,
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to summarize snapshots.");
         }
     }
 }

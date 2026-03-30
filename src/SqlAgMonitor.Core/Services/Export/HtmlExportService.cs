@@ -40,6 +40,30 @@ public class HtmlExportService : IHtmlExportService
 
         var exportPath = config.Export.ExportPath;
         var interval = TimeSpan.FromMinutes(config.Export.ScheduleIntervalMinutes);
+
+        // Check if export directory exists and contains any HTML files
+        TimeSpan initialDelay;
+        bool hasExistingReports = false;
+
+        try
+        {
+            if (Directory.Exists(exportPath))
+            {
+                var htmlFiles = Directory.GetFiles(exportPath, "*.html");
+                if (htmlFiles.Length > 0)
+                {
+                    hasExistingReports = true;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to check for existing HTML reports in {Path}.", exportPath);
+        }
+
+        // If no existing reports found, start immediately after a short delay to allow first snapshot collection
+        initialDelay = hasExistingReports ? interval : TimeSpan.FromSeconds(30);
+
         _exportTimer = new Timer(async _ =>
         {
             try
@@ -54,10 +78,18 @@ public class HtmlExportService : IHtmlExportService
             {
                 _logger.LogError(ex, "Scheduled export failed.");
             }
-        }, null, interval, interval);
+        }, null, initialDelay, interval);
 
-        _logger.LogInformation("Scheduled HTML export started (every {Minutes}m to {Path}).",
-            config.Export.ScheduleIntervalMinutes, config.Export.ExportPath);
+        if (hasExistingReports)
+        {
+            _logger.LogInformation("Scheduled HTML export started (every {Minutes}m to {Path}). Existing reports found, using normal interval.",
+                config.Export.ScheduleIntervalMinutes, config.Export.ExportPath);
+        }
+        else
+        {
+            _logger.LogInformation("Scheduled HTML export started (every {Minutes}m to {Path}). No existing reports found, first export will run in 30s.",
+                config.Export.ScheduleIntervalMinutes, config.Export.ExportPath);
+        }
         return Task.CompletedTask;
     }
 

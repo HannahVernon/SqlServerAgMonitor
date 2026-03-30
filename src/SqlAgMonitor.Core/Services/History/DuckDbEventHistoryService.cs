@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using DuckDB.NET.Data;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core.Models;
@@ -50,7 +52,6 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
                 using var cmd = _connection.CreateCommand();
                 cmd.CommandText = @"
-                    CREATE SEQUENCE IF NOT EXISTS error_log_seq START 1;
                     CREATE SEQUENCE IF NOT EXISTS event_seq START 1;
 
                     CREATE TABLE IF NOT EXISTS events (
@@ -66,13 +67,89 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         syslog_sent BOOLEAN DEFAULT FALSE
                     );
 
-                    CREATE TABLE IF NOT EXISTS error_log (
-                        id BIGINT DEFAULT nextval('error_log_seq'),
-                        timestamp TIMESTAMPTZ DEFAULT current_timestamp,
-                        error_type VARCHAR NOT NULL,
-                        message VARCHAR NOT NULL,
-                        stack_trace VARCHAR,
-                        context VARCHAR
+                    CREATE TABLE IF NOT EXISTS snapshots (
+                        timestamp TIMESTAMPTZ NOT NULL,
+                        group_name VARCHAR NOT NULL,
+                        group_type VARCHAR NOT NULL,
+                        replica_name VARCHAR NOT NULL,
+                        database_name VARCHAR NOT NULL,
+                        role VARCHAR NOT NULL,
+                        sync_state VARCHAR NOT NULL,
+                        connected_state VARCHAR NOT NULL,
+                        availability_mode VARCHAR NOT NULL,
+                        last_hardened_lsn DECIMAL(25, 0),
+                        last_commit_lsn DECIMAL(25, 0),
+                        log_send_queue_kb BIGINT,
+                        redo_queue_kb BIGINT,
+                        log_send_rate_kb_per_sec BIGINT,
+                        redo_rate_kb_per_sec BIGINT,
+                        log_block_difference DECIMAL(25, 0),
+                        secondary_lag_seconds BIGINT,
+                        is_suspended BOOLEAN DEFAULT FALSE
+                    );
+
+                    CREATE TABLE IF NOT EXISTS snapshot_hourly (
+                        bucket TIMESTAMPTZ NOT NULL,
+                        group_name VARCHAR NOT NULL,
+                        replica_name VARCHAR NOT NULL,
+                        database_name VARCHAR NOT NULL,
+                        sample_count INTEGER NOT NULL,
+                        log_send_queue_kb_min BIGINT,
+                        log_send_queue_kb_max BIGINT,
+                        log_send_queue_kb_avg DOUBLE,
+                        redo_queue_kb_min BIGINT,
+                        redo_queue_kb_max BIGINT,
+                        redo_queue_kb_avg DOUBLE,
+                        log_send_rate_min BIGINT,
+                        log_send_rate_max BIGINT,
+                        log_send_rate_avg DOUBLE,
+                        redo_rate_min BIGINT,
+                        redo_rate_max BIGINT,
+                        redo_rate_avg DOUBLE,
+                        log_block_diff_min DECIMAL(25, 0),
+                        log_block_diff_max DECIMAL(25, 0),
+                        log_block_diff_avg DOUBLE,
+                        secondary_lag_min BIGINT,
+                        secondary_lag_max BIGINT,
+                        secondary_lag_avg DOUBLE,
+                        last_role VARCHAR,
+                        last_sync_state VARCHAR,
+                        any_suspended BOOLEAN,
+                        last_hardened_lsn DECIMAL(25, 0),
+                        last_commit_lsn DECIMAL(25, 0),
+                        PRIMARY KEY (bucket, group_name, replica_name, database_name)
+                    );
+
+                    CREATE TABLE IF NOT EXISTS snapshot_daily (
+                        bucket TIMESTAMPTZ NOT NULL,
+                        group_name VARCHAR NOT NULL,
+                        replica_name VARCHAR NOT NULL,
+                        database_name VARCHAR NOT NULL,
+                        sample_count INTEGER NOT NULL,
+                        log_send_queue_kb_min BIGINT,
+                        log_send_queue_kb_max BIGINT,
+                        log_send_queue_kb_avg DOUBLE,
+                        redo_queue_kb_min BIGINT,
+                        redo_queue_kb_max BIGINT,
+                        redo_queue_kb_avg DOUBLE,
+                        log_send_rate_min BIGINT,
+                        log_send_rate_max BIGINT,
+                        log_send_rate_avg DOUBLE,
+                        redo_rate_min BIGINT,
+                        redo_rate_max BIGINT,
+                        redo_rate_avg DOUBLE,
+                        log_block_diff_min DECIMAL(25, 0),
+                        log_block_diff_max DECIMAL(25, 0),
+                        log_block_diff_avg DOUBLE,
+                        secondary_lag_min BIGINT,
+                        secondary_lag_max BIGINT,
+                        secondary_lag_avg DOUBLE,
+                        last_role VARCHAR,
+                        last_sync_state VARCHAR,
+                        any_suspended BOOLEAN,
+                        last_hardened_lsn DECIMAL(25, 0),
+                        last_commit_lsn DECIMAL(25, 0),
+                        PRIMARY KEY (bucket, group_name, replica_name, database_name)
                     );
                 ";
                 cmd.ExecuteNonQuery();
@@ -127,7 +204,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
         }
     }
 
-    public async Task RecordErrorAsync(string errorType, string message, string? stackTrace, string? context, CancellationToken cancellationToken = default)
+    public async Task RecordSnapshotAsync(MonitoredGroupSnapshot snapshot, CancellationToken cancellationToken = default)
     {
         if (!_initialized) return;
         await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -135,21 +212,173 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             await Task.Run(() =>
             {
+                var rows = new List<string>();
+                var ts = snapshot.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
+                var groupName = EscapeSql(snapshot.Name);
+                var groupType = EscapeSql(snapshot.GroupType.ToString());
+
+                var replicas = CollectReplicas(snapshot);
+                foreach (var (replica, dbs) in replicas)
+                {
+                    var replicaName = EscapeSql(dbs.ReplicaServerName);
+                    var dbName = EscapeSql(dbs.DatabaseName);
+                    var role = EscapeSql(replica.Role.ToString());
+                    var syncState = EscapeSql(dbs.SynchronizationState.ToString());
+                    var connState = EscapeSql(replica.ConnectedState.ToString());
+                    var availMode = EscapeSql(dbs.AvailabilityMode.ToString());
+
+                    rows.Add(string.Format(CultureInfo.InvariantCulture,
+                        "('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}', {9}, {10}, {11}, {12}, {13}, {14}, {15}, {16}, {17})",
+                        ts, groupName, groupType, replicaName, dbName,
+                        role, syncState, connState, availMode,
+                        dbs.LastHardenedLsn.ToString(CultureInfo.InvariantCulture),
+                        dbs.LastCommitLsn.ToString(CultureInfo.InvariantCulture),
+                        dbs.LogSendQueueSizeKb.ToString(CultureInfo.InvariantCulture),
+                        dbs.RedoQueueSizeKb.ToString(CultureInfo.InvariantCulture),
+                        dbs.LogSendRateKbPerSec.ToString(CultureInfo.InvariantCulture),
+                        dbs.RedoRateKbPerSec.ToString(CultureInfo.InvariantCulture),
+                        dbs.LogBlockDifference.ToString(CultureInfo.InvariantCulture),
+                        dbs.SecondaryLagSeconds.ToString(CultureInfo.InvariantCulture),
+                        dbs.IsSuspended ? "true" : "false"));
+                }
+
+                if (rows.Count == 0) return;
+
                 using var cmd = _connection!.CreateCommand();
-                cmd.CommandText = @"
-                    INSERT INTO error_log (timestamp, error_type, message, stack_trace, context)
-                    VALUES (current_timestamp, $error_type, $message, $stack_trace, $context)
-                ";
-                cmd.Parameters.Add(new DuckDBParameter("error_type", errorType));
-                cmd.Parameters.Add(new DuckDBParameter("message", message));
-                cmd.Parameters.Add(new DuckDBParameter("stack_trace", (object?)stackTrace ?? DBNull.Value));
-                cmd.Parameters.Add(new DuckDBParameter("context", (object?)context ?? DBNull.Value));
+                cmd.CommandText = "INSERT INTO snapshots VALUES " + string.Join(",\n", rows);
                 cmd.ExecuteNonQuery();
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to record error to DuckDB.");
+            _logger.LogError(ex, "Failed to record snapshot for group {Group}.", snapshot.Name);
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+    }
+
+    public async Task SummarizeSnapshotsAsync(int rawRetentionHours = 48, int hourlyRetentionDays = 90, int dailyRetentionDays = 730, CancellationToken cancellationToken = default)
+    {
+        if (!_initialized) return;
+
+        // Each step acquires/releases _opLock independently so that high-frequency
+        // RecordSnapshotAsync calls can interleave between steps rather than queuing
+        // behind a single long-held lock.
+
+        // Step 1 — Generate hourly summaries from raw snapshots
+        await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO snapshot_hourly
+                    SELECT 
+                        date_trunc('hour', timestamp) AS bucket,
+                        group_name, replica_name, database_name,
+                        COUNT(*)::INTEGER AS sample_count,
+                        MIN(log_send_queue_kb), MAX(log_send_queue_kb), AVG(log_send_queue_kb)::DOUBLE,
+                        MIN(redo_queue_kb), MAX(redo_queue_kb), AVG(redo_queue_kb)::DOUBLE,
+                        MIN(log_send_rate_kb_per_sec), MAX(log_send_rate_kb_per_sec), AVG(log_send_rate_kb_per_sec)::DOUBLE,
+                        MIN(redo_rate_kb_per_sec), MAX(redo_rate_kb_per_sec), AVG(redo_rate_kb_per_sec)::DOUBLE,
+                        MIN(log_block_difference), MAX(log_block_difference), AVG(log_block_difference)::DOUBLE,
+                        MIN(secondary_lag_seconds), MAX(secondary_lag_seconds), AVG(secondary_lag_seconds)::DOUBLE,
+                        LAST(role ORDER BY timestamp),
+                        LAST(sync_state ORDER BY timestamp),
+                        BOOL_OR(is_suspended),
+                        LAST(last_hardened_lsn ORDER BY timestamp),
+                        LAST(last_commit_lsn ORDER BY timestamp)
+                    FROM snapshots
+                    WHERE date_trunc('hour', timestamp) < date_trunc('hour', current_timestamp)
+                      AND date_trunc('hour', timestamp) NOT IN (SELECT DISTINCT bucket FROM snapshot_hourly)
+                    GROUP BY date_trunc('hour', timestamp), group_name, replica_name, database_name
+                ";
+                var inserted = cmd.ExecuteNonQuery();
+                if (inserted > 0)
+                    _logger.LogInformation("Inserted {Count} hourly snapshot summaries.", inserted);
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate hourly snapshot summaries.");
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+
+        // Step 2 — Generate daily summaries from hourly data
+        await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    INSERT INTO snapshot_daily
+                    SELECT
+                        date_trunc('day', bucket) AS bucket,
+                        group_name, replica_name, database_name,
+                        SUM(sample_count)::INTEGER,
+                        MIN(log_send_queue_kb_min), MAX(log_send_queue_kb_max), 
+                        SUM(log_send_queue_kb_avg * sample_count) / SUM(sample_count),
+                        MIN(redo_queue_kb_min), MAX(redo_queue_kb_max),
+                        SUM(redo_queue_kb_avg * sample_count) / SUM(sample_count),
+                        MIN(log_send_rate_min), MAX(log_send_rate_max),
+                        SUM(log_send_rate_avg * sample_count) / SUM(sample_count),
+                        MIN(redo_rate_min), MAX(redo_rate_max),
+                        SUM(redo_rate_avg * sample_count) / SUM(sample_count),
+                        MIN(log_block_diff_min), MAX(log_block_diff_max),
+                        SUM(log_block_diff_avg * sample_count) / SUM(sample_count),
+                        MIN(secondary_lag_min), MAX(secondary_lag_max),
+                        SUM(secondary_lag_avg * sample_count) / SUM(sample_count),
+                        LAST(last_role ORDER BY bucket),
+                        LAST(last_sync_state ORDER BY bucket),
+                        BOOL_OR(any_suspended),
+                        LAST(last_hardened_lsn ORDER BY bucket),
+                        LAST(last_commit_lsn ORDER BY bucket)
+                    FROM snapshot_hourly
+                    WHERE date_trunc('day', bucket) < date_trunc('day', current_timestamp)
+                      AND date_trunc('day', bucket) NOT IN (SELECT DISTINCT bucket FROM snapshot_daily)
+                    GROUP BY date_trunc('day', bucket), group_name, replica_name, database_name
+                ";
+                var inserted = cmd.ExecuteNonQuery();
+                if (inserted > 0)
+                    _logger.LogInformation("Inserted {Count} daily snapshot summaries.", inserted);
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to generate daily snapshot summaries.");
+        }
+        finally
+        {
+            _opLock.Release();
+        }
+
+        // Step 3 — Prune old data
+        await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = string.Format(CultureInfo.InvariantCulture, @"
+                    DELETE FROM snapshots WHERE timestamp < current_timestamp - INTERVAL '{0} hours';
+                    DELETE FROM snapshot_hourly WHERE bucket < current_timestamp - INTERVAL '{1} days';
+                    DELETE FROM snapshot_daily WHERE bucket < current_timestamp - INTERVAL '{2} days';
+                ", rawRetentionHours, hourlyRetentionDays, dailyRetentionDays);
+                cmd.ExecuteNonQuery();
+            }, cancellationToken).ConfigureAwait(false);
+
+            _logger.LogDebug("Snapshot summarization and pruning complete.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to prune old snapshots.");
         }
         finally
         {
@@ -312,4 +541,34 @@ public class DuckDbEventHistoryService : IEventHistoryService
         }
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    /// Collects all (ReplicaInfo, DatabaseReplicaState) pairs from a snapshot,
+    /// handling both AG and DAG group types.
+    /// </summary>
+    private static List<(ReplicaInfo Replica, DatabaseReplicaState Dbs)> CollectReplicas(MonitoredGroupSnapshot snapshot)
+    {
+        var result = new List<(ReplicaInfo, DatabaseReplicaState)>();
+
+        if (snapshot.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup && snapshot.DagInfo != null)
+        {
+            foreach (var member in snapshot.DagInfo.Members)
+            {
+                if (member.LocalAgInfo == null) continue;
+                foreach (var replica in member.LocalAgInfo.Replicas)
+                    foreach (var dbs in replica.DatabaseStates)
+                        result.Add((replica, dbs));
+            }
+        }
+        else if (snapshot.AgInfo != null)
+        {
+            foreach (var replica in snapshot.AgInfo.Replicas)
+                foreach (var dbs in replica.DatabaseStates)
+                    result.Add((replica, dbs));
+        }
+
+        return result;
+    }
+
+    private static string EscapeSql(string value) => value.Replace("'", "''");
 }
