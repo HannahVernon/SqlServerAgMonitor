@@ -19,3 +19,42 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Third-Party Licenses
+
+This software includes the following third-party packages. All are distributed
+under open-source licenses compatible with the MIT license.
+
+### MIT License
+
+The following packages are licensed under the [MIT License](https://opensource.org/licenses/MIT):
+
+| Package | Version | Copyright |
+|---------|---------|-----------|
+| [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [ReactiveUI](https://github.com/reactiveui/ReactiveUI) | 20.1.1 | © ReactiveUI contributors |
+| [System.Reactive](https://github.com/dotnet/reactive) | 6.1.0 | © .NET Foundation |
+| [DynamicData](https://github.com/reactivemarbles/DynamicData) | 8.4.1 | © ReactiveUI contributors |
+| [Splat](https://github.com/reactiveui/splat) | 15.1.1 | © ReactiveUI contributors |
+| [LiveChartsCore](https://github.com/beto-rodriguez/LiveCharts2) | 2.0.0 | © Alberto Rodriguez |
+| [SkiaSharp](https://github.com/mono/SkiaSharp) | 2.88.9 | © Microsoft Corporation |
+| [HarfBuzzSharp](https://github.com/nicknijenhuis/HarfBuzzSharp) | 8.3.1.1 | © Microsoft Corporation |
+| [ClosedXML](https://github.com/ClosedXML/ClosedXML) | 0.105.0 | © ClosedXML contributors |
+| [DocumentFormat.OpenXml](https://github.com/dotnet/Open-XML-SDK) | 3.1.1 | © Microsoft Corporation |
+| [ExcelNumberFormat](https://github.com/andersnm/ExcelNumberFormat) | 1.1.0 | © andersnm |
+| [DuckDB.NET](https://github.com/Giorgi/DuckDB.NET) | 1.5.0 | © Giorgi Dalakishvili |
+| [Microsoft.Data.SqlClient](https://github.com/dotnet/SqlClient) | 7.0.0 | © Microsoft Corporation |
+| [Microsoft.Extensions.DependencyInjection](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [Microsoft.Extensions.Logging](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+
+### Apache License 2.0
+
+The following packages are licensed under the
+[Apache License 2.0](https://opensource.org/licenses/Apache-2.0):
+
+| Package | Version | Copyright |
+|---------|---------|-----------|
+| [SixLabors.Fonts](https://github.com/SixLabors/Fonts) | 1.0.0 | © Six Labors |
