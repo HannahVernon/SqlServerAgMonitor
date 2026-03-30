@@ -718,7 +718,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
         }
     }
 
-    public async Task<SnapshotFilterOptions> GetSnapshotFiltersAsync(CancellationToken cancellationToken = default)
+    public async Task<SnapshotFilterOptions> GetSnapshotFiltersAsync(string? groupName = null, string? replicaName = null, CancellationToken cancellationToken = default)
     {
         if (!_initialized) return new SnapshotFilterOptions();
         await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -726,6 +726,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             return await Task.Run(() =>
             {
+                // Groups are never filtered — always show all
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = @"
                     SELECT DISTINCT group_name FROM (
@@ -740,13 +741,20 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         groups.Add(reader.GetString(0));
                 }
 
+                // Replicas filtered by selected group
                 using var cmd2 = _connection!.CreateCommand();
-                cmd2.CommandText = @"
+                var replicaWhere = "";
+                if (groupName != null)
+                {
+                    replicaWhere = " WHERE group_name = $group_name";
+                    cmd2.Parameters.Add(new DuckDBParameter("group_name", groupName));
+                }
+                cmd2.CommandText = $@"
                     SELECT DISTINCT replica_name FROM (
-                        SELECT replica_name FROM snapshots
-                        UNION SELECT replica_name FROM snapshot_hourly
-                        UNION SELECT replica_name FROM snapshot_daily
-                    ) ORDER BY replica_name";
+                        SELECT group_name, replica_name FROM snapshots
+                        UNION SELECT group_name, replica_name FROM snapshot_hourly
+                        UNION SELECT group_name, replica_name FROM snapshot_daily
+                    ){replicaWhere} ORDER BY replica_name";
                 var replicas = new List<string>();
                 using (var reader2 = cmd2.ExecuteReader())
                 {
@@ -754,13 +762,26 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         replicas.Add(reader2.GetString(0));
                 }
 
+                // Databases filtered by selected group and replica
                 using var cmd3 = _connection!.CreateCommand();
-                cmd3.CommandText = @"
+                var dbFilters = new List<string>();
+                if (groupName != null)
+                {
+                    dbFilters.Add("group_name = $group_name");
+                    cmd3.Parameters.Add(new DuckDBParameter("group_name", groupName));
+                }
+                if (replicaName != null)
+                {
+                    dbFilters.Add("replica_name = $replica_name");
+                    cmd3.Parameters.Add(new DuckDBParameter("replica_name", replicaName));
+                }
+                var dbWhere = dbFilters.Count > 0 ? " WHERE " + string.Join(" AND ", dbFilters) : "";
+                cmd3.CommandText = $@"
                     SELECT DISTINCT database_name FROM (
-                        SELECT database_name FROM snapshots
-                        UNION SELECT database_name FROM snapshot_hourly
-                        UNION SELECT database_name FROM snapshot_daily
-                    ) ORDER BY database_name";
+                        SELECT group_name, replica_name, database_name FROM snapshots
+                        UNION SELECT group_name, replica_name, database_name FROM snapshot_hourly
+                        UNION SELECT group_name, replica_name, database_name FROM snapshot_daily
+                    ){dbWhere} ORDER BY database_name";
                 var databases = new List<string>();
                 using (var reader3 = cmd3.ExecuteReader())
                 {

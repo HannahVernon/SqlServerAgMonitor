@@ -114,6 +114,7 @@
                                 <lvc:CartesianChart Series="{Binding SendQueueSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding SendQueueYAxes}"
+                                                    TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
                         </Border>
@@ -125,6 +126,7 @@
                                 <lvc:CartesianChart Series="{Binding RedoQueueSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding RedoQueueYAxes}"
+                                                    TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
                         </Border>
@@ -136,6 +138,7 @@
                                 <lvc:CartesianChart Series="{Binding LagSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding LagYAxes}"
+                                                    TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
                         </Border>
@@ -147,6 +150,7 @@
                                 <lvc:CartesianChart Series="{Binding LogBlockDiffSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding LogBlockDiffYAxes}"
+                                                    TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
                         </Border>
