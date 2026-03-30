@@ -50,11 +50,12 @@ public class AlertHistoryViewModel : ViewModelBase
             }
 
             var events = await historyService.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
+            var count = await historyService.GetEventCountAsync(cancellationToken: cancellationToken);
+
             Events.Clear();
             foreach (var evt in events)
                 Events.Add(evt);
 
-            var count = await historyService.GetEventCountAsync(cancellationToken: cancellationToken);
             StatusText = $"{Events.Count} of {count} events shown";
         }
         catch (Exception ex)
