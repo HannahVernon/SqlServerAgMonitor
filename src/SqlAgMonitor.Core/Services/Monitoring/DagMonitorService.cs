@@ -186,9 +186,10 @@ public class DagMonitorService : IAgMonitorService
 
         var subscription = Observable
             .Timer(TimeSpan.Zero, TimeSpan.FromSeconds(interval))
-            .SelectMany(_ => Observable.FromAsync(ct => PollGroupAsync(groupName, groupConfig, ct)))
+            .SelectMany(_ => Observable.FromAsync(ct => PollGroupAsync(groupName, groupConfig, blocking: false, ct)))
+            .Where(snapshot => snapshot != null)
             .Subscribe(
-                snapshot => _snapshots.OnNext(snapshot),
+                snapshot => _snapshots.OnNext(snapshot!),
                 ex => _logger.LogError(ex, "DAG polling error for {Group}.", groupName));
 
         _pollingSubscriptions[groupName] = subscription;
@@ -222,27 +223,31 @@ public class DagMonitorService : IAgMonitorService
         if (groupConfig == null)
             throw new InvalidOperationException($"No configuration found for DAG '{groupName}'.");
 
-        return await PollGroupAsync(groupName, groupConfig, cancellationToken);
+        return await PollGroupAsync(groupName, groupConfig, blocking: true, cancellationToken)
+            ?? throw new InvalidOperationException("Poll returned no result.");
     }
 
-    private async Task<MonitoredGroupSnapshot> PollGroupAsync(
-        string groupName, MonitoredGroupConfig groupConfig, CancellationToken cancellationToken)
+    private async Task<MonitoredGroupSnapshot?> PollGroupAsync(
+        string groupName, MonitoredGroupConfig groupConfig, bool blocking, CancellationToken cancellationToken)
     {
+        if (groupConfig.Connections.Count == 0)
+            return CreateErrorSnapshot(groupName, "No connections configured for DAG.");
+
         try
         {
-            if (groupConfig.Connections.Count == 0)
-            {
-                return CreateErrorSnapshot(groupName, "No connections configured for DAG.");
-            }
-
-            // Poll all member servers concurrently
+            // Poll all member servers concurrently — each acquires its own lease
             var pollTasks = groupConfig.Connections
-                .Select((conn, idx) => PollMemberAsync(groupName, idx, conn, cancellationToken))
+                .Select((conn, idx) => PollMemberAsync(groupName, idx, conn, blocking, cancellationToken))
                 .ToList();
 
             var memberResults = await Task.WhenAll(pollTasks);
 
-            var dagInfo = MergeResults(groupName, memberResults);
+            // If all members were skipped (all leases busy), skip this cycle
+            if (memberResults.All(r => r == null))
+                return null;
+
+            var dagInfo = MergeResults(groupName,
+                memberResults.Where(r => r != null).ToArray()!);
 
             return new MonitoredGroupSnapshot
             {
@@ -251,7 +256,7 @@ public class DagMonitorService : IAgMonitorService
                 Timestamp = DateTimeOffset.UtcNow,
                 DagInfo = dagInfo,
                 OverallHealth = dagInfo.OverallHealth,
-                IsConnected = memberResults.Any(r => r.IsSuccess)
+                IsConnected = memberResults.Any(r => r is { IsSuccess: true })
             };
         }
         catch (Exception ex)
@@ -261,47 +266,59 @@ public class DagMonitorService : IAgMonitorService
         }
     }
 
-    private async Task<MemberPollResult> PollMemberAsync(
-        string groupName, int index, ConnectionConfig connConfig, CancellationToken ct)
+    private async Task<MemberPollResult?> PollMemberAsync(
+        string groupName, int index, ConnectionConfig connConfig, bool blocking, CancellationToken ct)
     {
         var server = connConfig.Server;
-        try
+        var wrapper = GetOrCreateWrapper(groupName, index, connConfig);
+
+        ConnectionLease? lease;
+        if (blocking)
         {
-            var connection = await GetOrCreateConnectionAsync(groupName, index, connConfig, ct);
-
-            // Run queries sequentially (no MARS)
-            var dagTopology = await QueryDagTopologyAsync(connection, ct);
-            var localReplicas = await QueryLocalAgReplicasAsync(connection, ct);
-            var localDbStates = await QueryLocalAgDbStatesAsync(connection, ct);
-
-            return new MemberPollResult
-            {
-                Server = server,
-                IsSuccess = true,
-                DagTopology = dagTopology,
-                LocalReplicas = localReplicas,
-                LocalDbStates = localDbStates
-            };
+            lease = await wrapper.AcquireAsync(ct);
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogWarning(ex, "Failed to poll DAG member {Server} for {Group}.", server, groupName);
+            lease = await wrapper.TryAcquireAsync(ct);
+            if (lease == null)
+                return null; // Previous poll still using this connection
+        }
 
-            var key = $"{groupName}:{index}";
-            if (_connections.TryGetValue(key, out var wrapper))
-                wrapper.InvalidateConnection();
-
-            return new MemberPollResult
+        await using (lease)
+        {
+            try
             {
-                Server = server,
-                IsSuccess = false,
-                ErrorMessage = ex.Message
-            };
+                var connection = lease.Connection;
+                var dagTopology = await QueryDagTopologyAsync(connection, ct);
+                var localReplicas = await QueryLocalAgReplicasAsync(connection, ct);
+                var localDbStates = await QueryLocalAgDbStatesAsync(connection, ct);
+
+                return new MemberPollResult
+                {
+                    Server = server,
+                    IsSuccess = true,
+                    DagTopology = dagTopology,
+                    LocalReplicas = localReplicas,
+                    LocalDbStates = localDbStates
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to poll DAG member {Server} for {Group}.", server, groupName);
+                lease.Invalidate();
+
+                return new MemberPollResult
+                {
+                    Server = server,
+                    IsSuccess = false,
+                    ErrorMessage = ex.Message
+                };
+            }
         }
     }
 
-    private async Task<SqlConnection> GetOrCreateConnectionAsync(
-        string groupName, int index, ConnectionConfig connConfig, CancellationToken ct)
+    private ReconnectingConnectionWrapper GetOrCreateWrapper(
+        string groupName, int index, ConnectionConfig connConfig)
     {
         var key = $"{groupName}:{index}";
         if (!_connections.TryGetValue(key, out var wrapper))
@@ -312,8 +329,7 @@ public class DagMonitorService : IAgMonitorService
                 connConfig.CredentialKey, connConfig.AuthType);
             _connections[key] = wrapper;
         }
-
-        return await wrapper.GetConnectionAsync(ct);
+        return wrapper;
     }
 
     private async Task<List<DagTopologyRow>> QueryDagTopologyAsync(

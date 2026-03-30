@@ -132,9 +132,10 @@ public class AgMonitorService : IAgMonitorService
 
         var subscription = Observable
             .Timer(TimeSpan.Zero, TimeSpan.FromSeconds(interval))
-            .SelectMany(_ => Observable.FromAsync(ct => PollGroupAsync(groupName, groupConfig, ct)))
+            .SelectMany(_ => Observable.FromAsync(ct => PollGroupAsync(groupName, groupConfig, blocking: false, ct)))
+            .Where(snapshot => snapshot != null)
             .Subscribe(
-                snapshot => _snapshots.OnNext(snapshot),
+                snapshot => _snapshots.OnNext(snapshot!),
                 ex => _logger.LogError(ex, "Polling error for {Group}.", groupName));
 
         _pollingSubscriptions[groupName] = subscription;
@@ -163,65 +164,82 @@ public class AgMonitorService : IAgMonitorService
         if (groupConfig == null)
             throw new InvalidOperationException($"No configuration found for group '{groupName}'.");
 
-        return await PollGroupAsync(groupName, groupConfig, cancellationToken);
+        return await PollGroupAsync(groupName, groupConfig, blocking: true, cancellationToken)
+            ?? throw new InvalidOperationException("Poll returned no result.");
     }
 
-    private async Task<MonitoredGroupSnapshot> PollGroupAsync(
-        string groupName, MonitoredGroupConfig groupConfig, CancellationToken cancellationToken)
+    private async Task<MonitoredGroupSnapshot?> PollGroupAsync(
+        string groupName, MonitoredGroupConfig groupConfig, bool blocking, CancellationToken cancellationToken)
     {
-        try
+        var connConfig = groupConfig.Connections.FirstOrDefault();
+        if (connConfig == null)
         {
-            var connConfig = groupConfig.Connections.FirstOrDefault();
-            if (connConfig == null)
-            {
-                return new MonitoredGroupSnapshot
-                {
-                    Name = groupName,
-                    GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var gt)
-                        ? gt : AvailabilityGroupType.AvailabilityGroup,
-                    Timestamp = DateTimeOffset.UtcNow,
-                    OverallHealth = SynchronizationHealth.Unknown,
-                    ErrorMessage = "No connection configured.",
-                    IsConnected = false
-                };
-            }
-
-            var connection = await GetOrCreateConnectionAsync(groupName, connConfig, cancellationToken);
-
-            var replicas = await QueryReplicasAsync(connection, cancellationToken);
-            var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
-
-            var agInfo = BuildAgInfo(groupName, replicas, dbStates);
-
             return new MonitoredGroupSnapshot
             {
                 Name = groupName,
-                GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var groupType)
-                    ? groupType : AvailabilityGroupType.AvailabilityGroup,
-                Timestamp = DateTimeOffset.UtcNow,
-                AgInfo = agInfo,
-                OverallHealth = agInfo.OverallHealth,
-                IsConnected = true
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error polling group {Group}.", groupName);
-            return new MonitoredGroupSnapshot
-            {
-                Name = groupName,
-                GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var gt2)
-                    ? gt2 : AvailabilityGroupType.AvailabilityGroup,
+                GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var gt)
+                    ? gt : AvailabilityGroupType.AvailabilityGroup,
                 Timestamp = DateTimeOffset.UtcNow,
                 OverallHealth = SynchronizationHealth.Unknown,
-                ErrorMessage = ex.Message,
+                ErrorMessage = "No connection configured.",
                 IsConnected = false
             };
         }
+
+        var wrapper = GetOrCreateWrapper(groupName, connConfig);
+
+        // Acquire connection lease — non-blocking for timer polls, blocking for manual refresh
+        ConnectionLease? lease;
+        if (blocking)
+        {
+            lease = await wrapper.AcquireAsync(cancellationToken);
+        }
+        else
+        {
+            lease = await wrapper.TryAcquireAsync(cancellationToken);
+            if (lease == null)
+                return null; // Previous poll still running — skip silently
+        }
+
+        await using (lease)
+        {
+            try
+            {
+                var connection = lease.Connection;
+                var replicas = await QueryReplicasAsync(connection, cancellationToken);
+                var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
+                var agInfo = BuildAgInfo(groupName, replicas, dbStates);
+
+                return new MonitoredGroupSnapshot
+                {
+                    Name = groupName,
+                    GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var groupType)
+                        ? groupType : AvailabilityGroupType.AvailabilityGroup,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    AgInfo = agInfo,
+                    OverallHealth = agInfo.OverallHealth,
+                    IsConnected = true
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error polling group {Group}.", groupName);
+                lease.Invalidate();
+                return new MonitoredGroupSnapshot
+                {
+                    Name = groupName,
+                    GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var gt2)
+                        ? gt2 : AvailabilityGroupType.AvailabilityGroup,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    OverallHealth = SynchronizationHealth.Unknown,
+                    ErrorMessage = ex.Message,
+                    IsConnected = false
+                };
+            }
+        }
     }
 
-    private async Task<SqlConnection> GetOrCreateConnectionAsync(
-        string groupName, ConnectionConfig connConfig, CancellationToken cancellationToken)
+    private ReconnectingConnectionWrapper GetOrCreateWrapper(string groupName, ConnectionConfig connConfig)
     {
         var key = groupName + ":0";
         if (!_connections.TryGetValue(key, out var wrapper))
@@ -235,8 +253,7 @@ public class AgMonitorService : IAgMonitorService
                 connConfig.AuthType);
             _connections[key] = wrapper;
         }
-
-        return await wrapper.GetConnectionAsync(cancellationToken);
+        return wrapper;
     }
 
     private async Task<List<ReplicaInfo>> QueryReplicasAsync(SqlConnection connection, CancellationToken cancellationToken)

@@ -181,6 +181,31 @@ public class DuckDbEventHistoryService : IEventHistoryService
     {
         if (_connection == null)
             throw new InvalidOperationException("Event history service not initialized. Call InitializeAsync first.");
+
+        if (_connection.State != System.Data.ConnectionState.Open)
+        {
+            try
+            {
+                _connection.Open();
+                _logger.LogInformation("DuckDB connection reopened.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to reopen DuckDB connection. Reinitializing.");
+                try
+                {
+                    _connection.Dispose();
+                    _connection = new DuckDBConnection($"Data Source={_dbPath}");
+                    _connection.Open();
+                    _logger.LogInformation("DuckDB connection reinitialized.");
+                }
+                catch (Exception ex2)
+                {
+                    _logger.LogError(ex2, "Failed to reinitialize DuckDB connection.");
+                    throw;
+                }
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()
