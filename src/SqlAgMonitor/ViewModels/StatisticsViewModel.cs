@@ -200,6 +200,8 @@ public class StatisticsViewModel : ViewModelBase
         this.RaisePropertyChanged(nameof(SelectedGroup));
         this.RaisePropertyChanged(nameof(SelectedReplica));
         this.RaisePropertyChanged(nameof(SelectedDatabase));
+
+        await LoadDataAsync();
     }
 
     private (DateTimeOffset since, DateTimeOffset until) GetTimeRange()
