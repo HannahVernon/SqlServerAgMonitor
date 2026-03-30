@@ -555,13 +555,19 @@ public class MainWindowViewModel : ViewModelBase
         if (tab?.LastPolledAt is { } polledAt)
         {
             var elapsed = DateTimeOffset.Now - polledAt;
-            LastPolledText = elapsed.TotalSeconds < 2
-                ? "Updated just now"
-                : $"Updated {(int)elapsed.TotalSeconds}s ago";
+            var timeText = elapsed.TotalSeconds < 2
+                ? "just now"
+                : $"{(int)elapsed.TotalSeconds}s ago";
+
+            LastPolledText = (tab.IsPaused || IsAllPaused)
+                ? $"Paused · last update {timeText}"
+                : $"Updated {timeText}";
         }
         else
         {
-            LastPolledText = string.Empty;
+            LastPolledText = (tab?.IsPaused == true || IsAllPaused)
+                ? "Paused"
+                : string.Empty;
         }
     }
 }
