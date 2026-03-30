@@ -13,6 +13,12 @@ public partial class StatisticsWindow : Window
     public StatisticsWindow()
     {
         InitializeComponent();
+        Closed += OnWindowClosed;
+    }
+
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        (DataContext as StatisticsViewModel)?.Dispose();
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)
