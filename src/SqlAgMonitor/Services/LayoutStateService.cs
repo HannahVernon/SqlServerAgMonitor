@@ -19,10 +19,6 @@ public class StatisticsState
     public string? Replica { get; set; }
     public string? Database { get; set; }
     public bool AutoRefresh { get; set; }
-    public bool ShowSendQueueChart { get; set; } = true;
-    public bool ShowRedoQueueChart { get; set; } = true;
-    public bool ShowLagChart { get; set; } = true;
-    public bool ShowLogBlockDiffChart { get; set; } = true;
 }
 
 public class WindowLayoutState
