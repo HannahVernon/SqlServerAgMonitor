@@ -28,9 +28,10 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
 
     public async Task<SqlConnection> GetConnectionAsync(
         string server, string? username, string? credentialKey, string authType,
+        bool encrypt = true, bool trustServerCertificate = false,
         CancellationToken cancellationToken = default)
     {
-        var connectionString = await BuildConnectionStringAsync(server, username, credentialKey, authType, cancellationToken);
+        var connectionString = await BuildConnectionStringAsync(server, username, credentialKey, authType, encrypt, trustServerCertificate, cancellationToken);
         var connection = new SqlConnection(connectionString);
 
         try
@@ -49,11 +50,12 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
 
     public async Task<bool> TestConnectionAsync(
         string server, string? username, string? credentialKey, string authType,
+        bool encrypt = true, bool trustServerCertificate = false,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            await using var conn = await GetConnectionAsync(server, username, credentialKey, authType, cancellationToken);
+            await using var conn = await GetConnectionAsync(server, username, credentialKey, authType, encrypt, trustServerCertificate, cancellationToken);
             return true;
         }
         catch (Exception ex)
@@ -77,6 +79,7 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
 
     private async Task<string> BuildConnectionStringAsync(
         string server, string? username, string? credentialKey, string authType,
+        bool encrypt, bool trustServerCertificate,
         CancellationToken cancellationToken)
     {
         var builder = new SqlConnectionStringBuilder
@@ -84,8 +87,8 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
             DataSource = server,
             ApplicationName = "SqlAgMonitor",
             ConnectTimeout = 15,
-            Encrypt = SqlConnectionEncryptOption.Optional,
-            TrustServerCertificate = true,
+            Encrypt = encrypt ? SqlConnectionEncryptOption.Mandatory : SqlConnectionEncryptOption.Optional,
+            TrustServerCertificate = trustServerCertificate,
             MultiSubnetFailover = true
         };
 

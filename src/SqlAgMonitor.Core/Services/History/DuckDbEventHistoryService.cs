@@ -254,46 +254,87 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             await Task.Run(() =>
             {
-                var rows = new List<string>();
-                var ts = snapshot.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture);
-                var groupName = EscapeSql(snapshot.Name);
-                var groupType = EscapeSql(snapshot.GroupType.ToString());
-
                 var replicas = CollectReplicas(snapshot);
-                foreach (var (replica, dbs) in replicas)
-                {
-                    var replicaName = EscapeSql(dbs.ReplicaServerName);
-                    var dbName = EscapeSql(dbs.DatabaseName);
-                    var role = EscapeSql(replica.Role.ToString());
-                    var syncState = EscapeSql(dbs.SynchronizationState.ToString());
-                    var connState = EscapeSql(replica.ConnectedState.ToString());
-                    var availMode = EscapeSql(dbs.AvailabilityMode.ToString());
 
-                    rows.Add(string.Format(CultureInfo.InvariantCulture,
-                        "('{0}', '{1}', '{2}', '{3}', '{4}', '{5}', '{6}', '{7}', '{8}', {9}, {10}, {11}, {12}, {13}, {14}, {15}, {16}, {17})",
-                        ts, groupName, groupType, replicaName, dbName,
-                        role, syncState, connState, availMode,
-                        dbs.LastHardenedLsn.ToString(CultureInfo.InvariantCulture),
-                        dbs.LastCommitLsn.ToString(CultureInfo.InvariantCulture),
-                        dbs.LogSendQueueSizeKb.ToString(CultureInfo.InvariantCulture),
-                        dbs.RedoQueueSizeKb.ToString(CultureInfo.InvariantCulture),
-                        dbs.LogSendRateKbPerSec.ToString(CultureInfo.InvariantCulture),
-                        dbs.RedoRateKbPerSec.ToString(CultureInfo.InvariantCulture),
-                        dbs.LogBlockDifference.ToString(CultureInfo.InvariantCulture),
-                        dbs.SecondaryLagSeconds.ToString(CultureInfo.InvariantCulture),
-                        dbs.IsSuspended ? "true" : "false"));
-                }
-
-                if (rows.Count == 0)
+                if (replicas.Count == 0)
                 {
                     _logger.LogDebug("No replica/database pairs found in snapshot for group {Group} (AgInfo={HasAg}, DagInfo={HasDag}).",
                         snapshot.Name, snapshot.AgInfo != null, snapshot.DagInfo != null);
                     return;
                 }
 
+                var ts = snapshot.Timestamp.UtcDateTime;
+                var groupName = snapshot.Name;
+                var groupType = snapshot.GroupType.ToString();
+
                 using var cmd = _connection!.CreateCommand();
-                cmd.CommandText = "INSERT INTO snapshots VALUES " + string.Join(",\n", rows);
-                cmd.ExecuteNonQuery();
+                cmd.CommandText = @"
+                    INSERT INTO snapshots VALUES (
+                        $ts, $group_name, $group_type, $replica_name, $database_name,
+                        $role, $sync_state, $connected_state, $availability_mode,
+                        $last_hardened_lsn, $last_commit_lsn,
+                        $log_send_queue_kb, $redo_queue_kb,
+                        $log_send_rate, $redo_rate,
+                        $log_block_diff, $secondary_lag, $is_suspended)";
+
+                var pTs = new DuckDBParameter("ts", ts);
+                var pGroupName = new DuckDBParameter("group_name", groupName);
+                var pGroupType = new DuckDBParameter("group_type", groupType);
+                var pReplicaName = new DuckDBParameter("replica_name", "");
+                var pDbName = new DuckDBParameter("database_name", "");
+                var pRole = new DuckDBParameter("role", "");
+                var pSyncState = new DuckDBParameter("sync_state", "");
+                var pConnState = new DuckDBParameter("connected_state", "");
+                var pAvailMode = new DuckDBParameter("availability_mode", "");
+                var pHardenedLsn = new DuckDBParameter("last_hardened_lsn", 0m);
+                var pCommitLsn = new DuckDBParameter("last_commit_lsn", 0m);
+                var pSendQueue = new DuckDBParameter("log_send_queue_kb", 0L);
+                var pRedoQueue = new DuckDBParameter("redo_queue_kb", 0L);
+                var pSendRate = new DuckDBParameter("log_send_rate", 0L);
+                var pRedoRate = new DuckDBParameter("redo_rate", 0L);
+                var pLogBlockDiff = new DuckDBParameter("log_block_diff", 0m);
+                var pSecondaryLag = new DuckDBParameter("secondary_lag", 0L);
+                var pSuspended = new DuckDBParameter("is_suspended", false);
+
+                cmd.Parameters.Add(pTs);
+                cmd.Parameters.Add(pGroupName);
+                cmd.Parameters.Add(pGroupType);
+                cmd.Parameters.Add(pReplicaName);
+                cmd.Parameters.Add(pDbName);
+                cmd.Parameters.Add(pRole);
+                cmd.Parameters.Add(pSyncState);
+                cmd.Parameters.Add(pConnState);
+                cmd.Parameters.Add(pAvailMode);
+                cmd.Parameters.Add(pHardenedLsn);
+                cmd.Parameters.Add(pCommitLsn);
+                cmd.Parameters.Add(pSendQueue);
+                cmd.Parameters.Add(pRedoQueue);
+                cmd.Parameters.Add(pSendRate);
+                cmd.Parameters.Add(pRedoRate);
+                cmd.Parameters.Add(pLogBlockDiff);
+                cmd.Parameters.Add(pSecondaryLag);
+                cmd.Parameters.Add(pSuspended);
+
+                foreach (var (replica, dbs) in replicas)
+                {
+                    pReplicaName.Value = dbs.ReplicaServerName;
+                    pDbName.Value = dbs.DatabaseName;
+                    pRole.Value = replica.Role.ToString();
+                    pSyncState.Value = dbs.SynchronizationState.ToString();
+                    pConnState.Value = replica.ConnectedState.ToString();
+                    pAvailMode.Value = dbs.AvailabilityMode.ToString();
+                    pHardenedLsn.Value = dbs.LastHardenedLsn;
+                    pCommitLsn.Value = dbs.LastCommitLsn;
+                    pSendQueue.Value = dbs.LogSendQueueSizeKb;
+                    pRedoQueue.Value = dbs.RedoQueueSizeKb;
+                    pSendRate.Value = dbs.LogSendRateKbPerSec;
+                    pRedoRate.Value = dbs.RedoRateKbPerSec;
+                    pLogBlockDiff.Value = dbs.LogBlockDifference;
+                    pSecondaryLag.Value = dbs.SecondaryLagSeconds;
+                    pSuspended.Value = dbs.IsSuspended;
+
+                    cmd.ExecuteNonQuery();
+                }
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -852,5 +893,4 @@ public class DuckDbEventHistoryService : IEventHistoryService
         return result;
     }
 
-    private static string EscapeSql(string value) => value.Replace("'", "''");
 }

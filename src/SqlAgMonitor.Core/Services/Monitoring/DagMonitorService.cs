@@ -182,7 +182,7 @@ public class DagMonitorService : IAgMonitorService
             return Task.CompletedTask;
         }
 
-        var interval = groupConfig.PollingIntervalSeconds ?? config.GlobalPollingIntervalSeconds;
+        var interval = Math.Max(5, groupConfig.PollingIntervalSeconds ?? config.GlobalPollingIntervalSeconds);
 
         var subscription = Observable
             .Timer(TimeSpan.Zero, TimeSpan.FromSeconds(interval))
@@ -326,7 +326,8 @@ public class DagMonitorService : IAgMonitorService
             wrapper = new ReconnectingConnectionWrapper(
                 _connectionService, _logger,
                 connConfig.Server, connConfig.Username,
-                connConfig.CredentialKey, connConfig.AuthType);
+                connConfig.CredentialKey, connConfig.AuthType,
+                connConfig.Encrypt, connConfig.TrustServerCertificate);
             _connections[key] = wrapper;
         }
         return wrapper;
