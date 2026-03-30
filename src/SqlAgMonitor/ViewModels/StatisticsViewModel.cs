@@ -351,8 +351,8 @@ public class StatisticsViewModel : ViewModelBase
             "180 days" => (now.AddDays(-180), now),
             "365 days" => (now.AddDays(-365), now),
             "Custom" => (
-                new DateTimeOffset(CustomFrom ?? DateTime.UtcNow.AddDays(-1), TimeSpan.Zero),
-                new DateTimeOffset(CustomUntil ?? DateTime.UtcNow, TimeSpan.Zero)),
+                new DateTimeOffset(DateTime.SpecifyKind(CustomFrom ?? DateTime.Now.AddDays(-1), DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero),
+                new DateTimeOffset(DateTime.SpecifyKind(CustomUntil ?? DateTime.Now, DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero)),
             _ => (now.AddHours(-24), now)
         };
     }

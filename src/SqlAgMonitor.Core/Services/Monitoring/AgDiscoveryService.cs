@@ -85,7 +85,7 @@ public class AgDiscoveryService : IAgDiscoveryService
         _logger.LogInformation("Discovering AGs/DAGs on {Server}.", server);
 
         await using var connection = await _connectionService.GetConnectionAsync(
-            server, username, credentialKey, authType, cancellationToken);
+            server, username, credentialKey, authType, cancellationToken: cancellationToken);
 
         var groups = await DiscoverGroupsCoreAsync(connection, server, cancellationToken);
 

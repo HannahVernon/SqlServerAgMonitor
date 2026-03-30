@@ -261,7 +261,7 @@ public class AddGroupViewModel : ViewModelBase
             }
 
             var success = await _connectionService.TestConnectionAsync(
-                Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken);
+                Server, Username, IsSqlAuth ? CredentialKey : null, ResolvedAuthType, cancellationToken: cancellationToken);
 
             ConnectionTested = success;
 
@@ -471,7 +471,7 @@ public class AddGroupViewModel : ViewModelBase
                     member.IsSqlAuth ? member.Username : null,
                     member.CredentialKey,
                     member.AuthType,
-                    cancellationToken);
+                    cancellationToken: cancellationToken);
 
                 member.ConnectionTested = true;
                 member.ConnectionSucceeded = success;

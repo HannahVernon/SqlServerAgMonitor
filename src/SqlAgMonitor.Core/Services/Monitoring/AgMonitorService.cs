@@ -128,7 +128,7 @@ public class AgMonitorService : IAgMonitorService
             return Task.CompletedTask;
         }
 
-        var interval = groupConfig.PollingIntervalSeconds ?? config.GlobalPollingIntervalSeconds;
+        var interval = Math.Max(5, groupConfig.PollingIntervalSeconds ?? config.GlobalPollingIntervalSeconds);
 
         var subscription = Observable
             .Timer(TimeSpan.Zero, TimeSpan.FromSeconds(interval))
@@ -250,7 +250,9 @@ public class AgMonitorService : IAgMonitorService
                 connConfig.Server,
                 connConfig.Username,
                 connConfig.CredentialKey,
-                connConfig.AuthType);
+                connConfig.AuthType,
+                connConfig.Encrypt,
+                connConfig.TrustServerCertificate);
             _connections[key] = wrapper;
         }
         return wrapper;

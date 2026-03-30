@@ -89,7 +89,7 @@ public class AgControlService : IAgControlService
                 operationName, agName, server);
 
             var connection = await _connectionService.GetConnectionAsync(
-                server, username: null, credentialKey: null, authType: "windows", cancellationToken);
+                server, username: null, credentialKey: null, authType: "windows", cancellationToken: cancellationToken);
 
             try
             {
@@ -131,7 +131,7 @@ public class AgControlService : IAgControlService
                 operationName, databaseName, agName);
 
             var connection = await _connectionService.GetConnectionAsync(
-                ".", username: null, credentialKey: null, authType: "windows", cancellationToken);
+                ".", username: null, credentialKey: null, authType: "windows", cancellationToken: cancellationToken);
 
             try
             {

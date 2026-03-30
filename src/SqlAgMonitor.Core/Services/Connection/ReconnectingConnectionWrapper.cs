@@ -60,6 +60,8 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     private readonly string? _username;
     private readonly string? _credentialKey;
     private readonly string _authType;
+    private readonly bool _encrypt;
+    private readonly bool _trustServerCertificate;
 
     private SqlConnection? _connection;
     private readonly SemaphoreSlim _usageLock = new(1, 1);
@@ -80,7 +82,9 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
         string server,
         string? username,
         string? credentialKey,
-        string authType)
+        string authType,
+        bool encrypt = true,
+        bool trustServerCertificate = false)
     {
         _connectionService = connectionService;
         _logger = logger;
@@ -88,6 +92,8 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
         _username = username;
         _credentialKey = credentialKey;
         _authType = authType;
+        _encrypt = encrypt;
+        _trustServerCertificate = trustServerCertificate;
     }
 
     /// <summary>
@@ -131,7 +137,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
         try
         {
             _connection = await _connectionService.GetConnectionAsync(
-                _server, _username, _credentialKey, _authType, cancellationToken);
+                _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, cancellationToken);
             _stateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
             return new ConnectionLease(_connection, _usageLock, this);
         }
@@ -200,7 +206,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
                 _connection = null;
 
                 _connection = await _connectionService.GetConnectionAsync(
-                    _server, _username, _credentialKey, _authType, ct);
+                    _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, ct);
                 _stateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
                 _logger.LogInformation("Reconnected to {Server}.", _server);
                 return;
