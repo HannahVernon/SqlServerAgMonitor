@@ -44,7 +44,7 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [ClosedXML](https://github.com/ClosedXML/ClosedXML) | 0.105.0 | © ClosedXML contributors |
 | [DocumentFormat.OpenXml](https://github.com/dotnet/Open-XML-SDK) | 3.1.1 | © Microsoft Corporation |
 | [ExcelNumberFormat](https://github.com/andersnm/ExcelNumberFormat) | 1.1.0 | © andersnm |
-| [DuckDB.NET](https://github.com/Giorgi/DuckDB.NET) | 1.5.0 | © Giorgi Dalakishvili |
+| [DuckDB.NET](https://github.com/Giorgi/DuckDB.NET) | 1.5.0 (Full) | © Giorgi Dalakishvili |
 | [Microsoft.Data.SqlClient](https://github.com/dotnet/SqlClient) | 7.0.0 | © Microsoft Corporation |
 | [Microsoft.Extensions.DependencyInjection](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Logging](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |

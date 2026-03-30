@@ -20,8 +20,7 @@ public class HtmlExportService : IHtmlExportService
     public async Task ExportAsync(IReadOnlyList<MonitoredGroupSnapshot> snapshots, string outputPath, CancellationToken cancellationToken = default)
     {
         var html = GenerateHtml(snapshots);
-        var dir = Path.GetDirectoryName(outputPath);
-        if (dir != null) Directory.CreateDirectory(dir);
+        Directory.CreateDirectory(outputPath);
 
         var fileName = $"ag-monitor-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.html";
         var fullPath = Path.Combine(outputPath, fileName);
