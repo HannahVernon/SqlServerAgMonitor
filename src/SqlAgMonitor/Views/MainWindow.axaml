@@ -45,6 +45,8 @@
                           IsEnabled="{Binding IsAllPaused}" />
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="Open _Log Directory" Command="{Binding OpenLogDirectoryCommand}" />
+                <Separator />
                 <MenuItem Header="_About" Command="{Binding AboutCommand}" />
             </MenuItem>
         </Menu>

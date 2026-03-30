@@ -84,6 +84,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> ResumeAllCommand { get; }
     public ReactiveCommand<Unit, Unit> AboutCommand { get; }
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
+    public ReactiveCommand<Unit, Unit> OpenLogDirectoryCommand { get; }
 
     public MainWindowViewModel()
         : this(null!, null!, null!)
@@ -111,6 +112,7 @@ public class MainWindowViewModel : ViewModelBase
         var canRefresh = this.WhenAnyValue(x => x.SelectedTab)
             .Select(tab => tab != null);
         RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
+        OpenLogDirectoryCommand = ReactiveCommand.Create(OnOpenLogDirectory);
 
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
@@ -426,6 +428,22 @@ public class MainWindowViewModel : ViewModelBase
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             desktop.Shutdown();
+        }
+    }
+
+    private static void OnOpenLogDirectory()
+    {
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Program.LogDir,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            Program.WriteLog("ERROR", $"Failed to open log directory: {ex.Message}");
         }
     }
 

@@ -7,7 +7,7 @@ namespace SqlAgMonitor;
 
 sealed class Program
 {
-    private static readonly string LogDir = Path.Combine(
+    public static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "SqlAgMonitor", "logs");
 
