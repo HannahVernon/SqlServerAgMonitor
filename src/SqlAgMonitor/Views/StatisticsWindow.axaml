@@ -1,0 +1,155 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SqlAgMonitor.ViewModels"
+        xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="900"
+        x:Class="SqlAgMonitor.Views.StatisticsWindow"
+        x:DataType="vm:StatisticsViewModel"
+        Title="Statistics — SQL Server AG Monitor"
+        Width="1280" Height="900"
+        MinWidth="800" MinHeight="600">
+
+    <Design.DataContext>
+        <vm:StatisticsViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <!-- Status bar -->
+        <Border DockPanel.Dock="Bottom" Background="#1e1e2e" Padding="8 4">
+            <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#a6adc8" />
+        </Border>
+
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#181825" Padding="8" BorderBrush="#313244" BorderThickness="0 0 0 1">
+            <WrapPanel>
+                <!-- Time range -->
+                <TextBlock Text="Time Range:" VerticalAlignment="Center" Margin="0 0 6 0" Foreground="#cdd6f4" />
+                <ComboBox ItemsSource="{Binding TimeRangeOptions}"
+                          SelectedItem="{Binding SelectedTimeRange}"
+                          Width="120" Margin="0 0 12 0" />
+
+                <!-- Custom date pickers (visible when Custom selected) -->
+                <StackPanel Orientation="Horizontal" IsVisible="{Binding IsCustomRange}" Margin="0 0 12 0">
+                    <TextBlock Text="From:" VerticalAlignment="Center" Margin="0 0 4 0" Foreground="#cdd6f4" />
+                    <CalendarDatePicker SelectedDate="{Binding CustomFrom}" Width="130" Margin="0 0 8 0" />
+                    <TextBlock Text="To:" VerticalAlignment="Center" Margin="0 0 4 0" Foreground="#cdd6f4" />
+                    <CalendarDatePicker SelectedDate="{Binding CustomUntil}" Width="130" Margin="0 0 8 0" />
+                    <Button Content="Apply" Command="{Binding LoadCommand}" Margin="0 0 12 0" />
+                </StackPanel>
+
+                <!-- Filters -->
+                <TextBlock Text="Group:" VerticalAlignment="Center" Margin="0 0 4 0" Foreground="#a6adc8" />
+                <ComboBox ItemsSource="{Binding GroupNames}"
+                          SelectedItem="{Binding SelectedGroup}"
+                          Width="150" Margin="0 0 8 0" />
+
+                <TextBlock Text="Replica:" VerticalAlignment="Center" Margin="0 0 4 0" Foreground="#a6adc8" />
+                <ComboBox ItemsSource="{Binding ReplicaNames}"
+                          SelectedItem="{Binding SelectedReplica}"
+                          Width="150" Margin="0 0 8 0" />
+
+                <TextBlock Text="Database:" VerticalAlignment="Center" Margin="0 0 4 0" Foreground="#a6adc8" />
+                <ComboBox ItemsSource="{Binding DatabaseNames}"
+                          SelectedItem="{Binding SelectedDatabase}"
+                          Width="150" Margin="0 0 16 0" />
+
+                <!-- Export -->
+                <Button Content="📊 Export to Excel" Name="ExportButton" Click="OnExportClick" />
+            </WrapPanel>
+        </Border>
+
+        <!-- Loading overlay -->
+        <Panel>
+            <!-- Main content -->
+            <Grid RowDefinitions="Auto,*">
+                <!-- Summary DataGrid -->
+                <DataGrid Grid.Row="0"
+                          ItemsSource="{Binding SummaryRows}"
+                          IsReadOnly="True"
+                          AutoGenerateColumns="False"
+                          MaxHeight="300"
+                          GridLinesVisibility="Horizontal"
+                          HeadersVisibility="Column"
+                          CanUserSortColumns="True"
+                          CanUserResizeColumns="True"
+                          BorderThickness="0 0 0 1"
+                          BorderBrush="#313244">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm\}}" Width="140" />
+                        <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="120" />
+                        <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaName}" Width="120" />
+                        <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="120" />
+                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="65" />
+                        <DataGridTextColumn Header="Send Q Avg (KB)" Binding="{Binding LogSendQueueKbAvg, StringFormat=\{0:N0\}}" Width="110" />
+                        <DataGridTextColumn Header="Send Q Max (KB)" Binding="{Binding LogSendQueueKbMax, StringFormat=\{0:N0\}}" Width="110" />
+                        <DataGridTextColumn Header="Redo Q Avg (KB)" Binding="{Binding RedoQueueKbAvg, StringFormat=\{0:N0\}}" Width="110" />
+                        <DataGridTextColumn Header="Redo Q Max (KB)" Binding="{Binding RedoQueueKbMax, StringFormat=\{0:N0\}}" Width="110" />
+                        <DataGridTextColumn Header="Lag Avg (s)" Binding="{Binding SecondaryLagAvg, StringFormat=\{0:N1\}}" Width="80" />
+                        <DataGridTextColumn Header="Lag Max (s)" Binding="{Binding SecondaryLagMax}" Width="80" />
+                        <DataGridTextColumn Header="Log Diff Avg" Binding="{Binding LogBlockDiffAvg, StringFormat=\{0:N0\}}" Width="100" />
+                        <DataGridTextColumn Header="Sync State" Binding="{Binding SyncState}" Width="100" />
+                        <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="80" />
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <!-- Charts in a 2x2 grid -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                    <Grid RowDefinitions="*,*" ColumnDefinitions="*,*" Margin="4">
+                        <Border Grid.Row="0" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Log Send Queue (KB)" FontWeight="Bold"
+                                           Foreground="#89b4fa" Margin="8 4" FontSize="13" />
+                                <lvc:CartesianChart Series="{Binding SendQueueSeries}"
+                                                    XAxes="{Binding XAxes}"
+                                                    YAxes="{Binding SendQueueYAxes}"
+                                                    MinHeight="200" />
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Row="0" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Redo Queue (KB)" FontWeight="Bold"
+                                           Foreground="#a6e3a1" Margin="8 4" FontSize="13" />
+                                <lvc:CartesianChart Series="{Binding RedoQueueSeries}"
+                                                    XAxes="{Binding XAxes}"
+                                                    YAxes="{Binding RedoQueueYAxes}"
+                                                    MinHeight="200" />
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Secondary Lag (seconds)" FontWeight="Bold"
+                                           Foreground="#fab387" Margin="8 4" FontSize="13" />
+                                <lvc:CartesianChart Series="{Binding LagSeries}"
+                                                    XAxes="{Binding XAxes}"
+                                                    YAxes="{Binding LagYAxes}"
+                                                    MinHeight="200" />
+                            </DockPanel>
+                        </Border>
+
+                        <Border Grid.Row="1" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
+                            <DockPanel>
+                                <TextBlock DockPanel.Dock="Top" Text="Log Block Difference" FontWeight="Bold"
+                                           Foreground="#f38ba8" Margin="8 4" FontSize="13" />
+                                <lvc:CartesianChart Series="{Binding LogBlockDiffSeries}"
+                                                    XAxes="{Binding XAxes}"
+                                                    YAxes="{Binding LogBlockDiffYAxes}"
+                                                    MinHeight="200" />
+                            </DockPanel>
+                        </Border>
+                    </Grid>
+                </ScrollViewer>
+            </Grid>
+
+            <!-- Loading indicator -->
+            <Border Background="#80000000" IsVisible="{Binding IsLoading}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock Text="Loading statistics..." FontSize="16" Foreground="White" />
+                </StackPanel>
+            </Border>
+        </Panel>
+    </DockPanel>
+</Window>

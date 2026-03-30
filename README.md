@@ -83,6 +83,7 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **Secure credentials** — DPAPI encryption on Windows; AES-256 encrypted fallback on other platforms. No plain-text passwords.
 - **DataGrid features** — Right-click to copy cell, row, or all rows. Per-replica LSN columns displayed as hex `VLF:Block`. Color-coded sync state cells. Per-tab column layout persistence (widths, order, sort).
 - **SQL Server 2014+ compatibility** — Automatically falls back to a legacy query when `secondary_lag_seconds` is unavailable (SQL error 207). The time-lag column shows 0 on SQL Server 2014; all other metrics remain fully functional.
+- **Statistics & Trends** — Historical trend charts (View → Statistics…) with time range presets from 24 hours to 1 year plus custom date pickers. Three-tier data retention (raw snapshots → hourly → daily summaries) with automatic rollup and pruning. Summary grid, four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference), and one-click Excel export.
 - **Keyboard shortcuts** — F5 to refresh the active tab, standard menu accelerators.
 
 ## Technology Stack
@@ -94,6 +95,8 @@ Each alert type can be individually enabled/disabled and configured with custom 
 | MVVM Framework | ReactiveUI |
 | SQL Client | Microsoft.Data.SqlClient |
 | Event Storage | DuckDB |
+| Charts | LiveCharts2 (SkiaSharp) |
+| Excel Export | ClosedXML |
 | Configuration | JSON (AppData) |
 
 ## Building

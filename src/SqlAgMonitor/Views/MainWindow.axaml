@@ -37,6 +37,7 @@
                         <CheckBox IsChecked="{Binding IsAlertHistoryVisible}" BorderThickness="0" IsHitTestVisible="False" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Header="_Statistics..." Command="{Binding OpenStatisticsCommand}" />
             </MenuItem>
             <MenuItem Header="_Monitoring">
                 <MenuItem Header="_Add AG/DAG..." Command="{Binding AddGroupCommand}" />

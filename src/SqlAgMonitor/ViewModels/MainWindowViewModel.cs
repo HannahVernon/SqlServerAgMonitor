@@ -98,6 +98,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenLogDirectoryCommand { get; }
     public ReactiveCommand<Unit, Unit> ToggleAlertHistoryCommand { get; }
+    public ReactiveCommand<Unit, Unit> OpenStatisticsCommand { get; }
 
     public MainWindowViewModel()
         : this(null!, null!, null!)
@@ -127,6 +128,7 @@ public class MainWindowViewModel : ViewModelBase
         RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
         OpenLogDirectoryCommand = ReactiveCommand.Create(OnOpenLogDirectory);
         ToggleAlertHistoryCommand = ReactiveCommand.CreateFromTask(OnToggleAlertHistoryAsync);
+        OpenStatisticsCommand = ReactiveCommand.CreateFromTask(OnOpenStatisticsAsync);
 
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
@@ -631,6 +633,17 @@ public class MainWindowViewModel : ViewModelBase
         {
             await AlertHistory.LoadEventsAsync();
         }
+    }
+
+    private async Task OnOpenStatisticsAsync()
+    {
+        var window = GetMainWindow();
+        if (window == null) return;
+
+        var vm = new StatisticsViewModel();
+        var statsWindow = new Views.StatisticsWindow { DataContext = vm };
+        await vm.InitializeAsync();
+        statsWindow.Show(window);
     }
 
     private async Task PruneOldEventsAsync(CancellationToken cancellationToken = default)

@@ -123,7 +123,9 @@ SqlAgMonitor.sln
 | ReactiveUI | 20.1.1 | Reactive MVVM (commands, bindings, observables) |
 | System.Reactive | 6.1.0 | Observable pipelines (Timer, SelectMany, Where) |
 | Microsoft.Data.SqlClient | 7.0.0 | SQL Server connectivity |
-| DuckDB.NET.Data | 1.5.0 | Embedded event history database |
+| DuckDB.NET.Data | 1.5.0 | Embedded event history and statistics database |
+| LiveChartsCore.SkiaSharpView.Avalonia | — | Trend charts in Statistics window |
+| ClosedXML | — | Excel export (.xlsx) from Statistics window |
 | System.Security.Cryptography.ProtectedData | 10.0.5 | Windows DPAPI |
 
 ## Data Flow
@@ -279,8 +281,46 @@ DuckDB (embedded, serverless) stores structured events at `%APPDATA%\SqlAgMonito
 |---|---|
 | `events` | Alert history: timestamp, type, group, replica, database, message, severity, notification flags |
 | `error_log` | Application errors with stack traces and context |
+| `snapshots` | Raw per-poll metric snapshots (group, replica, database, queues, lag, LSN diff, sync state) |
+| `snapshot_hourly` | Hourly rollup summaries (MIN/MAX/AVG aggregates, LAST() for state columns, BOOL_OR for booleans) |
+| `snapshot_daily` | Daily rollup summaries (weighted averages computed from hourly data) |
 
 Queryable by group name, time range, and count. Used by the HTML export service for scheduled reports.
+
+### Statistics Data Pipeline
+
+The statistics subsystem captures per-poll metrics and maintains a three-tier summarization pipeline for efficient long-term trend analysis.
+
+**Snapshot capture:** `RecordSnapshotAsync` is called from `OnSnapshotReceived` every poll cycle. Each row in the `snapshots` table records the group, replica, database, and all key metrics (log send queue, redo queue, secondary lag, log block difference, sync state, suspended flag).
+
+**Summarization:** An hourly timer invokes `SummarizeSnapshotsAsync`, which performs two rollup stages:
+
+```
+snapshots (raw)                    snapshot_hourly                 snapshot_daily
+┌──────────────────────┐          ┌──────────────────────┐       ┌──────────────────────┐
+│ Per-poll rows         │  ──►    │ GROUP BY             │  ──►  │ Weighted average     │
+│ (full resolution)     │  hourly │ date_trunc('hour')   │ daily │ from hourly data     │
+│                       │  rollup │                      │rollup │                      │
+│ Retained: 48h         │         │ Aggregates:          │       │ Retained: 730d       │
+│                       │         │  MIN/MAX/AVG (nums)  │       │                      │
+│                       │         │  LAST() (states)     │       │                      │
+│                       │         │  BOOL_OR (booleans)  │       │                      │
+│                       │         │ Retained: 90d        │       │                      │
+└──────────────────────┘          └──────────────────────┘       └──────────────────────┘
+```
+
+**Pruning** runs after each summarization pass:
+- Raw snapshots older than **48 hours** are deleted
+- Hourly summaries older than **90 days** are deleted
+- Daily summaries older than **730 days** are deleted
+- All thresholds are configurable via `SnapshotRetentionSettings` in the app configuration
+
+**Query layer:** `GetSnapshotDataAsync` auto-selects the appropriate data tier based on the requested time range:
+- ≤ 48 hours → `snapshots` (raw)
+- ≤ 90 days → `snapshot_hourly`
+- \> 90 days → `snapshot_daily`
+
+**UI:** The Statistics window (`StatisticsWindow` / `StatisticsViewModel`) uses **LiveCharts2** (`LiveChartsCore.SkiaSharpView.Avalonia`) to render four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference). Excel export uses **ClosedXML** to generate `.xlsx` files.
 
 ## LSN Comparison
 

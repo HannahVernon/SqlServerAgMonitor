@@ -26,6 +26,7 @@
 | Dark Theme | Switch to dark theme |
 | High Contrast Theme | Switch to high-contrast theme |
 | Alert History | Toggle the Alert History panel on the right side of the window |
+| Statistics… | Open the Statistics & Trends window with historical charts and data export |
 | Dark Theme | Switch to dark theme |
 | High Contrast Theme | Switch to high-contrast theme |
 
@@ -168,6 +169,60 @@ Toggle via **View → Alert History** (checkbox menu item). A panel appears on t
 - **Refresh button** to manually reload
 - **Sortable columns** — click any column header to sort
 - **Close** via the ✕ button or by toggling View → Alert History again
+
+---
+
+## Statistics & Trends
+
+The Statistics window provides historical trend analysis of AG health metrics over time. Data is captured every polling cycle and automatically summarized into hourly and daily rollups for efficient long-term storage.
+
+### Opening
+
+**View → Statistics…** opens the Statistics window.
+
+### Time Range
+
+Preset buttons select common ranges: **24h**, **7d**, **30d**, **90d**, **180d**, **365d**. A custom date range picker is also available for arbitrary start/end dates.
+
+The app auto-selects the appropriate data tier based on the requested range:
+- **≤ 48 hours** — raw per-poll snapshots (full resolution)
+- **≤ 90 days** — hourly summaries (MIN/MAX/AVG aggregates)
+- **> 90 days** — daily summaries (weighted averages from hourly data)
+
+### Filters
+
+Dropdown filters narrow the data:
+- **Group** — select a specific AG/DAG
+- **Replica** — filter to a specific secondary replica
+- **Database** — filter to a specific database
+
+### Summary Grid
+
+A DataGrid at the top displays key metrics for the selected time range and filters, including send queue, redo queue, secondary lag, and log block difference values.
+
+### Charts
+
+Four line charts visualize trends over the selected period:
+
+| Chart | Metric |
+|---|---|
+| Log Send Queue | Unsent transaction log (KB) over time |
+| Redo Queue | Transaction log awaiting replay (KB) over time |
+| Secondary Lag | Time-based lag in seconds over time |
+| Log Block Difference | LSN offset between primary and secondary over time |
+
+### Excel Export
+
+Click the **📊 Export to Excel** button to save the currently displayed data (full dataset, not just visible rows) to an `.xlsx` file.
+
+### Data Retention
+
+Data is automatically summarized and pruned on a schedule:
+- **Raw snapshots** — retained for 48 hours (default)
+- **Hourly summaries** — retained for 90 days (default)
+- **Daily summaries** — retained for 730 days (default)
+
+Retention periods are configurable via `SnapshotRetentionSettings`.
 
 ---
 
