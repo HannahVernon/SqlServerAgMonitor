@@ -19,6 +19,7 @@ using SkiaSharp;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.History;
+using SqlAgMonitor.Services;
 
 namespace SqlAgMonitor.ViewModels;
 
@@ -37,9 +38,13 @@ public class StatisticsViewModel : ViewModelBase
     private bool _initializing;
     private bool _autoRefresh;
     private IDisposable? _autoRefreshSubscription;
+    private bool _showSendQueueChart = true;
+    private bool _showRedoQueueChart = true;
+    private bool _showLagChart = true;
+    private bool _showLogBlockDiffChart = true;
 
     public static string[] TimeRangeOptions { get; } =
-        ["24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
+        ["15 minutes", "1 hour", "4 hours", "8 hours", "24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
 
     public string SelectedTimeRange
     {
@@ -79,6 +84,30 @@ public class StatisticsViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _autoRefresh, value);
             ConfigureAutoRefresh(value);
         }
+    }
+
+    public bool ShowSendQueueChart
+    {
+        get => _showSendQueueChart;
+        set => this.RaiseAndSetIfChanged(ref _showSendQueueChart, value);
+    }
+
+    public bool ShowRedoQueueChart
+    {
+        get => _showRedoQueueChart;
+        set => this.RaiseAndSetIfChanged(ref _showRedoQueueChart, value);
+    }
+
+    public bool ShowLagChart
+    {
+        get => _showLagChart;
+        set => this.RaiseAndSetIfChanged(ref _showLagChart, value);
+    }
+
+    public bool ShowLogBlockDiffChart
+    {
+        get => _showLogBlockDiffChart;
+        set => this.RaiseAndSetIfChanged(ref _showLogBlockDiffChart, value);
     }
 
     public string? SelectedGroup
@@ -197,7 +226,7 @@ public class StatisticsViewModel : ViewModelBase
         ExportCommand = ReactiveCommand.CreateFromTask<string>(ExportToExcelAsync);
     }
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(StatisticsState? savedState = null)
     {
         var svc = App.Services?.GetService<IEventHistoryService>();
         if (svc == null)
@@ -223,9 +252,37 @@ public class StatisticsViewModel : ViewModelBase
             DatabaseNames.Add("(All)");
             foreach (var d in filters.DatabaseNames) DatabaseNames.Add(d);
 
-            _selectedGroup = "(All)";
-            _selectedReplica = "(All)";
-            _selectedDatabase = "(All)";
+            // Restore saved filter selections (fall back to "(All)" if value no longer exists)
+            if (savedState != null)
+            {
+                _selectedTimeRange = savedState.TimeRange != null && TimeRangeOptions.Contains(savedState.TimeRange)
+                    ? savedState.TimeRange : "24 hours";
+                _isCustomRange = _selectedTimeRange == "Custom";
+                _selectedGroup = savedState.Group != null && GroupNames.Contains(savedState.Group)
+                    ? savedState.Group : "(All)";
+                _selectedReplica = savedState.Replica != null && ReplicaNames.Contains(savedState.Replica)
+                    ? savedState.Replica : "(All)";
+                _selectedDatabase = savedState.Database != null && DatabaseNames.Contains(savedState.Database)
+                    ? savedState.Database : "(All)";
+                _showSendQueueChart = savedState.ShowSendQueueChart;
+                _showRedoQueueChart = savedState.ShowRedoQueueChart;
+                _showLagChart = savedState.ShowLagChart;
+                _showLogBlockDiffChart = savedState.ShowLogBlockDiffChart;
+
+                this.RaisePropertyChanged(nameof(SelectedTimeRange));
+                this.RaisePropertyChanged(nameof(IsCustomRange));
+                this.RaisePropertyChanged(nameof(ShowSendQueueChart));
+                this.RaisePropertyChanged(nameof(ShowRedoQueueChart));
+                this.RaisePropertyChanged(nameof(ShowLagChart));
+                this.RaisePropertyChanged(nameof(ShowLogBlockDiffChart));
+            }
+            else
+            {
+                _selectedGroup = "(All)";
+                _selectedReplica = "(All)";
+                _selectedDatabase = "(All)";
+            }
+
             this.RaisePropertyChanged(nameof(SelectedGroup));
             this.RaisePropertyChanged(nameof(SelectedReplica));
             this.RaisePropertyChanged(nameof(SelectedDatabase));
@@ -236,6 +293,10 @@ public class StatisticsViewModel : ViewModelBase
         }
 
         await LoadDataAsync();
+
+        // Enable auto-refresh after initial load if saved state requested it
+        if (savedState?.AutoRefresh == true)
+            AutoRefresh = true;
     }
 
     private async Task RefreshCascadingFiltersAsync(bool groupChanged)
@@ -287,6 +348,10 @@ public class StatisticsViewModel : ViewModelBase
         var now = DateTimeOffset.UtcNow;
         return SelectedTimeRange switch
         {
+            "15 minutes" => (now.AddMinutes(-15), now),
+            "1 hour" => (now.AddHours(-1), now),
+            "4 hours" => (now.AddHours(-4), now),
+            "8 hours" => (now.AddHours(-8), now),
             "24 hours" => (now.AddHours(-24), now),
             "7 days" => (now.AddDays(-7), now),
             "30 days" => (now.AddDays(-30), now),
@@ -511,6 +576,19 @@ public class StatisticsViewModel : ViewModelBase
             .SelectMany(_ => Observable.FromAsync(LoadDataAsync))
             .Subscribe();
     }
+
+    public StatisticsState SaveState() => new()
+    {
+        TimeRange = _selectedTimeRange,
+        Group = _selectedGroup,
+        Replica = _selectedReplica,
+        Database = _selectedDatabase,
+        AutoRefresh = _autoRefresh,
+        ShowSendQueueChart = _showSendQueueChart,
+        ShowRedoQueueChart = _showRedoQueueChart,
+        ShowLagChart = _showLagChart,
+        ShowLogBlockDiffChart = _showLogBlockDiffChart
+    };
 
     public void Dispose()
     {

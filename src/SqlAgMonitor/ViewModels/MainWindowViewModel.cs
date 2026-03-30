@@ -635,15 +635,15 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private async Task OnOpenStatisticsAsync()
+    private Task OnOpenStatisticsAsync()
     {
         var window = GetMainWindow();
-        if (window == null) return;
+        if (window == null) return Task.CompletedTask;
 
         var vm = new StatisticsViewModel();
         var statsWindow = new Views.StatisticsWindow { DataContext = vm };
-        await vm.InitializeAsync();
         statsWindow.Show(window);
+        return Task.CompletedTask;
     }
 
     private async Task PruneOldEventsAsync(CancellationToken cancellationToken = default)
