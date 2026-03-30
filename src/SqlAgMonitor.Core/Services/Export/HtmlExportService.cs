@@ -147,7 +147,7 @@ public class HtmlExportService : IHtmlExportService
                 }
                 sb.AppendLine("</table>");
 
-                sb.AppendLine("<table><tr><th>Database</th><th>Replica</th><th>Sync State</th><th>Last Hardened LSN</th><th>LSN Diff</th><th>Log Send Queue</th><th>Redo Queue</th></tr>");
+                sb.AppendLine("<table><tr><th>Database</th><th>Replica</th><th>Sync State</th><th>Last Hardened LSN</th><th>LSN Diff</th><th>Lag (s)</th><th>Log Send Queue</th><th>Redo Queue</th></tr>");
                 var sortedDbStates = snapshot.AgInfo.Replicas
                     .SelectMany(r => r.DatabaseStates)
                     .OrderBy(d => d.DatabaseName)
