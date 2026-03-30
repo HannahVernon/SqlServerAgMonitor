@@ -12,6 +12,19 @@ public class TabGridLayout
     public Dictionary<string, int> ColumnDisplayIndices { get; set; } = new();
 }
 
+public class StatisticsState
+{
+    public string? TimeRange { get; set; }
+    public string? Group { get; set; }
+    public string? Replica { get; set; }
+    public string? Database { get; set; }
+    public bool AutoRefresh { get; set; }
+    public bool ShowSendQueueChart { get; set; } = true;
+    public bool ShowRedoQueueChart { get; set; } = true;
+    public bool ShowLagChart { get; set; } = true;
+    public bool ShowLogBlockDiffChart { get; set; } = true;
+}
+
 public class WindowLayoutState
 {
     public double? WindowX { get; set; }
@@ -26,6 +39,7 @@ public class WindowLayoutState
     public double? StatsWindowY { get; set; }
     public double? StatsWindowWidth { get; set; }
     public double? StatsWindowHeight { get; set; }
+    public StatisticsState? StatsState { get; set; }
 
     /// <summary>Per-tab grid column layouts, keyed by tab title (AG/DAG name).</summary>
     public Dictionary<string, TabGridLayout> TabLayouts { get; set; } = new();

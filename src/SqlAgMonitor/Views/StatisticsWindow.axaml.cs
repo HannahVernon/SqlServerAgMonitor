@@ -35,6 +35,11 @@ public partial class StatisticsWindow : Window
                 (int)state.StatsWindowX.Value,
                 (int)state.StatsWindowY.Value);
         }
+
+        if (DataContext is StatisticsViewModel vm)
+        {
+            _ = vm.InitializeAsync(state.StatsState);
+        }
     }
 
     private void OnWindowClosed(object? sender, EventArgs e)
@@ -47,10 +52,15 @@ public partial class StatisticsWindow : Window
             state.StatsWindowY = Position.Y;
             state.StatsWindowWidth = Bounds.Width;
             state.StatsWindowHeight = Bounds.Height;
-            LayoutStateService.Save(state);
         }
 
-        (DataContext as StatisticsViewModel)?.Dispose();
+        if (DataContext is StatisticsViewModel vm)
+        {
+            state.StatsState = vm.SaveState();
+            vm.Dispose();
+        }
+
+        LayoutStateService.Save(state);
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)
