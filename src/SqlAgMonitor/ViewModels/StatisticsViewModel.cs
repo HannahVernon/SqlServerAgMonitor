@@ -38,10 +38,6 @@ public class StatisticsViewModel : ViewModelBase
     private bool _initializing;
     private bool _autoRefresh;
     private IDisposable? _autoRefreshSubscription;
-    private bool _showSendQueueChart = true;
-    private bool _showRedoQueueChart = true;
-    private bool _showLagChart = true;
-    private bool _showLogBlockDiffChart = true;
 
     public static string[] TimeRangeOptions { get; } =
         ["15 minutes", "1 hour", "4 hours", "8 hours", "24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
@@ -84,30 +80,6 @@ public class StatisticsViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _autoRefresh, value);
             ConfigureAutoRefresh(value);
         }
-    }
-
-    public bool ShowSendQueueChart
-    {
-        get => _showSendQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showSendQueueChart, value);
-    }
-
-    public bool ShowRedoQueueChart
-    {
-        get => _showRedoQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showRedoQueueChart, value);
-    }
-
-    public bool ShowLagChart
-    {
-        get => _showLagChart;
-        set => this.RaiseAndSetIfChanged(ref _showLagChart, value);
-    }
-
-    public bool ShowLogBlockDiffChart
-    {
-        get => _showLogBlockDiffChart;
-        set => this.RaiseAndSetIfChanged(ref _showLogBlockDiffChart, value);
     }
 
     public string? SelectedGroup
@@ -264,17 +236,9 @@ public class StatisticsViewModel : ViewModelBase
                     ? savedState.Replica : "(All)";
                 _selectedDatabase = savedState.Database != null && DatabaseNames.Contains(savedState.Database)
                     ? savedState.Database : "(All)";
-                _showSendQueueChart = savedState.ShowSendQueueChart;
-                _showRedoQueueChart = savedState.ShowRedoQueueChart;
-                _showLagChart = savedState.ShowLagChart;
-                _showLogBlockDiffChart = savedState.ShowLogBlockDiffChart;
 
                 this.RaisePropertyChanged(nameof(SelectedTimeRange));
                 this.RaisePropertyChanged(nameof(IsCustomRange));
-                this.RaisePropertyChanged(nameof(ShowSendQueueChart));
-                this.RaisePropertyChanged(nameof(ShowRedoQueueChart));
-                this.RaisePropertyChanged(nameof(ShowLagChart));
-                this.RaisePropertyChanged(nameof(ShowLogBlockDiffChart));
             }
             else
             {
@@ -583,11 +547,7 @@ public class StatisticsViewModel : ViewModelBase
         Group = _selectedGroup,
         Replica = _selectedReplica,
         Database = _selectedDatabase,
-        AutoRefresh = _autoRefresh,
-        ShowSendQueueChart = _showSendQueueChart,
-        ShowRedoQueueChart = _showRedoQueueChart,
-        ShowLagChart = _showLagChart,
-        ShowLogBlockDiffChart = _showLogBlockDiffChart
+        AutoRefresh = _autoRefresh
     };
 
     public void Dispose()

@@ -163,7 +163,15 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void SaveLayout()
     {
-        var state = _layoutState ?? new WindowLayoutState();
+        // Re-load from disk to pick up any changes saved by other windows (e.g. Statistics)
+        var state = LayoutStateService.Load();
+
+        // Merge in-memory tab column layouts that were tracked during this session
+        if (_layoutState != null)
+        {
+            foreach (var kvp in _layoutState.TabLayouts)
+                state.TabLayouts[kvp.Key] = kvp.Value;
+        }
 
         state.IsMaximized = WindowState == WindowState.Maximized;
 
