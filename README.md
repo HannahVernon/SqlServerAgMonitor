@@ -125,4 +125,4 @@ SqlAgMonitor.sln
 
 ## License
 
-MIT
+[MIT](licence.md)
