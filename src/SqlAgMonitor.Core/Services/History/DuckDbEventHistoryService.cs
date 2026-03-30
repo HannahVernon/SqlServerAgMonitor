@@ -12,6 +12,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
     private readonly object _lock = new();
     private bool _disposed;
 
+    private string ConnectionString => $"DataSource={_dbPath}";
+
     public DuckDbEventHistoryService(ILogger<DuckDbEventHistoryService> logger, string? dataDirectory = null)
     {
         _logger = logger;
@@ -24,7 +26,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        _connection = new DuckDBConnection($"Data Source={_dbPath}");
+        _connection = new DuckDBConnection(ConnectionString);
         await _connection.OpenAsync(cancellationToken);
 
         using var cmd = _connection.CreateCommand();
@@ -228,7 +230,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
                 try
                 {
                     _connection.Dispose();
-                    _connection = new DuckDBConnection($"Data Source={_dbPath}");
+                    _connection = new DuckDBConnection(ConnectionString);
                     _connection.Open();
                     _logger.LogInformation("DuckDB connection reinitialized.");
                 }

@@ -75,7 +75,8 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **Split view** — Topology diagram on top, sortable/resizable data grid on bottom.
 - **Multi-tab monitoring** — One tab per AG/DAG, each with its own persistent SQL connection and configurable polling interval.
 - **Auto-discovery wizard** — Connect to a server to automatically discover all AGs and DAGs, then select which to monitor.
-- **Event history** — DuckDB-backed structured event storage with daily rotating log files.
+- **Event history** — DuckDB-backed structured event storage with daily rotating log files. Automatic pruning by age (default 90 days) and/or record count.
+- **Alert History panel** — Toggleable right-side panel (View → Alert History) showing chronological alert events with sortable columns. Auto-refreshes when new alerts arrive.
 - **Scheduled HTML export** — Periodic health reports saved to a configurable directory.
 - **System tray** — Closing the window minimizes to the system tray; monitoring and alerting continue in the background. Use File → Exit for a full shutdown.
 - **Themes** — Light, dark, and high-contrast.

@@ -15,7 +15,7 @@
 | Item  | Description |
 |---|---|
 | Add AG/DAG… | Opens the connection wizard to discover and add Availability Groups |
-| Settings… | Opens the settings dialog (General, Email, Syslog, Alerts, Export) |
+| Settings… | Opens the settings dialog (General, Email, Syslog, Alerts, Export, History) |
 | Exit | Shuts down the application completely (disposes connections, stops polling) |
 
 ### View Menu
@@ -23,6 +23,9 @@
 | Item | Description |
 |---|---|
 | Light Theme | Switch to light theme |
+| Dark Theme | Switch to dark theme |
+| High Contrast Theme | Switch to high-contrast theme |
+| Alert History | Toggle the Alert History panel on the right side of the window |
 | Dark Theme | Switch to dark theme |
 | High Contrast Theme | Switch to high-contrast theme |
 
@@ -143,6 +146,31 @@ For each replica in the AG, a column is auto-generated:
 
 ---
 
+## Alert History Panel
+
+Toggle via **View → Alert History** (checkbox menu item). A panel appears on the right side of the main window showing a chronological DataGrid of all alert events stored in DuckDB.
+
+### Columns
+
+| Column | Description |
+|---|---|
+| Time | Alert timestamp (yyyy-MM-dd HH:mm:ss) |
+| Severity | Critical, Warning, or Information |
+| Type | Alert type (e.g., SyncFellBehind, ReplicaDisconnected) |
+| Group | AG or DAG name |
+| Replica | Replica server name (if applicable) |
+| Database | Database name (if applicable) |
+| Message | Descriptive alert message |
+
+### Behavior
+- Loads the most recent 1,000 events on open
+- **Auto-refreshes** when a new alert fires while the panel is open
+- **Refresh button** to manually reload
+- **Sortable columns** — click any column header to sort
+- **Close** via the ✕ button or by toggling View → Alert History again
+
+---
+
 ## Alert System
 
 ### Alert Types
@@ -201,6 +229,12 @@ For each replica in the AG, a column is auto-generated:
 - Enable/disable scheduled HTML export
 - Export directory path
 - Export interval
+
+### History Tab
+- **Enable automatic pruning** — toggle on/off (default: on)
+- **Maximum age (days)** — alerts older than this are deleted automatically (default: 90, 0 = unlimited)
+- **Maximum number of records** — only the most recent N records are kept (default: 0 = unlimited)
+- Pruning runs automatically 10 seconds after startup and then every 24 hours
 
 ---
 

@@ -269,6 +269,7 @@ Key sections of `AppConfiguration`:
 | `Syslog` | Server, port, protocol (UDP/TCP), facility code |
 | `Alerts` | Master cooldown, per-type enable/disable/threshold overrides |
 | `Export` | Enable, directory, interval |
+| `History` | Auto-prune enabled, max retention days (default 90), max records |
 
 ## Event History
 
