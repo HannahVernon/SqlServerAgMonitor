@@ -273,6 +273,19 @@ Key sections of `AppConfiguration`:
 | `Export` | Enable, directory, interval |
 | `History` | Auto-prune enabled, max retention days (default 90), max records |
 
+### File Locations
+
+All application data is stored under `%APPDATA%\SqlAgMonitor` (Windows) or `~/.config/SqlAgMonitor` (Linux/macOS):
+
+| File | Purpose |
+|---|---|
+| `config.json` | Application configuration (connections, alerts, email, export, theme) |
+| `layout.json` | Window positions, sizes, grid column widths, statistics filter state |
+| `data\events.duckdb` | DuckDB database: alert history, error log, snapshot metrics (raw + hourly + daily rollups) |
+| `credentials\credentials.dat` | Encrypted credential store (Windows DPAPI) |
+| `credentials\credentials.aes` | Encrypted credential store (Linux/macOS AES) |
+| `logs\` | Rolling application log files |
+
 ## Event History
 
 DuckDB (embedded, serverless) stores structured events at `%APPDATA%\SqlAgMonitor\data\events.duckdb`:
