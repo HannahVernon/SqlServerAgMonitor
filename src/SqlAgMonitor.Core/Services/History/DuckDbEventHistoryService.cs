@@ -50,13 +50,55 @@ public class DuckDbEventHistoryService : IEventHistoryService
                 _connection = new DuckDBConnection(_connectionString);
                 _connection.Open();
 
+                // Force UTC timezone to prevent TIMESTAMPTZ double-offset conversion.
+                // DuckDB defaults to the OS timezone, which causes inserted UTC strings
+                // to be interpreted as local time and shifted again.
+                using var tzCmd = _connection.CreateCommand();
+                tzCmd.CommandText = "SET TimeZone = 'UTC'";
+                tzCmd.ExecuteNonQuery();
+
+                // One-time schema migration: drop tables that used TIMESTAMPTZ
+                // (which stored timestamps with a double timezone offset).
+                // Recreate with plain TIMESTAMP to avoid any timezone surprises.
+                using var migCmd = _connection.CreateCommand();
+                migCmd.CommandText = @"
+                    CREATE TABLE IF NOT EXISTS _schema_meta (key VARCHAR PRIMARY KEY, value VARCHAR);
+                ";
+                migCmd.ExecuteNonQuery();
+
+                using var verCmd = _connection.CreateCommand();
+                verCmd.CommandText = "SELECT value FROM _schema_meta WHERE key = 'schema_version'";
+                var versionObj = verCmd.ExecuteScalar();
+                var version = versionObj != null && versionObj != DBNull.Value ? int.Parse((string)versionObj, CultureInfo.InvariantCulture) : 0;
+
+                if (version < 2)
+                {
+                    _logger.LogInformation("Migrating DuckDB schema from version {Old} to 2 (TIMESTAMPTZ → TIMESTAMP).", version);
+                    using var dropCmd = _connection.CreateCommand();
+                    dropCmd.CommandText = @"
+                        DROP TABLE IF EXISTS events;
+                        DROP TABLE IF EXISTS snapshots;
+                        DROP TABLE IF EXISTS snapshot_hourly;
+                        DROP TABLE IF EXISTS snapshot_daily;
+                        DROP SEQUENCE IF EXISTS event_seq;
+                    ";
+                    dropCmd.ExecuteNonQuery();
+
+                    using var setVerCmd = _connection.CreateCommand();
+                    setVerCmd.CommandText = @"
+                        INSERT INTO _schema_meta (key, value) VALUES ('schema_version', '2')
+                        ON CONFLICT (key) DO UPDATE SET value = '2';
+                    ";
+                    setVerCmd.ExecuteNonQuery();
+                }
+
                 using var cmd = _connection.CreateCommand();
                 cmd.CommandText = @"
                     CREATE SEQUENCE IF NOT EXISTS event_seq START 1;
 
                     CREATE TABLE IF NOT EXISTS events (
                         id BIGINT PRIMARY KEY,
-                        timestamp TIMESTAMPTZ NOT NULL,
+                        timestamp TIMESTAMP NOT NULL,
                         alert_type VARCHAR NOT NULL,
                         group_name VARCHAR NOT NULL,
                         replica_name VARCHAR,
@@ -68,7 +110,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     );
 
                     CREATE TABLE IF NOT EXISTS snapshots (
-                        timestamp TIMESTAMPTZ NOT NULL,
+                        timestamp TIMESTAMP NOT NULL,
                         group_name VARCHAR NOT NULL,
                         group_type VARCHAR NOT NULL,
                         replica_name VARCHAR NOT NULL,
@@ -89,7 +131,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     );
 
                     CREATE TABLE IF NOT EXISTS snapshot_hourly (
-                        bucket TIMESTAMPTZ NOT NULL,
+                        bucket TIMESTAMP NOT NULL,
                         group_name VARCHAR NOT NULL,
                         replica_name VARCHAR NOT NULL,
                         database_name VARCHAR NOT NULL,
@@ -121,7 +163,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     );
 
                     CREATE TABLE IF NOT EXISTS snapshot_daily (
-                        bucket TIMESTAMPTZ NOT NULL,
+                        bucket TIMESTAMP NOT NULL,
                         group_name VARCHAR NOT NULL,
                         replica_name VARCHAR NOT NULL,
                         database_name VARCHAR NOT NULL,
