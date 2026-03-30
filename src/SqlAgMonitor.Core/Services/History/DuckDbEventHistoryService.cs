@@ -9,7 +9,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
     private readonly ILogger<DuckDbEventHistoryService> _logger;
     private readonly string _dbPath;
     private DuckDBConnection? _connection;
-    private readonly object _lock = new();
+    private readonly SemaphoreSlim _initLock = new(1, 1);
+    private bool _initialized;
     private bool _disposed;
 
     private string ConnectionString => $"DataSource={_dbPath}";
@@ -26,44 +27,90 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
-        _connection = new DuckDBConnection(ConnectionString);
-        await _connection.OpenAsync(cancellationToken);
+        await _initLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (_initialized && _connection?.State == System.Data.ConnectionState.Open)
+                return;
 
-        using var cmd = _connection.CreateCommand();
-        cmd.CommandText = @"
-            CREATE SEQUENCE IF NOT EXISTS error_log_seq START 1;
-            CREATE SEQUENCE IF NOT EXISTS event_seq START 1;
+            if (_connection != null)
+            {
+                try { _connection.Dispose(); }
+                catch (Exception ex) { _logger.LogDebug(ex, "Error disposing previous DuckDB connection."); }
+                _connection = null;
+            }
 
-            CREATE TABLE IF NOT EXISTS events (
-                id BIGINT PRIMARY KEY,
-                timestamp TIMESTAMPTZ NOT NULL,
-                alert_type VARCHAR NOT NULL,
-                group_name VARCHAR NOT NULL,
-                replica_name VARCHAR,
-                database_name VARCHAR,
-                message VARCHAR NOT NULL,
-                severity VARCHAR NOT NULL,
-                email_sent BOOLEAN DEFAULT FALSE,
-                syslog_sent BOOLEAN DEFAULT FALSE
-            );
+            _connection = new DuckDBConnection(ConnectionString);
+            await _connection.OpenAsync(cancellationToken);
 
-            CREATE TABLE IF NOT EXISTS error_log (
-                id BIGINT DEFAULT nextval('error_log_seq'),
-                timestamp TIMESTAMPTZ DEFAULT current_timestamp,
-                error_type VARCHAR NOT NULL,
-                message VARCHAR NOT NULL,
-                stack_trace VARCHAR,
-                context VARCHAR
-            );
-        ";
-        await cmd.ExecuteNonQueryAsync(cancellationToken);
+            using var cmd = _connection.CreateCommand();
+            cmd.CommandText = @"
+                CREATE SEQUENCE IF NOT EXISTS error_log_seq START 1;
+                CREATE SEQUENCE IF NOT EXISTS event_seq START 1;
 
-        _logger.LogInformation("DuckDB event history initialized at {Path}.", _dbPath);
+                CREATE TABLE IF NOT EXISTS events (
+                    id BIGINT PRIMARY KEY,
+                    timestamp TIMESTAMPTZ NOT NULL,
+                    alert_type VARCHAR NOT NULL,
+                    group_name VARCHAR NOT NULL,
+                    replica_name VARCHAR,
+                    database_name VARCHAR,
+                    message VARCHAR NOT NULL,
+                    severity VARCHAR NOT NULL,
+                    email_sent BOOLEAN DEFAULT FALSE,
+                    syslog_sent BOOLEAN DEFAULT FALSE
+                );
+
+                CREATE TABLE IF NOT EXISTS error_log (
+                    id BIGINT DEFAULT nextval('error_log_seq'),
+                    timestamp TIMESTAMPTZ DEFAULT current_timestamp,
+                    error_type VARCHAR NOT NULL,
+                    message VARCHAR NOT NULL,
+                    stack_trace VARCHAR,
+                    context VARCHAR
+                );
+            ";
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+            _initialized = true;
+            _logger.LogInformation("DuckDB event history initialized at {Path}.", _dbPath);
+        }
+        catch (Exception ex)
+        {
+            _initialized = false;
+            _logger.LogError(ex, "Failed to initialize DuckDB at {Path}.", _dbPath);
+            throw;
+        }
+        finally
+        {
+            _initLock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Ensures DuckDB is initialized and the connection is open.
+    /// Returns true if ready, false if DuckDB is unavailable (operation should be skipped).
+    /// </summary>
+    private async Task<bool> EnsureAvailableAsync()
+    {
+        if (_initialized && _connection?.State == System.Data.ConnectionState.Open)
+            return true;
+
+        try
+        {
+            await InitializeAsync();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "DuckDB unavailable — operation will be skipped.");
+            return false;
+        }
     }
 
     public async Task RecordEventAsync(AlertEvent alertEvent, CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
+        if (!await EnsureAvailableAsync()) return;
         try
         {
             using var cmd = _connection!.CreateCommand();
@@ -91,7 +138,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public async Task RecordErrorAsync(string errorType, string message, string? stackTrace, string? context, CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
+        if (!await EnsureAvailableAsync()) return;
         try
         {
             using var cmd = _connection!.CreateCommand();
@@ -114,47 +161,54 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public async Task<IReadOnlyList<AlertEvent>> GetEventsAsync(string? groupName = null, DateTimeOffset? since = null, int limit = 100, CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
+        if (!await EnsureAvailableAsync()) return Array.Empty<AlertEvent>();
+
         var events = new List<AlertEvent>();
-
-        using var cmd = _connection!.CreateCommand();
-        var where = new List<string>();
-        if (groupName != null)
+        try
         {
-            where.Add("group_name = $group_name");
-            cmd.Parameters.Add(new DuckDBParameter("group_name", groupName));
-        }
-        if (since != null)
-        {
-            where.Add("timestamp >= $since");
-            cmd.Parameters.Add(new DuckDBParameter("since", since.Value.UtcDateTime));
-        }
-
-        var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
-        cmd.CommandText = $@"
-            SELECT id, timestamp, alert_type, group_name, replica_name, database_name, message, severity, email_sent, syslog_sent
-            FROM events
-            {whereClause}
-            ORDER BY timestamp DESC
-            LIMIT {limit}
-        ";
-
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
-        {
-            events.Add(new AlertEvent
+            using var cmd = _connection!.CreateCommand();
+            var where = new List<string>();
+            if (groupName != null)
             {
-                Id = reader.GetInt64(0),
-                Timestamp = new DateTimeOffset(reader.GetDateTime(1), TimeSpan.Zero),
-                AlertType = Enum.TryParse<AlertType>(reader.GetString(2), out var at) ? at : AlertType.Unknown,
-                GroupName = reader.GetString(3),
-                ReplicaName = reader.IsDBNull(4) ? null : reader.GetString(4),
-                DatabaseName = reader.IsDBNull(5) ? null : reader.GetString(5),
-                Message = reader.GetString(6),
-                Severity = Enum.TryParse<AlertSeverity>(reader.GetString(7), out var sev) ? sev : AlertSeverity.Information,
-                EmailSent = reader.GetBoolean(8),
-                SyslogSent = reader.GetBoolean(9)
-            });
+                where.Add("group_name = $group_name");
+                cmd.Parameters.Add(new DuckDBParameter("group_name", groupName));
+            }
+            if (since != null)
+            {
+                where.Add("timestamp >= $since");
+                cmd.Parameters.Add(new DuckDBParameter("since", since.Value.UtcDateTime));
+            }
+
+            var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
+            cmd.CommandText = $@"
+                SELECT id, timestamp, alert_type, group_name, replica_name, database_name, message, severity, email_sent, syslog_sent
+                FROM events
+                {whereClause}
+                ORDER BY timestamp DESC
+                LIMIT {limit}
+            ";
+
+            using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                events.Add(new AlertEvent
+                {
+                    Id = reader.GetInt64(0),
+                    Timestamp = new DateTimeOffset(reader.GetDateTime(1), TimeSpan.Zero),
+                    AlertType = Enum.TryParse<AlertType>(reader.GetString(2), out var at) ? at : AlertType.Unknown,
+                    GroupName = reader.GetString(3),
+                    ReplicaName = reader.IsDBNull(4) ? null : reader.GetString(4),
+                    DatabaseName = reader.IsDBNull(5) ? null : reader.GetString(5),
+                    Message = reader.GetString(6),
+                    Severity = Enum.TryParse<AlertSeverity>(reader.GetString(7), out var sev) ? sev : AlertSeverity.Information,
+                    EmailSent = reader.GetBoolean(8),
+                    SyslogSent = reader.GetBoolean(9)
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to read events from DuckDB.");
         }
 
         return events;
@@ -162,94 +216,89 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public async Task<long> GetEventCountAsync(string? groupName = null, CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
+        if (!await EnsureAvailableAsync()) return 0;
 
-        using var cmd = _connection!.CreateCommand();
-        if (groupName != null)
+        try
         {
-            cmd.CommandText = "SELECT COUNT(*) FROM events WHERE group_name = $group_name";
-            cmd.Parameters.Add(new DuckDBParameter("group_name", groupName));
-        }
-        else
-        {
-            cmd.CommandText = "SELECT COUNT(*) FROM events";
-        }
+            using var cmd = _connection!.CreateCommand();
+            if (groupName != null)
+            {
+                cmd.CommandText = "SELECT COUNT(*) FROM events WHERE group_name = $group_name";
+                cmd.Parameters.Add(new DuckDBParameter("group_name", groupName));
+            }
+            else
+            {
+                cmd.CommandText = "SELECT COUNT(*) FROM events";
+            }
 
-        var result = await cmd.ExecuteScalarAsync(cancellationToken);
-        return Convert.ToInt64(result);
+            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+            return Convert.ToInt64(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get event count from DuckDB.");
+            return 0;
+        }
     }
 
     public async Task<long> PruneEventsAsync(int? maxAgeDays, int? maxRecords, CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
+        if (!await EnsureAvailableAsync()) return 0;
+
         long totalDeleted = 0;
-
-        if (maxAgeDays.HasValue)
+        try
         {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = "DELETE FROM events WHERE timestamp < $cutoff";
-            cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-maxAgeDays.Value)));
-            totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
+            if (maxAgeDays.HasValue)
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = "DELETE FROM events WHERE timestamp < $cutoff";
+                cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-maxAgeDays.Value)));
+                totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (maxRecords.HasValue)
+            {
+                using var cmd = _connection!.CreateCommand();
+                cmd.CommandText = @"
+                    DELETE FROM events 
+                    WHERE id NOT IN (
+                        SELECT id FROM events ORDER BY timestamp DESC LIMIT $max_records
+                    )";
+                cmd.Parameters.Add(new DuckDBParameter("max_records", maxRecords.Value));
+                totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            if (totalDeleted > 0)
+            {
+                _logger.LogInformation("Pruned {Count} old events from history.", totalDeleted);
+            }
         }
-
-        if (maxRecords.HasValue)
+        catch (Exception ex)
         {
-            using var cmd = _connection!.CreateCommand();
-            cmd.CommandText = @"
-                DELETE FROM events 
-                WHERE id NOT IN (
-                    SELECT id FROM events ORDER BY timestamp DESC LIMIT $max_records
-                )";
-            cmd.Parameters.Add(new DuckDBParameter("max_records", maxRecords.Value));
-            totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        if (totalDeleted > 0)
-        {
-            _logger.LogInformation("Pruned {Count} old events from history.", totalDeleted);
+            _logger.LogError(ex, "Failed to prune events from DuckDB.");
         }
 
         return totalDeleted;
     }
 
-    private void EnsureInitialized()
-    {
-        if (_connection == null)
-            throw new InvalidOperationException("Event history service not initialized. Call InitializeAsync first.");
-
-        if (_connection.State != System.Data.ConnectionState.Open)
-        {
-            try
-            {
-                _connection.Open();
-                _logger.LogInformation("DuckDB connection reopened.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to reopen DuckDB connection. Reinitializing.");
-                try
-                {
-                    _connection.Dispose();
-                    _connection = new DuckDBConnection(ConnectionString);
-                    _connection.Open();
-                    _logger.LogInformation("DuckDB connection reinitialized.");
-                }
-                catch (Exception ex2)
-                {
-                    _logger.LogError(ex2, "Failed to reinitialize DuckDB connection.");
-                    throw;
-                }
-            }
-        }
-    }
-
     public async ValueTask DisposeAsync()
     {
-        if (!_disposed && _connection != null)
+        if (!_disposed)
         {
-            await _connection.CloseAsync();
-            _connection.Dispose();
             _disposed = true;
+            if (_connection != null)
+            {
+                try
+                {
+                    await _connection.CloseAsync();
+                    _connection.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Error disposing DuckDB connection.");
+                }
+            }
+            _initLock.Dispose();
         }
     }
 }

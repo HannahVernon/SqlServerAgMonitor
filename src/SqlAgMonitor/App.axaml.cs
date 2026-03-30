@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -40,9 +41,21 @@ public partial class App : Application
         var config = configService.Load();
         new SqlAgMonitor.Services.ThemeService().SetTheme(config.Theme);
 
-        // Initialize event history database
+        // Initialize event history database (errors are logged; DuckDB degrades gracefully if unavailable)
         var historyService = Services.GetRequiredService<IEventHistoryService>();
-        _ = historyService.InitializeAsync();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await historyService.InitializeAsync();
+            }
+            catch (Exception ex)
+            {
+                var logger = Services.GetRequiredService<ILoggerFactory>()
+                    .CreateLogger<App>();
+                logger.LogError(ex, "DuckDB initialization failed. Event history will retry on first use.");
+            }
+        });
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
