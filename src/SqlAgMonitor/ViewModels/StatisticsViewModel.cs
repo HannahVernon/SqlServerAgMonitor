@@ -44,7 +44,7 @@ public class StatisticsViewModel : ViewModelBase
     private bool _showLogBlockDiffChart = true;
 
     public static string[] TimeRangeOptions { get; } =
-        ["24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
+        ["15 minutes", "1 hour", "4 hours", "8 hours", "24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
 
     public string SelectedTimeRange
     {
@@ -348,6 +348,10 @@ public class StatisticsViewModel : ViewModelBase
         var now = DateTimeOffset.UtcNow;
         return SelectedTimeRange switch
         {
+            "15 minutes" => (now.AddMinutes(-15), now),
+            "1 hour" => (now.AddHours(-1), now),
+            "4 hours" => (now.AddHours(-4), now),
+            "8 hours" => (now.AddHours(-8), now),
             "24 hours" => (now.AddHours(-24), now),
             "7 days" => (now.AddDays(-7), now),
             "30 days" => (now.AddDays(-30), now),
