@@ -37,7 +37,7 @@ public class SettingsViewModel : ViewModelBase
     // Export
     private bool _exportEnabled;
     private string _exportPath = string.Empty;
-    private int _exportIntervalHours = 6;
+    private int _exportIntervalMinutes = 60;
 
     // History
     private bool _autoPruneEnabled = true;
@@ -83,7 +83,7 @@ public class SettingsViewModel : ViewModelBase
     // Export settings
     public bool ExportEnabled { get => _exportEnabled; set => this.RaiseAndSetIfChanged(ref _exportEnabled, value); }
     public string ExportPath { get => _exportPath; set => this.RaiseAndSetIfChanged(ref _exportPath, value); }
-    public int ExportIntervalHours { get => _exportIntervalHours; set => this.RaiseAndSetIfChanged(ref _exportIntervalHours, value); }
+    public int ExportIntervalMinutes { get => _exportIntervalMinutes; set => this.RaiseAndSetIfChanged(ref _exportIntervalMinutes, value); }
 
     // History settings
     public bool AutoPruneEnabled { get => _autoPruneEnabled; set => this.RaiseAndSetIfChanged(ref _autoPruneEnabled, value); }
@@ -138,7 +138,7 @@ public class SettingsViewModel : ViewModelBase
         MasterCooldownMinutes = config.Alerts.MasterCooldownMinutes;
         ExportEnabled = config.Export.Enabled;
         ExportPath = config.Export.ExportPath;
-        ExportIntervalHours = config.Export.ScheduleIntervalHours;
+        ExportIntervalMinutes = config.Export.ScheduleIntervalMinutes;
         AutoPruneEnabled = config.History.AutoPruneEnabled;
         MaxRetentionDays = config.History.MaxRetentionDays ?? 0;
         MaxRecords = config.History.MaxRecords ?? 0;
@@ -164,7 +164,7 @@ public class SettingsViewModel : ViewModelBase
         config.Alerts.MasterCooldownMinutes = MasterCooldownMinutes;
         config.Export.Enabled = ExportEnabled;
         config.Export.ExportPath = ExportPath;
-        config.Export.ScheduleIntervalHours = ExportIntervalHours;
+        config.Export.ScheduleIntervalMinutes = ExportIntervalMinutes;
         config.History.AutoPruneEnabled = AutoPruneEnabled;
         config.History.MaxRetentionDays = MaxRetentionDays > 0 ? MaxRetentionDays : null;
         config.History.MaxRecords = MaxRecords > 0 ? MaxRecords : null;

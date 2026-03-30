@@ -39,7 +39,7 @@ public class HtmlExportService : IHtmlExportService
         }
 
         var exportPath = config.Export.ExportPath;
-        var interval = TimeSpan.FromHours(config.Export.ScheduleIntervalHours);
+        var interval = TimeSpan.FromMinutes(config.Export.ScheduleIntervalMinutes);
         _exportTimer = new Timer(async _ =>
         {
             try
@@ -56,8 +56,8 @@ public class HtmlExportService : IHtmlExportService
             }
         }, null, interval, interval);
 
-        _logger.LogInformation("Scheduled HTML export started (every {Hours}h to {Path}).",
-            config.Export.ScheduleIntervalHours, config.Export.ExportPath);
+        _logger.LogInformation("Scheduled HTML export started (every {Minutes}m to {Path}).",
+            config.Export.ScheduleIntervalMinutes, config.Export.ExportPath);
         return Task.CompletedTask;
     }
 

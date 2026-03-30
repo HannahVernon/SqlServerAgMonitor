@@ -56,7 +56,7 @@ public class ExportSettings
 {
     public bool Enabled { get; set; }
     public string ExportPath { get; set; } = string.Empty;
-    public int ScheduleIntervalHours { get; set; } = 6;
+    public int ScheduleIntervalMinutes { get; set; } = 60;
 }
 
 public class MonitoredGroupConfig

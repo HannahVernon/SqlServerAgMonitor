@@ -20,6 +20,7 @@ using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.Alerting;
 using SqlAgMonitor.Core.Services.Connection;
 using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Core.Services.Notifications;
@@ -162,10 +163,29 @@ public class MainWindowViewModel : ViewModelBase
 
             if (config.MonitoredGroups.Count > 0)
                 StatusText = $"Loaded {config.MonitoredGroups.Count} monitored group(s)";
+
+            // Start scheduled HTML export if configured
+            StartScheduledExport();
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "Error loading monitored groups at startup.");
+        }
+    }
+
+    private void StartScheduledExport()
+    {
+        try
+        {
+            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
+            if (exportService is null) return;
+
+            exportService.StartScheduledExportAsync(() =>
+                _previousSnapshots.Values.ToList().AsReadOnly());
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to start scheduled HTML export.");
         }
     }
 

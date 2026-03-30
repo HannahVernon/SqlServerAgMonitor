@@ -152,8 +152,8 @@
                         </StackPanel>
 
                         <StackPanel Spacing="4" IsEnabled="{Binding ExportEnabled}">
-                            <TextBlock Text="Export Interval (hours)" />
-                            <NumericUpDown x:CompileBindings="False" Value="{Binding ExportIntervalHours}" Minimum="1" Maximum="168" Increment="1" 
+                            <TextBlock Text="Export Interval (minutes)" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding ExportIntervalMinutes}" Minimum="1" Maximum="10080" Increment="5" 
                                            Width="150" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
