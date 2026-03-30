@@ -24,8 +24,8 @@ namespace SqlAgMonitor.ViewModels;
 public class StatisticsViewModel : ViewModelBase
 {
     private string _selectedTimeRange = "24 hours";
-    private DateTimeOffset _customFrom = DateTimeOffset.UtcNow.AddDays(-1);
-    private DateTimeOffset _customUntil = DateTimeOffset.UtcNow;
+    private DateTime? _customFrom = DateTime.UtcNow.AddDays(-1);
+    private DateTime? _customUntil = DateTime.UtcNow;
     private string? _selectedGroup;
     private string? _selectedReplica;
     private string? _selectedDatabase;
@@ -49,13 +49,13 @@ public class StatisticsViewModel : ViewModelBase
         }
     }
 
-    public DateTimeOffset CustomFrom
+    public DateTime? CustomFrom
     {
         get => _customFrom;
         set => this.RaiseAndSetIfChanged(ref _customFrom, value);
     }
 
-    public DateTimeOffset CustomUntil
+    public DateTime? CustomUntil
     {
         get => _customUntil;
         set => this.RaiseAndSetIfChanged(ref _customUntil, value);
@@ -213,7 +213,9 @@ public class StatisticsViewModel : ViewModelBase
             "90 days" => (now.AddDays(-90), now),
             "180 days" => (now.AddDays(-180), now),
             "365 days" => (now.AddDays(-365), now),
-            "Custom" => (CustomFrom, CustomUntil),
+            "Custom" => (
+                new DateTimeOffset(CustomFrom ?? DateTime.UtcNow.AddDays(-1), TimeSpan.Zero),
+                new DateTimeOffset(CustomUntil ?? DateTime.UtcNow, TimeSpan.Zero)),
             _ => (now.AddHours(-24), now)
         };
     }
