@@ -384,7 +384,10 @@ public class StatisticsViewModel : ViewModelBase
                 GeometrySize = 0,
                 LineSmoothness = 0.3,
                 Stroke = new SolidColorPaint(color, 2),
-                Fill = null
+                Fill = null,
+                MiniatureShapeSize = 8,
+                YToolTipLabelFormatter = point =>
+                    $"{point.Model!.DateTime:HH:mm}  {point.Model.Value:N1}"
             });
         }
         return series.ToArray();
