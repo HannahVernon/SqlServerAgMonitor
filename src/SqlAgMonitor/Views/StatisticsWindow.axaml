@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:SqlAgMonitor.ViewModels"
+        xmlns:conv="using:SqlAgMonitor.Converters"
         xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -10,6 +11,10 @@
         Title="Statistics — SQL Server AG Monitor"
         Width="1280" Height="900"
         MinWidth="800" MinHeight="600">
+
+    <Window.Resources>
+        <conv:UtcToLocalConverter x:Key="UtcToLocal" />
+    </Window.Resources>
 
     <Design.DataContext>
         <vm:StatisticsViewModel/>
@@ -82,7 +87,7 @@
                           BorderThickness="0 0 0 1"
                           BorderBrush="#313244">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm\}}" Width="140" />
+                        <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='yyyy-MM-dd HH:mm'}" Width="140" />
                         <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="120" />
                         <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaName}" Width="120" />
                         <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="120" />

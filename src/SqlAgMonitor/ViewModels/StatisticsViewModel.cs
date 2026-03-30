@@ -322,7 +322,7 @@ public class StatisticsViewModel : ViewModelBase
             var color = colors[i % colors.Length];
 
             var values = g.Select(d => new DateTimePoint(
-                d.Timestamp.UtcDateTime,
+                d.Timestamp.ToLocalTime().DateTime,
                 valueSelector(d))).ToArray();
 
             series.Add(new LineSeries<DateTimePoint>
@@ -381,7 +381,7 @@ public class StatisticsViewModel : ViewModelBase
                 {
                     var d = _loadedData[r];
                     var row = r + 2;
-                    ws.Cell(row, 1).Value = d.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                    ws.Cell(row, 1).Value = d.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
                     ws.Cell(row, 2).Value = d.GroupName;
                     ws.Cell(row, 3).Value = d.ReplicaName;
                     ws.Cell(row, 4).Value = d.DatabaseName;
