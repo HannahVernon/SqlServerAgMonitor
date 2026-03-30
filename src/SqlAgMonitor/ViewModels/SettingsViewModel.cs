@@ -39,6 +39,11 @@ public class SettingsViewModel : ViewModelBase
     private string _exportPath = string.Empty;
     private int _exportIntervalHours = 6;
 
+    // History
+    private bool _autoPruneEnabled = true;
+    private int _maxRetentionDays = 90;
+    private int _maxRecords;
+
     // UI feedback
     private string? _testEmailStatus;
 
@@ -79,6 +84,11 @@ public class SettingsViewModel : ViewModelBase
     public bool ExportEnabled { get => _exportEnabled; set => this.RaiseAndSetIfChanged(ref _exportEnabled, value); }
     public string ExportPath { get => _exportPath; set => this.RaiseAndSetIfChanged(ref _exportPath, value); }
     public int ExportIntervalHours { get => _exportIntervalHours; set => this.RaiseAndSetIfChanged(ref _exportIntervalHours, value); }
+
+    // History settings
+    public bool AutoPruneEnabled { get => _autoPruneEnabled; set => this.RaiseAndSetIfChanged(ref _autoPruneEnabled, value); }
+    public int MaxRetentionDays { get => _maxRetentionDays; set => this.RaiseAndSetIfChanged(ref _maxRetentionDays, value); }
+    public int MaxRecords { get => _maxRecords; set => this.RaiseAndSetIfChanged(ref _maxRecords, value); }
 
     public string? TestEmailStatus { get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
 
@@ -129,6 +139,9 @@ public class SettingsViewModel : ViewModelBase
         ExportEnabled = config.Export.Enabled;
         ExportPath = config.Export.ExportPath;
         ExportIntervalHours = config.Export.ScheduleIntervalHours;
+        AutoPruneEnabled = config.History.AutoPruneEnabled;
+        MaxRetentionDays = config.History.MaxRetentionDays ?? 0;
+        MaxRecords = config.History.MaxRecords ?? 0;
     }
 
     public void ApplyTo(AppConfiguration config)
@@ -152,6 +165,9 @@ public class SettingsViewModel : ViewModelBase
         config.Export.Enabled = ExportEnabled;
         config.Export.ExportPath = ExportPath;
         config.Export.ScheduleIntervalHours = ExportIntervalHours;
+        config.History.AutoPruneEnabled = AutoPruneEnabled;
+        config.History.MaxRetentionDays = MaxRetentionDays > 0 ? MaxRetentionDays : null;
+        config.History.MaxRecords = MaxRecords > 0 ? MaxRecords : null;
     }
 
     private void OnSave()

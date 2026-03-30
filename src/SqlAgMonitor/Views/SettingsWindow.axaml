@@ -159,6 +159,37 @@
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
+
+            <!-- History -->
+            <TabItem Header="History">
+                <ScrollViewer Padding="8">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Alert History Retention" FontWeight="Bold" FontSize="16" />
+                        <TextBlock Text="Controls automatic cleanup of old alert records in the event database." 
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
+
+                        <CheckBox Content="Enable automatic pruning" IsChecked="{Binding AutoPruneEnabled}" />
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding AutoPruneEnabled}">
+                            <TextBlock Text="Maximum age (days)" />
+                            <TextBlock Text="Alerts older than this are automatically deleted. Leave at 0 to disable." 
+                                       FontSize="11" Opacity="0.6" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding MaxRetentionDays}" 
+                                           Minimum="0" Maximum="3650" Increment="1" 
+                                           Width="150" HorizontalAlignment="Left" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding AutoPruneEnabled}">
+                            <TextBlock Text="Maximum number of records" />
+                            <TextBlock Text="Only the most recent N records are kept. Leave at 0 for unlimited." 
+                                       FontSize="11" Opacity="0.6" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding MaxRecords}" 
+                                           Minimum="0" Maximum="10000000" Increment="1000" 
+                                           Width="150" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
         </TabControl>
     </DockPanel>
 </Window>

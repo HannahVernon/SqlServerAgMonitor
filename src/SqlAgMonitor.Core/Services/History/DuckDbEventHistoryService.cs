@@ -177,6 +177,39 @@ public class DuckDbEventHistoryService : IEventHistoryService
         return Convert.ToInt64(result);
     }
 
+    public async Task<long> PruneEventsAsync(int? maxAgeDays, int? maxRecords, CancellationToken cancellationToken = default)
+    {
+        EnsureInitialized();
+        long totalDeleted = 0;
+
+        if (maxAgeDays.HasValue)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = "DELETE FROM events WHERE timestamp < $cutoff";
+            cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-maxAgeDays.Value)));
+            totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (maxRecords.HasValue)
+        {
+            using var cmd = _connection!.CreateCommand();
+            cmd.CommandText = @"
+                DELETE FROM events 
+                WHERE id NOT IN (
+                    SELECT id FROM events ORDER BY timestamp DESC LIMIT $max_records
+                )";
+            cmd.Parameters.Add(new DuckDBParameter("max_records", maxRecords.Value));
+            totalDeleted += await cmd.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        if (totalDeleted > 0)
+        {
+            _logger.LogInformation("Pruned {Count} old events from history.", totalDeleted);
+        }
+
+        return totalDeleted;
+    }
+
     private void EnsureInitialized()
     {
         if (_connection == null)

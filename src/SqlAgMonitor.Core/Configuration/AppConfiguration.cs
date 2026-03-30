@@ -10,6 +10,7 @@ public class AppConfiguration
     public SyslogSettings Syslog { get; set; } = new();
     public AlertSettings Alerts { get; set; } = new();
     public ExportSettings Export { get; set; } = new();
+    public HistorySettings History { get; set; } = new();
     public List<MonitoredGroupConfig> MonitoredGroups { get; set; } = new();
 }
 
@@ -84,4 +85,11 @@ public class MutedAlert
     public string AlertType { get; set; } = string.Empty;
     public DateTimeOffset? MutedUntil { get; set; }
     public bool IsPermanent { get; set; }
+}
+
+public class HistorySettings
+{
+    public int? MaxRetentionDays { get; set; } = 90;
+    public int? MaxRecords { get; set; }
+    public bool AutoPruneEnabled { get; set; } = true;
 }

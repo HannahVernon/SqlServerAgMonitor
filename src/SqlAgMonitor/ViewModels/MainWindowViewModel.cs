@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -40,6 +41,8 @@ public class MainWindowViewModel : ViewModelBase
     private string _connectionSummary = "No groups monitored";
     private bool _isAllPaused;
     private string _lastPolledText = string.Empty;
+    private bool _isAlertHistoryVisible;
+    private AlertHistoryViewModel? _alertHistoryVm;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
 
@@ -69,6 +72,14 @@ public class MainWindowViewModel : ViewModelBase
 
     public bool IsNotAllPaused => !_isAllPaused;
 
+    public bool IsAlertHistoryVisible
+    {
+        get => _isAlertHistoryVisible;
+        set => this.RaiseAndSetIfChanged(ref _isAlertHistoryVisible, value);
+    }
+
+    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel();
+
     public string LastPolledText
     {
         get => _lastPolledText;
@@ -85,6 +96,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> AboutCommand { get; }
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenLogDirectoryCommand { get; }
+    public ReactiveCommand<Unit, Unit> ToggleAlertHistoryCommand { get; }
 
     public MainWindowViewModel()
         : this(null!, null!, null!)
@@ -113,6 +125,7 @@ public class MainWindowViewModel : ViewModelBase
             .Select(tab => tab != null);
         RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
         OpenLogDirectoryCommand = ReactiveCommand.Create(OnOpenLogDirectory);
+        ToggleAlertHistoryCommand = ReactiveCommand.CreateFromTask(OnToggleAlertHistoryAsync);
 
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
@@ -121,6 +134,12 @@ public class MainWindowViewModel : ViewModelBase
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => UpdateLastPolledText());
         _subscriptions.Add(timerSub);
+
+        // Prune old events on startup and then every 24 hours
+        var pruneSub = Observable.Timer(TimeSpan.FromSeconds(10), TimeSpan.FromHours(24))
+            .SelectMany(_ => Observable.FromAsync(PruneOldEventsAsync))
+            .Subscribe();
+        _subscriptions.Add(pruneSub);
 
         SubscribeToSnapshots();
         LoadAndStartMonitoredGroups();
@@ -179,6 +198,10 @@ public class MainWindowViewModel : ViewModelBase
 
                     // Record in history
                     _ = historyService?.RecordEventAsync(alert);
+
+                    // Refresh alert history panel if visible
+                    if (_isAlertHistoryVisible)
+                        _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
 
                     // Send notifications based on config
                     var config = (App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService)?.Load();
@@ -568,6 +591,34 @@ public class MainWindowViewModel : ViewModelBase
             LastPolledText = (tab?.IsPaused == true || IsAllPaused)
                 ? "Paused"
                 : string.Empty;
+        }
+    }
+
+    private async Task OnToggleAlertHistoryAsync()
+    {
+        IsAlertHistoryVisible = !IsAlertHistoryVisible;
+        if (IsAlertHistoryVisible)
+        {
+            await AlertHistory.LoadEventsAsync();
+        }
+    }
+
+    private async Task PruneOldEventsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
+            var config = configService?.Load();
+            if (config?.History.AutoPruneEnabled != true) return;
+
+            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
+            if (historyService == null) return;
+
+            await historyService.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "Failed to prune old events.");
         }
     }
 }

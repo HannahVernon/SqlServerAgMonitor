@@ -31,6 +31,12 @@
                 <MenuItem Header="_Light Theme" Command="{Binding SetThemeCommand}" CommandParameter="light" />
                 <MenuItem Header="_Dark Theme" Command="{Binding SetThemeCommand}" CommandParameter="dark" />
                 <MenuItem Header="_High Contrast" Command="{Binding SetThemeCommand}" CommandParameter="highContrast" />
+                <Separator />
+                <MenuItem Header="Alert _History" Command="{Binding ToggleAlertHistoryCommand}">
+                    <MenuItem.Icon>
+                        <CheckBox IsChecked="{Binding IsAlertHistoryVisible}" BorderThickness="0" IsHitTestVisible="False" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Monitoring">
                 <MenuItem Header="_Add AG/DAG..." Command="{Binding AddGroupCommand}" />
@@ -71,77 +77,126 @@
         </Border>
 
         <!-- Main Content: Tab Control or Empty State -->
-        <Panel>
-            <!-- Empty state when no tabs -->
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
-                        IsVisible="{Binding !MonitorTabs.Count}">
-                <TextBlock Text="No Availability Groups Monitored" FontSize="24" FontWeight="Light"
-                           HorizontalAlignment="Center" Opacity="0.5" />
-                <TextBlock Text="Click Monitoring → Add AG/DAG to get started, or use the button below."
-                           HorizontalAlignment="Center" Opacity="0.4" FontSize="14" />
-                <Button Content="  ＋  Add AG / DAG  " Command="{Binding AddGroupCommand}"
-                        HorizontalAlignment="Center" FontSize="16" Padding="20,10"
-                        Classes="accent" />
-            </StackPanel>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-            <!-- Tab control when tabs exist -->
-            <TabControl ItemsSource="{Binding MonitorTabs}" SelectedItem="{Binding SelectedTab}"
-                        Margin="4"
-                        IsVisible="{Binding MonitorTabs.Count}">
-            <TabControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:MonitorTabViewModel">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <Ellipse Width="10" Height="10" Fill="{Binding HealthBrush}" />
-                        <TextBlock Text="{Binding TabTitle}" />
-                    </StackPanel>
-                </DataTemplate>
-            </TabControl.ItemTemplate>
-            <TabControl.ContentTemplate>
-                <DataTemplate x:DataType="vm:MonitorTabViewModel">
-                    <Grid RowDefinitions="*,4,*" x:CompileBindings="False"
-                          Loaded="SplitGrid_Loaded">
-                        <!-- Topology View (top) -->
-                        <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
-                                BorderThickness="1" CornerRadius="4" Margin="4"
-                                ClipToBounds="True">
-                            <controls:TopologyControl AgInfo="{Binding AgInfo}" 
-                                                      DagInfo="{Binding DagInfo}"
-                                                      SelectedReplica="{Binding SelectedReplicaName}" />
-                        </Border>
+            <Panel Grid.Column="0">
+                <!-- Empty state when no tabs -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16"
+                            IsVisible="{Binding !MonitorTabs.Count}">
+                    <TextBlock Text="No Availability Groups Monitored" FontSize="24" FontWeight="Light"
+                               HorizontalAlignment="Center" Opacity="0.5" />
+                    <TextBlock Text="Click Monitoring → Add AG/DAG to get started, or use the button below."
+                               HorizontalAlignment="Center" Opacity="0.4" FontSize="14" />
+                    <Button Content="  ＋  Add AG / DAG  " Command="{Binding AddGroupCommand}"
+                            HorizontalAlignment="Center" FontSize="16" Padding="20,10"
+                            Classes="accent" />
+                </StackPanel>
 
-                        <!-- Splitter -->
-                        <GridSplitter Grid.Row="1" ResizeDirection="Rows" 
-                                      Background="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+                <!-- Tab control when tabs exist -->
+                <TabControl ItemsSource="{Binding MonitorTabs}" SelectedItem="{Binding SelectedTab}"
+                            Margin="4"
+                            IsVisible="{Binding MonitorTabs.Count}">
+                <TabControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:MonitorTabViewModel">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Ellipse Width="10" Height="10" Fill="{Binding HealthBrush}" />
+                            <TextBlock Text="{Binding TabTitle}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </TabControl.ItemTemplate>
+                <TabControl.ContentTemplate>
+                    <DataTemplate x:DataType="vm:MonitorTabViewModel">
+                        <Grid RowDefinitions="*,4,*" x:CompileBindings="False"
+                              Loaded="SplitGrid_Loaded">
+                            <!-- Topology View (top) -->
+                            <Border Grid.Row="0" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                    BorderThickness="1" CornerRadius="4" Margin="4"
+                                    ClipToBounds="True">
+                                <controls:TopologyControl AgInfo="{Binding AgInfo}" 
+                                                          DagInfo="{Binding DagInfo}"
+                                                          SelectedReplica="{Binding SelectedReplicaName}" />
+                            </Border>
 
-                        <!-- Data Grid (bottom) -->
-                        <Border Grid.Row="2" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
-                                BorderThickness="1" CornerRadius="4" Margin="4">
-                            <DockPanel>
-                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" 
-                                            Spacing="8" Margin="8,4">
-                                    <TextBlock Text="Database Replica States" FontWeight="SemiBold" 
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding FilterDescription}" Opacity="0.6"
-                                               VerticalAlignment="Center" FontSize="12" />
-                                </StackPanel>
-                                <DataGrid ItemsSource="{Binding PivotRows}" 
-                                          AutoGenerateColumns="False"
-                                          IsReadOnly="True"
-                                          CanUserSortColumns="True"
-                                          CanUserResizeColumns="True"
-                                          CanUserReorderColumns="True"
-                                          GridLinesVisibility="Horizontal"
-                                          Margin="4"
-                                          x:CompileBindings="False"
-                                          Loaded="DataGrid_Loaded">
-                                    <!-- Columns are generated dynamically in code-behind -->
-                                </DataGrid>
-                            </DockPanel>
-                        </Border>
-                    </Grid>
-                </DataTemplate>
-            </TabControl.ContentTemplate>
-        </TabControl>
-        </Panel>
+                            <!-- Splitter -->
+                            <GridSplitter Grid.Row="1" ResizeDirection="Rows" 
+                                          Background="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+
+                            <!-- Data Grid (bottom) -->
+                            <Border Grid.Row="2" BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                    BorderThickness="1" CornerRadius="4" Margin="4">
+                                <DockPanel>
+                                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" 
+                                                Spacing="8" Margin="8,4">
+                                        <TextBlock Text="Database Replica States" FontWeight="SemiBold" 
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding FilterDescription}" Opacity="0.6"
+                                                   VerticalAlignment="Center" FontSize="12" />
+                                    </StackPanel>
+                                    <DataGrid ItemsSource="{Binding PivotRows}" 
+                                              AutoGenerateColumns="False"
+                                              IsReadOnly="True"
+                                              CanUserSortColumns="True"
+                                              CanUserResizeColumns="True"
+                                              CanUserReorderColumns="True"
+                                              GridLinesVisibility="Horizontal"
+                                              Margin="4"
+                                              x:CompileBindings="False"
+                                              Loaded="DataGrid_Loaded">
+                                        <!-- Columns are generated dynamically in code-behind -->
+                                    </DataGrid>
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </TabControl.ContentTemplate>
+            </TabControl>
+            </Panel>
+
+            <!-- Alert History Panel -->
+            <Border Grid.Column="1" IsVisible="{Binding IsAlertHistoryVisible}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                    BorderThickness="1,0,0,0" Width="450">
+                <DockPanel>
+                    <DockPanel DockPanel.Dock="Top" Margin="8,8,8,4">
+                        <TextBlock Text="Alert History" FontWeight="Bold" FontSize="16" 
+                                   VerticalAlignment="Center" />
+                        <Button Content="✕" Command="{Binding ToggleAlertHistoryCommand}" 
+                                HorizontalAlignment="Right" Padding="6,2"
+                                Background="Transparent" FontSize="14" />
+                    </DockPanel>
+                    
+                    <DockPanel DockPanel.Dock="Bottom" Margin="8,4,8,8">
+                        <Button Content="Refresh" Command="{Binding AlertHistory.RefreshCommand}" 
+                                DockPanel.Dock="Left" Padding="12,4" />
+                        <TextBlock Text="{Binding AlertHistory.StatusText}" 
+                                   VerticalAlignment="Center" Margin="8,0,0,0"
+                                   FontSize="12" Opacity="0.6" />
+                    </DockPanel>
+                    
+                    <DataGrid ItemsSource="{Binding AlertHistory.Events}" 
+                              IsReadOnly="True" 
+                              GridLinesVisibility="Horizontal"
+                              CanUserReorderColumns="True"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="True"
+                              Margin="4"
+                              x:CompileBindings="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=\{0:yyyy-MM-dd HH:mm:ss\}}" Width="140" />
+                            <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="80" />
+                            <DataGridTextColumn Header="Type" Binding="{Binding AlertType}" Width="130" />
+                            <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="120" />
+                            <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaName}" Width="120" />
+                            <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="120" />
+                            <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </Border>
+        </Grid>
     </DockPanel>
 </Window>

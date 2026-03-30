@@ -13,7 +13,7 @@
 ### File Menu
 
 | Item  | Description |
-|---|---|---|
+|---|---|
 | Add AG/DAG… | Opens the connection wizard to discover and add Availability Groups |
 | Settings… | Opens the settings dialog (General, Email, Syslog, Alerts, Export) |
 | Exit | Shuts down the application completely (disposes connections, stops polling) |

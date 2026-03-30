@@ -7,46 +7,46 @@ SQL Server AG Monitor is a .NET 9 desktop application built on Avalonia UI and R
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │  Avalonia UI Layer (SqlAgMonitor)                                │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐ │
-│  │ MainWindow   │  │ Topology     │  │ DataGrid (dynamic      │ │
-│  │ (tabs, menu, │  │ Control      │  │ columns per replica)   │ │
-│  │  status bar) │  │ (animated)   │  │                        │ │
-│  └──────┬───────┘  └──────┬───────┘  └───────────┬────────────┘ │
-│         │                 │                      │              │
-│  ┌──────▼─────────────────▼──────────────────────▼────────────┐ │
-│  │ MainWindowViewModel / MonitorTabViewModel                  │ │
-│  │ (ReactiveUI, Observable subscriptions, Dispatcher.Post)    │ │
-│  └──────┬─────────────────────────────────────────────────────┘ │
-└─────────┼───────────────────────────────────────────────────────┘
+│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
+│  │ MainWindow   │  │ Topology     │  │ DataGrid (dynamic      │  │
+│  │ (tabs, menu, │  │ Control      │  │ columns per replica)   │  │
+│  │  status bar) │  │ (animated)   │  │                        │  │
+│  └──────┬───────┘  └──────┬───────┘  └───────────┬────────────┘  │
+│         │                 │                      │               │
+│  ┌──────▼─────────────────▼──────────────────────▼────────────┐  │
+│  │ MainWindowViewModel / MonitorTabViewModel                  │  │
+│  │ (ReactiveUI, Observable subscriptions, Dispatcher.Post)    │  │
+│  └──────┬─────────────────────────────────────────────────────┘  │
+└─────────┼────────────────────────────────────────────────────────┘
           │  IObservable<MonitoredGroupSnapshot>
 ┌─────────▼───────────────────────────────────────────────────────┐
 │  Core Layer (SqlAgMonitor.Core)                                 │
 │                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │
-│  │ AgMonitor   │  │ DagMonitor  │  │ AlertEngine             │ │
-│  │ Service     │  │ Service     │  │ (snapshot diff →        │ │
-│  │ (timer →    │  │ (timer →    │  │  cooldown → mute →     │ │
-│  │  poll →     │  │  poll per   │  │  publish)              │ │
-│  │  snapshot)  │  │  member)    │  │                         │ │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────────────────┘ │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
+│  │ AgMonitor   │  │ DagMonitor  │  │ AlertEngine             │  │
+│  │ Service     │  │ Service     │  │ (snapshot diff →        │  │
+│  │ (timer →    │  │ (timer →    │  │  cooldown → mute →      │  │
+│  │  poll →     │  │  poll per   │  │  publish)               │  │
+│  │  snapshot)  │  │  member)    │  │                         │  │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────────────────┘  │
 │         │                │                │                     │
-│  ┌──────▼────────────────▼──────┐  ┌──────▼──────────────────┐ │
-│  │ ReconnectingConnection       │  │ Notification Channels   │ │
-│  │ Wrapper (lease pattern,      │  │ ┌───────┐ ┌──────────┐ │ │
-│  │ background reconnect,        │  │ │ SMTP  │ │ Syslog   │ │ │
-│  │ exponential backoff)         │  │ │ Email │ │ RFC 5424 │ │ │
-│  └──────┬───────────────────────┘  │ └───────┘ └──────────┘ │ │
-│         │                          │ ┌──────────────────────┐ │ │
-│  ┌──────▼──────┐                   │ │ OS Notifications     │ │ │
-│  │ SqlConnection│                  │ └──────────────────────┘ │ │
-│  │ Service     │                   └─────────────────────────┘ │
-│  └─────────────┘                                               │
+│  ┌──────▼────────────────▼──────┐  ┌──────▼──────────────────┐  │
+│  │ ReconnectingConnection       │  │ Notification Channels   │  │
+│  │ Wrapper (lease pattern,      │  │ ┌───────┐ ┌──────────┐  │  │
+│  │ background reconnect,        │  │ │ SMTP  │ │ Syslog   │  │  │
+│  │ exponential backoff)         │  │ │ Email │ │ RFC 5424 │  │  │
+│  └──────┬───────────────────────┘  │ └───────┘ └──────────┘  │  │
+│         │                          │ ┌──────────────────────┐│  │
+│  ┌──────▼──────┐                   │ │ OS Notifications     ││  │
+│  │ SqlConnection│                  │ └──────────────────────┘│  │
+│  │ Service     │                   └─────────────────────────┘  │
+│  └─────────────┘                                                │
 │                                                                 │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐ │
-│  │ DuckDB Event │  │ Credential   │  │ JSON Configuration   │ │
-│  │ History      │  │ Store        │  │ Service              │ │
-│  │ Service      │  │ (DPAPI/AES)  │  │ (%APPDATA%)          │ │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │ DuckDB Event │  │ Credential   │  │ JSON Configuration   │   │
+│  │ History      │  │ Store        │  │ Service              │   │
+│  │ Service      │  │ (DPAPI/AES)  │  │ (%APPDATA%)          │   │
+│  └──────────────┘  └──────────────┘  └──────────────────────┘   │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -192,24 +192,24 @@ DagMonitorService.PollGroupAsync()
 The `ReconnectingConnectionWrapper` ensures exclusive access to a `SqlConnection` through a disposable lease:
 
 ```
-┌─────────────────────────────────────────────────────┐
-│ ReconnectingConnectionWrapper                       │
-│                                                     │
-│  SemaphoreSlim(1,1)  ◄── guards all access          │
-│                                                     │
-│  TryAcquireAsync()   → null if semaphore busy       │
-│  AcquireAsync()      → waits for semaphore          │
-│                                                     │
-│  ConnectionLease : IAsyncDisposable                  │
-│  ├── .Connection     → the SqlConnection             │
-│  ├── .Invalidate()   → mark broken, start reconnect │
-│  └── .DisposeAsync() → release semaphore             │
-│                                                     │
-│  ReconnectLoopAsync() (background task)              │
+┌─────────────────────────────────────────────────────────┐
+│ ReconnectingConnectionWrapper                           │
+│                                                         │
+│  SemaphoreSlim(1,1)  ◄── guards all access              │
+│                                                         │
+│  TryAcquireAsync()   → null if semaphore busy           │
+│  AcquireAsync()      → waits for semaphore              │
+│                                                         │
+│  ConnectionLease : IAsyncDisposable                     │
+│  ├── .Connection     → the SqlConnection                │
+│  ├── .Invalidate()   → mark broken, start reconnect     │
+│  └── .DisposeAsync() → release semaphore                │
+│                                                         │
+│  ReconnectLoopAsync() (background task)                 │
 │  ├── Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s │
-│  ├── Acquires semaphore with 2s timeout              │
-│  └── Emits ConnectionStateChange on success/failure  │
-└─────────────────────────────────────────────────────┘
+│  ├── Acquires semaphore with 2s timeout                 │
+│  └── Emits ConnectionStateChange on success/failure     │
+└─────────────────────────────────────────────────────────┘
 ```
 
 **Timer polls** use `TryAcquireAsync` (non-blocking) — if the previous poll or a reconnect attempt is in progress, the poll is silently skipped and the Observable chain's `.Where(snapshot != null)` filter drops it. The UI keeps the last good data.
