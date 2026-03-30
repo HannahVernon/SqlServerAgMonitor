@@ -70,3 +70,7 @@ credentials.dat
 credentials.aes
 credentials.salt
 config.json
+
+# Node.js (icon generation tooling)
+node_modules/
+package-lock.json

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- Gradient for database body -->
+    <linearGradient id="dbGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3A7BD5"/>
+      <stop offset="100%" stop-color="#1B4F8A"/>
+    </linearGradient>
+    <!-- Gradient for database top ellipse -->
+    <linearGradient id="dbTopGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#5B9AE8"/>
+      <stop offset="100%" stop-color="#3A7BD5"/>
+    </linearGradient>
+    <!-- Glow filter for the heartbeat line -->
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Drop shadow for depth -->
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#1A1A2E"/>
+
+  <!-- Database body (cylinder) -->
+  <g filter="url(#shadow)">
+    <!-- Cylinder body -->
+    <rect x="128" y="160" width="256" height="200" rx="0" fill="url(#dbGrad)"/>
+    <!-- Bottom ellipse -->
+    <ellipse cx="256" cy="360" rx="128" ry="36" fill="#1B4F8A"/>
+    <!-- Side fill to connect rect to ellipses -->
+    <rect x="128" y="160" width="256" height="200" fill="url(#dbGrad)"/>
+    <!-- Top ellipse -->
+    <ellipse cx="256" cy="160" rx="128" ry="36" fill="url(#dbTopGrad)"/>
+    <!-- Inner ring on top -->
+    <ellipse cx="256" cy="160" rx="100" ry="28" fill="none" stroke="#5B9AE8" stroke-width="1.5" opacity="0.5"/>
+
+    <!-- Horizontal divider lines (data rows) -->
+    <path d="M128,230 Q256,260 384,230" fill="none" stroke="#5B9AE8" stroke-width="1.5" opacity="0.4"/>
+    <path d="M128,295 Q256,325 384,295" fill="none" stroke="#5B9AE8" stroke-width="1.5" opacity="0.4"/>
+  </g>
+
+  <!-- Heartbeat / health pulse line -->
+  <g filter="url(#glow)">
+    <polyline
+      points="80,310 160,310 190,310 210,260 230,370 250,240 270,350 290,280 310,310 340,310 432,310"
+      fill="none"
+      stroke="#4CAF50"
+      stroke-width="6"
+      stroke-linecap="round"
+      stroke-linejoin="round"/>
+  </g>
+
+  <!-- Small green dot (health indicator) -->
+  <circle cx="432" cy="310" r="10" fill="#4CAF50" opacity="0.9"/>
+  <circle cx="432" cy="310" r="6" fill="#81C784"/>
+
+  <!-- Subtle outer ring -->
+  <circle cx="256" cy="256" r="238" fill="none" stroke="#3A7BD5" stroke-width="2" opacity="0.3"/>
+</svg>

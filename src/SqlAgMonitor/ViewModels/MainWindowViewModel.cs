@@ -427,6 +427,11 @@ public class MainWindowViewModel : ViewModelBase
         _subscriptions.Dispose();
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Tell the MainWindow to perform a real close (bypassing minimize-to-tray)
+            if (desktop.MainWindow is Views.MainWindow mainWindow)
+            {
+                mainWindow.ExitApplication();
+            }
             desktop.Shutdown();
         }
     }

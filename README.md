@@ -16,6 +16,7 @@ A cross-platform desktop application for real-time monitoring of SQL Server Avai
 - **DataGrid features** — Right-click copy (cell/row/all), color-coded sync state, send/redo queue and rate columns, per-tab column layout persistence
 - **SQL Server 2014+ compatibility** — Graceful fallback for older instances missing `secondary_lag_seconds`
 - **Keyboard shortcuts** — F5 to refresh, standard menu accelerators
+- **System tray** — Closing the window minimizes to system tray; monitoring and alerting continue in the background. Exit via File → Exit
 
 ## Technology Stack
 

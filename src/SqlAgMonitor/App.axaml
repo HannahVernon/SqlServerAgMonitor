@@ -3,7 +3,6 @@
              x:Class="SqlAgMonitor.App"
              xmlns:local="using:SqlAgMonitor"
              RequestedThemeVariant="Dark">
-             <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.DataTemplates>
         <local:ViewLocator/>
@@ -13,4 +12,20 @@
         <FluentTheme />
         <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml"/>
     </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon Icon="avares://SqlAgMonitor/Assets/app-icon.png"
+                      ToolTipText="SQL Server AG Monitor"
+                      Clicked="TrayIcon_OnClicked">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Show" Click="TrayShow_OnClick" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Exit" Click="TrayExit_OnClick" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
 </Application>

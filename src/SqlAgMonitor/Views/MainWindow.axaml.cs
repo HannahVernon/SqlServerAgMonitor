@@ -204,14 +204,27 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     protected override void OnClosing(WindowClosingEventArgs e)
     {
-        SaveLayout();
-
-        if (!_isExiting && DataContext is MainWindowViewModel vm)
+        if (!_isExiting)
         {
-            _isExiting = true;
-            vm.ExitCommand.Execute().Subscribe();
+            // Minimize to system tray instead of closing
+            e.Cancel = true;
+            SaveLayout();
+            Hide();
+            return;
         }
+
+        // True exit via File > Exit
+        SaveLayout();
         base.OnClosing(e);
+    }
+
+    /// <summary>
+    /// Called by the ViewModel's ExitCommand to perform a real application exit.
+    /// </summary>
+    public void ExitApplication()
+    {
+        _isExiting = true;
+        Close();
     }
 
     private void SplitGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

@@ -1,8 +1,9 @@
 using System;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using Avalonia.ReactiveUI;
+using Avalonia.Platform;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core;
@@ -45,6 +46,9 @@ public partial class App : Application
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // Keep the app alive when the window is closed (minimized to tray)
+            desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
             var agMonitor = Services.GetRequiredService<AgMonitorService>();
             var dagMonitor = Services.GetRequiredService<DagMonitorService>();
             var loggerFactory = Services.GetRequiredService<ILoggerFactory>();
@@ -52,9 +56,43 @@ public partial class App : Application
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainWindowViewModel(agMonitor, dagMonitor, loggerFactory),
+                Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://SqlAgMonitor/Assets/app-icon.png")))
             };
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private void TrayIcon_OnClicked(object? sender, EventArgs e)
+    {
+        ShowMainWindow();
+    }
+
+    private void TrayShow_OnClick(object? sender, EventArgs e)
+    {
+        ShowMainWindow();
+    }
+
+    private void TrayExit_OnClick(object? sender, EventArgs e)
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
+            && desktop.MainWindow?.DataContext is MainWindowViewModel vm)
+        {
+            vm.ExitCommand.Execute().Subscribe();
+        }
+    }
+
+    private void ShowMainWindow()
+    {
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        {
+            var window = desktop.MainWindow;
+            if (window != null)
+            {
+                window.Show();
+                window.WindowState = WindowState.Normal;
+                window.Activate();
+            }
+        }
     }
 }
