@@ -12,6 +12,7 @@ public class AesCredentialStore : ICredentialStore
     private readonly string _storePath;
     private readonly object _lock = new();
     private byte[]? _derivedKey;
+    private bool _disposed;
 
     private const int SaltSize = 32;
     private const int NonceSize = 12;
@@ -124,6 +125,7 @@ public class AesCredentialStore : ICredentialStore
 
     private void EnsureUnlocked()
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         if (_derivedKey == null)
             throw new InvalidOperationException("Credential store is locked. Call Unlock() with master password first.");
     }
@@ -201,5 +203,18 @@ public class AesCredentialStore : ICredentialStore
     {
         var saltPath = Path.ChangeExtension(_storePath, ".salt");
         File.WriteAllBytes(saltPath, salt);
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            _disposed = true;
+            if (_derivedKey != null)
+            {
+                CryptographicOperations.ZeroMemory(_derivedKey);
+                _derivedKey = null;
+            }
+        }
     }
 }

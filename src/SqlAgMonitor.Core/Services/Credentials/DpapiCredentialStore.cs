@@ -110,4 +110,9 @@ public class DpapiCredentialStore : ICredentialStore
         var json = JsonSerializer.Serialize(store, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_storePath, json);
     }
+
+    public void Dispose()
+    {
+        // DPAPI does not hold sensitive key material in memory; nothing to clear.
+    }
 }
