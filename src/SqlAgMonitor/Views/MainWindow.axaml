@@ -33,10 +33,6 @@
                 <MenuItem Header="E_xit" Command="{Binding ExitCommand}" />
             </MenuItem>
             <MenuItem Header="_View">
-                <MenuItem Header="_Light Theme" Command="{Binding SetThemeCommand}" CommandParameter="light" />
-                <MenuItem Header="_Dark Theme" Command="{Binding SetThemeCommand}" CommandParameter="dark" />
-                <MenuItem Header="_High Contrast" Command="{Binding SetThemeCommand}" CommandParameter="highContrast" />
-                <Separator />
                 <MenuItem Header="Alert _History" Command="{Binding ToggleAlertHistoryCommand}">
                     <MenuItem.Icon>
                         <CheckBox IsChecked="{Binding IsAlertHistoryVisible}" BorderThickness="0" IsHitTestVisible="False" />
