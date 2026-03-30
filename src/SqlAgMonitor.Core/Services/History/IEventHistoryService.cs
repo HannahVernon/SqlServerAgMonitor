@@ -12,5 +12,5 @@ public interface IEventHistoryService : IAsyncDisposable
     Task<long> GetEventCountAsync(string? groupName = null, CancellationToken cancellationToken = default);
     Task<long> PruneEventsAsync(int? maxAgeDays, int? maxRecords, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<SnapshotDataPoint>> GetSnapshotDataAsync(DateTimeOffset since, DateTimeOffset until, string? groupName = null, string? replicaName = null, string? databaseName = null, CancellationToken cancellationToken = default);
-    Task<SnapshotFilterOptions> GetSnapshotFiltersAsync(CancellationToken cancellationToken = default);
+    Task<SnapshotFilterOptions> GetSnapshotFiltersAsync(string? groupName = null, string? replicaName = null, CancellationToken cancellationToken = default);
 }

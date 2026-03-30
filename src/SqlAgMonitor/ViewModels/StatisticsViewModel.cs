@@ -87,7 +87,11 @@ public class StatisticsViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedGroup, value);
-            if (!_initializing) _ = LoadDataAsync();
+            if (!_initializing)
+            {
+                _ = RefreshCascadingFiltersAsync(groupChanged: true);
+                _ = LoadDataAsync();
+            }
         }
     }
 
@@ -97,7 +101,11 @@ public class StatisticsViewModel : ViewModelBase
         set
         {
             this.RaiseAndSetIfChanged(ref _selectedReplica, value);
-            if (!_initializing) _ = LoadDataAsync();
+            if (!_initializing)
+            {
+                _ = RefreshCascadingFiltersAsync(groupChanged: false);
+                _ = LoadDataAsync();
+            }
         }
     }
 
@@ -228,6 +236,50 @@ public class StatisticsViewModel : ViewModelBase
         }
 
         await LoadDataAsync();
+    }
+
+    private async Task RefreshCascadingFiltersAsync(bool groupChanged)
+    {
+        var svc = App.Services?.GetService<IEventHistoryService>();
+        if (svc == null) return;
+
+        var group = _selectedGroup == "(All)" ? null : _selectedGroup;
+        var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
+
+        var filters = await svc.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
+
+        _initializing = true;
+        try
+        {
+            // Refresh replicas when group changes
+            if (groupChanged)
+            {
+                ReplicaNames.Clear();
+                ReplicaNames.Add("(All)");
+                foreach (var r in filters.ReplicaNames) ReplicaNames.Add(r);
+
+                if (!ReplicaNames.Contains(_selectedReplica ?? ""))
+                {
+                    _selectedReplica = "(All)";
+                    this.RaisePropertyChanged(nameof(SelectedReplica));
+                }
+            }
+
+            // Always refresh databases based on current group + replica
+            DatabaseNames.Clear();
+            DatabaseNames.Add("(All)");
+            foreach (var d in filters.DatabaseNames) DatabaseNames.Add(d);
+
+            if (!DatabaseNames.Contains(_selectedDatabase ?? ""))
+            {
+                _selectedDatabase = "(All)";
+                this.RaisePropertyChanged(nameof(SelectedDatabase));
+            }
+        }
+        finally
+        {
+            _initializing = false;
+        }
     }
 
     private (DateTimeOffset since, DateTimeOffset until) GetTimeRange()
