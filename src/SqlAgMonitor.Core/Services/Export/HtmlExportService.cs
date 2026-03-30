@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
+using System.Linq;
 
 namespace SqlAgMonitor.Core.Services.Export;
 
@@ -22,7 +23,7 @@ public class HtmlExportService : IHtmlExportService
         var html = GenerateHtml(snapshots);
         Directory.CreateDirectory(outputPath);
 
-        var fileName = $"ag-monitor-report-{DateTime.UtcNow:yyyyMMdd-HHmmss}.html";
+        var fileName = "ag-monitor-report.html";
         var fullPath = Path.Combine(outputPath, fileName);
         await File.WriteAllTextAsync(fullPath, html, cancellationToken);
         _logger.LogInformation("HTML report exported to {Path}.", fullPath);
@@ -48,8 +49,8 @@ public class HtmlExportService : IHtmlExportService
         {
             if (Directory.Exists(exportPath))
             {
-                var htmlFiles = Directory.GetFiles(exportPath, "*.html");
-                if (htmlFiles.Length > 0)
+                var reportFile = Path.Combine(exportPath, "ag-monitor-report.html");
+                if (File.Exists(reportFile))
                 {
                     hasExistingReports = true;
                 }
@@ -147,14 +148,16 @@ public class HtmlExportService : IHtmlExportService
                 sb.AppendLine("</table>");
 
                 sb.AppendLine("<table><tr><th>Database</th><th>Replica</th><th>Sync State</th><th>Last Hardened LSN</th><th>LSN Diff</th><th>Log Send Queue</th><th>Redo Queue</th></tr>");
-                foreach (var r in snapshot.AgInfo.Replicas)
+                var sortedDbStates = snapshot.AgInfo.Replicas
+                    .SelectMany(r => r.DatabaseStates)
+                    .OrderBy(d => d.DatabaseName)
+                    .ThenBy(d => d.ReplicaServerName)
+                    .ThenBy(d => d.SynchronizationState);
+                foreach (var d in sortedDbStates)
                 {
-                    foreach (var d in r.DatabaseStates)
-                    {
-                        sb.AppendLine($"<tr><td>{d.DatabaseName}</td><td>{d.ReplicaServerName}</td><td>{d.SynchronizationState}</td>");
-                        sb.AppendLine($"<td>{LsnHelper.FormatAsVlfBlock(d.LastHardenedLsn)}</td><td>{d.LogBlockDifference:N0}</td><td>{d.SecondaryLagSeconds}s</td>");
-                        sb.AppendLine($"<td>{d.LogSendQueueSizeKb} KB</td><td>{d.RedoQueueSizeKb} KB</td></tr>");
-                    }
+                    sb.AppendLine($"<tr><td>{d.DatabaseName}</td><td>{d.ReplicaServerName}</td><td>{d.SynchronizationState}</td>");
+                    sb.AppendLine($"<td>{LsnHelper.FormatAsVlfBlock(d.LastHardenedLsn)}</td><td>{d.LogBlockDifference:N0}</td><td>{d.SecondaryLagSeconds}s</td>");
+                    sb.AppendLine($"<td>{d.LogSendQueueSizeKb} KB</td><td>{d.RedoQueueSizeKb} KB</td></tr>");
                 }
                 sb.AppendLine("</table>");
             }
