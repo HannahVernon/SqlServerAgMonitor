@@ -154,7 +154,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             var header = col.Header?.ToString();
             if (header == null) continue;
 
-            tabLayout.ColumnWidths[header] = col.ActualWidth;
+            tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth);
             tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
         }
 
