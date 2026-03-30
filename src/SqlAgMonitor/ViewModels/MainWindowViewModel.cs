@@ -115,7 +115,7 @@ public class MainWindowViewModel : ViewModelBase
         AddGroupCommand = ReactiveCommand.Create(OnAddGroup);
         RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
         OpenSettingsCommand = ReactiveCommand.Create(OnOpenSettings);
-        ExitCommand = ReactiveCommand.Create(OnExit);
+        ExitCommand = ReactiveCommand.CreateFromTask(OnExitAsync);
         PauseAllCommand = ReactiveCommand.Create(OnPauseAll);
         ResumeAllCommand = ReactiveCommand.Create(OnResumeAll);
         AboutCommand = ReactiveCommand.Create(OnAbout);
@@ -474,12 +474,40 @@ public class MainWindowViewModel : ViewModelBase
         settingsWindow.ShowDialog(window);
     }
 
-    private void OnExit()
+    private async Task OnExitAsync()
     {
         _subscriptions.Dispose();
+
+        // Gracefully dispose services that hold resources
+        try
+        {
+            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
+            if (exportService != null)
+                await exportService.StopScheduledExportAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error stopping export service on shutdown.");
+        }
+
+        try { await _agMonitor.DisposeAsync(); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Error disposing AG monitor on shutdown."); }
+
+        try { await _dagMonitor.DisposeAsync(); }
+        catch (Exception ex) { _logger.LogDebug(ex, "Error disposing DAG monitor on shutdown."); }
+
+        try
+        {
+            if (App.Services?.GetService(typeof(IEventHistoryService)) is IEventHistoryService historyService)
+                await historyService.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error disposing event history service on shutdown.");
+        }
+
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            // Tell the MainWindow to perform a real close (bypassing minimize-to-tray)
             if (desktop.MainWindow is Views.MainWindow mainWindow)
             {
                 mainWindow.ExitApplication();
