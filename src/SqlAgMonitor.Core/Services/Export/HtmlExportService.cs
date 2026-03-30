@@ -117,7 +117,7 @@ public class HtmlExportService : IHtmlExportService
         sb.AppendLine(".healthy { color: #a6e3a1; } .partial { color: #fab387; } .unhealthy { color: #f38ba8; } .unknown { color: #6c7086; }");
         sb.AppendLine("</style></head><body>");
         sb.AppendLine("<h1>SQL Server AG Monitor Report</h1>");
-        sb.AppendLine($"<p>Generated: {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm:ss} UTC</p>");
+        sb.AppendLine($"<p>Generated: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}</p>");
 
         foreach (var snapshot in snapshots)
         {

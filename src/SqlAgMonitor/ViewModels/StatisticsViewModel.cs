@@ -16,6 +16,7 @@ using LiveChartsCore.SkiaSharpView.Painting;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SkiaSharp;
+using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.History;
 
@@ -34,6 +35,8 @@ public class StatisticsViewModel : ViewModelBase
     private bool _isCustomRange;
     private SnapshotTier _activeTier;
     private bool _initializing;
+    private bool _autoRefresh;
+    private IDisposable? _autoRefreshSubscription;
 
     public static string[] TimeRangeOptions { get; } =
         ["24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
@@ -66,6 +69,16 @@ public class StatisticsViewModel : ViewModelBase
     {
         get => _isCustomRange;
         set => this.RaiseAndSetIfChanged(ref _isCustomRange, value);
+    }
+
+    public bool AutoRefresh
+    {
+        get => _autoRefresh;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _autoRefresh, value);
+            ConfigureAutoRefresh(value);
+        }
     }
 
     public string? SelectedGroup
@@ -309,7 +322,7 @@ public class StatisticsViewModel : ViewModelBase
             var color = colors[i % colors.Length];
 
             var values = g.Select(d => new DateTimePoint(
-                d.Timestamp.UtcDateTime,
+                d.Timestamp.ToLocalTime().DateTime,
                 valueSelector(d))).ToArray();
 
             series.Add(new LineSeries<DateTimePoint>
@@ -368,7 +381,7 @@ public class StatisticsViewModel : ViewModelBase
                 {
                     var d = _loadedData[r];
                     var row = r + 2;
-                    ws.Cell(row, 1).Value = d.Timestamp.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                    ws.Cell(row, 1).Value = d.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
                     ws.Cell(row, 2).Value = d.GroupName;
                     ws.Cell(row, 3).Value = d.ReplicaName;
                     ws.Cell(row, 4).Value = d.DatabaseName;
@@ -426,4 +439,27 @@ public class StatisticsViewModel : ViewModelBase
         LabelsPaint = new SolidColorPaint(SKColors.LightGray),
         MinLimit = 0
     };
+
+    private void ConfigureAutoRefresh(bool enabled)
+    {
+        _autoRefreshSubscription?.Dispose();
+        _autoRefreshSubscription = null;
+
+        if (!enabled) return;
+
+        var configService = App.Services?.GetService<IConfigurationService>();
+        var intervalSeconds = configService?.Load().GlobalPollingIntervalSeconds ?? 16;
+
+        _autoRefreshSubscription = Observable.Interval(TimeSpan.FromSeconds(intervalSeconds))
+            .ObserveOn(RxApp.MainThreadScheduler)
+            .Where(_ => !_isLoading)
+            .SelectMany(_ => Observable.FromAsync(LoadDataAsync))
+            .Subscribe();
+    }
+
+    public void Dispose()
+    {
+        _autoRefreshSubscription?.Dispose();
+        _autoRefreshSubscription = null;
+    }
 }

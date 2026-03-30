@@ -21,6 +21,12 @@ public class WindowLayoutState
     public bool IsMaximized { get; set; }
     public double SplitterTopProportion { get; set; } = 0.5;
 
+    // Statistics window
+    public double? StatsWindowX { get; set; }
+    public double? StatsWindowY { get; set; }
+    public double? StatsWindowWidth { get; set; }
+    public double? StatsWindowHeight { get; set; }
+
     /// <summary>Per-tab grid column layouts, keyed by tab title (AG/DAG name).</summary>
     public Dictionary<string, TabGridLayout> TabLayouts { get; set; } = new();
 
