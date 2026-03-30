@@ -1,20 +1,21 @@
 # SQL Server AG Monitor
 
-A cross-platform desktop application for real-time monitoring and management of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs).
+A cross-platform desktop application for real-time monitoring of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs).
 
 ## Features
 
-- **Animated topology visualization** — Node cards connected by particle-animated data flow arrows, color-coded by LSN lag (green/yellow/orange/red), solid for synchronous and dashed for asynchronous connections
-- **Split view** — Topology diagram on top, sortable data grid on bottom with click-to-filter
-- **Full control** — Failover, force failover, sync/async mode toggle, suspend/resume with confirmation dialogs
+- **Animated topology visualization** — Server cards connected by particle-animated data flow arrows, color-coded by LSN lag (green/yellow/orange/red), solid for synchronous and dashed for asynchronous commit modes
+- **Split view** — Topology diagram on top, sortable/resizable data grid on bottom with click-to-filter by replica
 - **Multi-tab monitoring** — One tab per AG/DAG, each with independent persistent connections and configurable polling intervals
-- **Auto-discovery** — Connect to a server and automatically discover all AGs/DAGs
-- **Alerting** — In-app, OS-level, SMTP email, and syslog notifications with per-alert thresholds, master cooldown, and mute support
-- **Event history** — DuckDB-backed structured event storage with plain text error logs
-- **Scheduled HTML export** — Periodic health reports to a configurable path
-- **System tray** — Minimize to tray with background monitoring and tray icon health indicator
+- **Auto-discovery** — Connect to a server and automatically discover all AGs/DAGs via a guided wizard
+- **Alerting** — SMTP email, syslog (RFC 3164), and OS notifications with per-alert thresholds, master cooldown, and mute support
+- **Event history** — DuckDB-backed structured event storage with daily rotating log files
+- **Scheduled HTML export** — Periodic health reports to a configurable directory
 - **Themes** — Light, dark, and high-contrast
-- **Secure credentials** — OS credential store (DPAPI/Keychain/libsecret) with AES-256 encrypted fallback
+- **Secure credentials** — DPAPI encryption on Windows with AES-256 encrypted fallback for other platforms
+- **DataGrid features** — Right-click copy (cell/row/all), color-coded sync state, send/redo queue and rate columns, per-tab column layout persistence
+- **SQL Server 2014+ compatibility** — Graceful fallback for older instances missing `secondary_lag_seconds`
+- **Keyboard shortcuts** — F5 to refresh, standard menu accelerators
 
 ## Technology Stack
 
