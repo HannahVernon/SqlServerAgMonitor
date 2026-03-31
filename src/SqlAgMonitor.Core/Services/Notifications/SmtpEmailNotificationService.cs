@@ -25,19 +25,28 @@ public class SmtpEmailNotificationService : IEmailNotificationService
 
     public async Task SendAlertEmailAsync(AlertEvent alert, CancellationToken cancellationToken = default)
     {
-        var settings = _configService.Load().Email;
-        ValidateSettings(settings);
+        try
+        {
+            var settings = _configService.Load().Email;
+            ValidateSettings(settings);
 
-        using var client = await CreateSmtpClientAsync(settings, cancellationToken);
-        using var message = BuildMessage(alert, settings);
+            using var client = await CreateSmtpClientAsync(settings, cancellationToken);
+            using var message = BuildMessage(alert, settings);
 
-        _logger.LogInformation(
-            "Sending alert email for {AlertType} on '{GroupName}' to {RecipientCount} recipient(s).",
-            alert.AlertType, alert.GroupName, settings.ToAddresses.Count);
+            _logger.LogInformation(
+                "Sending alert email for {AlertType} on '{GroupName}' to {RecipientCount} recipient(s).",
+                alert.AlertType, alert.GroupName, settings.ToAddresses.Count);
 
-        await client.SendMailAsync(message, cancellationToken);
+            await client.SendMailAsync(message, cancellationToken);
 
-        _logger.LogInformation("Alert email sent successfully.");
+            _logger.LogInformation("Alert email sent successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex,
+                "Failed to send alert email for {AlertType} on '{GroupName}'.",
+                alert.AlertType, alert.GroupName);
+        }
     }
 
     public async Task<bool> TestConnectionAsync(CancellationToken cancellationToken = default)
