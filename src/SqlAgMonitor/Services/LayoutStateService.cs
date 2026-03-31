@@ -39,11 +39,6 @@ public class WindowLayoutState
 
     /// <summary>Per-tab grid column layouts, keyed by tab title (AG/DAG name).</summary>
     public Dictionary<string, TabGridLayout> TabLayouts { get; set; } = new();
-
-    [Obsolete("Use TabLayouts instead. Kept for migration from old layout files.")]
-    public Dictionary<string, double>? ColumnWidths { get; set; }
-    [Obsolete("Use TabLayouts instead. Kept for migration from old layout files.")]
-    public Dictionary<string, int>? ColumnDisplayIndices { get; set; }
 }
 
 public class LayoutStateService : ILayoutStateService

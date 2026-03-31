@@ -204,12 +204,6 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         // Save the currently active tab's column state
         SaveCurrentTabColumnState();
 
-        // Clear obsolete global column properties
-#pragma warning disable CS0618 // Intentional: clearing legacy properties during migration
-        state.ColumnWidths = null;
-        state.ColumnDisplayIndices = null;
-#pragma warning restore CS0618
-
         _layoutService.Save(state);
     }
 
