@@ -53,38 +53,67 @@ public class DpapiCredentialStore : ICredentialStore
 
     public Task StorePasswordAsync(string credentialKey, string password, CancellationToken cancellationToken = default)
     {
-        lock (_lock)
+        try
         {
-            var store = LoadStore();
-            var passwordBytes = Encoding.UTF8.GetBytes(password);
-            var encryptedBytes = ProtectedData.Protect(passwordBytes, null, DataProtectionScope.CurrentUser);
-            store[credentialKey] = Convert.ToBase64String(encryptedBytes);
-            SaveStore(store);
-            _logger.LogInformation("Credential stored for key {Key}.", credentialKey);
+            lock (_lock)
+            {
+                var store = LoadStore();
+                var passwordBytes = Encoding.UTF8.GetBytes(password);
+                var encryptedBytes = ProtectedData.Protect(passwordBytes, null, DataProtectionScope.CurrentUser);
+                store[credentialKey] = Convert.ToBase64String(encryptedBytes);
+                SaveStore(store);
+                _logger.LogInformation("Credential stored for key {Key}.", credentialKey);
+            }
+        }
+        catch (CryptographicException ex)
+        {
+            _logger.LogError(ex, "Failed to encrypt credential for key {Key}.", credentialKey);
+            throw;
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "Failed to save credential store to {Path}.", _storePath);
+            throw;
         }
         return Task.CompletedTask;
     }
 
     public Task DeletePasswordAsync(string credentialKey, CancellationToken cancellationToken = default)
     {
-        lock (_lock)
+        try
         {
-            var store = LoadStore();
-            if (store.Remove(credentialKey))
+            lock (_lock)
             {
-                SaveStore(store);
-                _logger.LogInformation("Credential deleted for key {Key}.", credentialKey);
+                var store = LoadStore();
+                if (store.Remove(credentialKey))
+                {
+                    SaveStore(store);
+                    _logger.LogInformation("Credential deleted for key {Key}.", credentialKey);
+                }
             }
+        }
+        catch (IOException ex)
+        {
+            _logger.LogError(ex, "Failed to save credential store to {Path}.", _storePath);
+            throw;
         }
         return Task.CompletedTask;
     }
 
     public Task<bool> HasPasswordAsync(string credentialKey, CancellationToken cancellationToken = default)
     {
-        lock (_lock)
+        try
         {
-            var store = LoadStore();
-            return Task.FromResult(store.ContainsKey(credentialKey));
+            lock (_lock)
+            {
+                var store = LoadStore();
+                return Task.FromResult(store.ContainsKey(credentialKey));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check credential existence for key {Key}.", credentialKey);
+            return Task.FromResult(false);
         }
     }
 
