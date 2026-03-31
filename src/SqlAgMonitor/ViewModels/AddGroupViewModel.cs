@@ -224,7 +224,7 @@ public class AddGroupViewModel : ViewModelBase
         NextStepCommand = ReactiveCommand.Create(OnNextStep, canNext);
         PreviousStepCommand = ReactiveCommand.Create(OnPreviousStep);
         FinishCommand = ReactiveCommand.Create(OnFinish, canFinish);
-        CancelCommand = ReactiveCommand.Create(OnCancel);
+        CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestDagMembersCommand = ReactiveCommand.CreateFromTask(OnTestDagMembersAsync);
     }
 
@@ -358,7 +358,7 @@ public class AddGroupViewModel : ViewModelBase
         CloseRequested?.Invoke(true);
     }
 
-    private async void OnCancel()
+    private async Task OnCancelAsync()
     {
         if (_credentialStored && _credentialStore is not null)
         {
