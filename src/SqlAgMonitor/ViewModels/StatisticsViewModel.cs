@@ -24,7 +24,7 @@ namespace SqlAgMonitor.ViewModels;
 
 public class StatisticsViewModel : ViewModelBase
 {
-    private readonly IEventHistoryService _historyService;
+    private readonly ISnapshotQueryService _snapshotQuery;
     private readonly IConfigurationService _configService;
     private string _selectedTimeRange = "24 hours";
     private DateTime? _customFrom = DateTime.UtcNow.AddDays(-1);
@@ -222,9 +222,9 @@ public class StatisticsViewModel : ViewModelBase
     // Holds the loaded data for export
     private IReadOnlyList<SnapshotDataPoint> _loadedData = Array.Empty<SnapshotDataPoint>();
 
-    public StatisticsViewModel(IEventHistoryService historyService, IConfigurationService configService)
+    public StatisticsViewModel(ISnapshotQueryService snapshotQuery, IConfigurationService configService)
     {
-        _historyService = historyService;
+        _snapshotQuery = snapshotQuery;
         _configService = configService;
         LoadCommand = ReactiveCommand.CreateFromTask(LoadDataAsync);
         ExportCommand = ReactiveCommand.CreateFromTask<string>(ExportToExcelAsync);
@@ -235,7 +235,7 @@ public class StatisticsViewModel : ViewModelBase
         _initializing = true;
         try
         {
-            var filters = await _historyService.GetSnapshotFiltersAsync();
+            var filters = await _snapshotQuery.GetSnapshotFiltersAsync();
 
             GroupNames.Clear();
             GroupNames.Add("(All)");
@@ -293,7 +293,7 @@ public class StatisticsViewModel : ViewModelBase
         var group = _selectedGroup == "(All)" ? null : _selectedGroup;
         var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
 
-        var filters = await _historyService.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
+        var filters = await _snapshotQuery.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
 
         _initializing = true;
         try
@@ -371,7 +371,7 @@ public class StatisticsViewModel : ViewModelBase
             var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
             var database = _selectedDatabase == "(All)" ? null : _selectedDatabase;
 
-            var data = await _historyService.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
+            var data = await _snapshotQuery.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
 
             // If we were cancelled while awaiting, a newer load is in progress — discard results.
             if (cts.Token.IsCancellationRequested) return;

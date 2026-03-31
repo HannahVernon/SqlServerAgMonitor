@@ -53,12 +53,12 @@ public partial class App : Application
         Services.GetRequiredService<IThemeService>().SetTheme(config.Theme);
 
         // Initialize event history database (errors are logged; DuckDB degrades gracefully if unavailable)
-        var historyService = Services.GetRequiredService<IEventHistoryService>();
+        var historyMaintenance = Services.GetRequiredService<IHistoryMaintenanceService>();
         _ = Task.Run(async () =>
         {
             try
             {
-                await historyService.InitializeAsync();
+                await historyMaintenance.InitializeAsync();
             }
             catch (Exception ex)
             {
@@ -77,6 +77,9 @@ public partial class App : Application
             var dagMonitor = Services.GetRequiredService<DagMonitorService>();
             var exportService = Services.GetRequiredService<IHtmlExportService>();
             var alertEngine = Services.GetRequiredService<IAlertEngine>();
+            var eventRecorder = Services.GetRequiredService<IEventRecorder>();
+            var eventQuery = Services.GetRequiredService<IEventQueryService>();
+            var snapshotQuery = Services.GetRequiredService<ISnapshotQueryService>();
             var emailService = Services.GetRequiredService<IEmailNotificationService>();
             var syslogService = Services.GetRequiredService<ISyslogService>();
             var connectionService = Services.GetRequiredService<ISqlConnectionService>();
@@ -88,9 +91,9 @@ public partial class App : Application
             {
                 DataContext = new MainWindowViewModel(
                     agMonitor, dagMonitor, configService, exportService,
-                    alertEngine, historyService, emailService, syslogService,
-                    connectionService, discoveryService, credentialStore,
-                    loggerFactory),
+                    alertEngine, eventRecorder, historyMaintenance, eventQuery,
+                    snapshotQuery, emailService, syslogService, connectionService,
+                    discoveryService, credentialStore, loggerFactory),
                 Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://SqlAgMonitor/Assets/app-icon.png")))
             };
         }

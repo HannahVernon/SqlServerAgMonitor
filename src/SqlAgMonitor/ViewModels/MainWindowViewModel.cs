@@ -34,7 +34,10 @@ public class MainWindowViewModel : ViewModelBase
     private readonly IConfigurationService _configService;
     private readonly IHtmlExportService _exportService;
     private readonly IAlertEngine _alertEngine;
-    private readonly IEventHistoryService _historyService;
+    private readonly IEventRecorder _eventRecorder;
+    private readonly IHistoryMaintenanceService _historyMaintenance;
+    private readonly IEventQueryService _eventQuery;
+    private readonly ISnapshotQueryService _snapshotQuery;
     private readonly IEmailNotificationService _emailService;
     private readonly ISyslogService _syslogService;
     private readonly ISqlConnectionService _connectionService;
@@ -86,7 +89,7 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _isAlertHistoryVisible, value);
     }
 
-    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel(_historyService);
+    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel(_eventQuery);
 
     public string LastPolledText
     {
@@ -112,7 +115,10 @@ public class MainWindowViewModel : ViewModelBase
         IConfigurationService configService,
         IHtmlExportService exportService,
         IAlertEngine alertEngine,
-        IEventHistoryService historyService,
+        IEventRecorder eventRecorder,
+        IHistoryMaintenanceService historyMaintenance,
+        IEventQueryService eventQuery,
+        ISnapshotQueryService snapshotQuery,
         IEmailNotificationService emailService,
         ISyslogService syslogService,
         ISqlConnectionService connectionService,
@@ -125,7 +131,10 @@ public class MainWindowViewModel : ViewModelBase
         _configService = configService;
         _exportService = exportService;
         _alertEngine = alertEngine;
-        _historyService = historyService;
+        _eventRecorder = eventRecorder;
+        _historyMaintenance = historyMaintenance;
+        _eventQuery = eventQuery;
+        _snapshotQuery = snapshotQuery;
         _emailService = emailService;
         _syslogService = syslogService;
         _connectionService = connectionService;
@@ -235,7 +244,7 @@ public class MainWindowViewModel : ViewModelBase
                     StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}");
 
                 // Record in history
-                _ = _historyService.RecordEventAsync(alert);
+                _ = _eventRecorder.RecordEventAsync(alert);
 
                 // Refresh alert history panel if visible
                 if (_isAlertHistoryVisible)
@@ -270,7 +279,7 @@ public class MainWindowViewModel : ViewModelBase
         _previousSnapshots[snapshot.Name] = snapshot;
 
         // Record snapshot statistics to DuckDB
-        _ = _historyService.RecordSnapshotAsync(snapshot);
+        _ = _eventRecorder.RecordSnapshotAsync(snapshot);
     }
 
     private MonitorTabViewModel? FindTab(string name)
@@ -503,7 +512,7 @@ public class MainWindowViewModel : ViewModelBase
 
         try
         {
-            await _historyService.DisposeAsync();
+            await _historyMaintenance.DisposeAsync();
         }
         catch (Exception ex)
         {
@@ -656,7 +665,7 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return Task.CompletedTask;
 
-        var vm = new StatisticsViewModel(_historyService, _configService);
+        var vm = new StatisticsViewModel(_snapshotQuery, _configService);
         var statsWindow = new Views.StatisticsWindow { DataContext = vm };
         statsWindow.Show(window);
         return Task.CompletedTask;
@@ -669,7 +678,7 @@ public class MainWindowViewModel : ViewModelBase
             var config = _configService.Load();
             if (!config.History.AutoPruneEnabled) return;
 
-            await _historyService.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
+            await _historyMaintenance.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -683,7 +692,7 @@ public class MainWindowViewModel : ViewModelBase
         {
             var config = _configService.Load();
             var retention = config.History.SnapshotRetention;
-            await _historyService.SummarizeSnapshotsAsync(
+            await _historyMaintenance.SummarizeSnapshotsAsync(
                 retention.RawRetentionHours,
                 retention.HourlyRetentionDays,
                 retention.DailyRetentionDays,
