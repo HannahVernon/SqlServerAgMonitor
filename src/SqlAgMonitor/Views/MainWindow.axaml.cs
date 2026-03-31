@@ -16,6 +16,7 @@ using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Models;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 

@@ -1,9 +1,13 @@
-namespace SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Core.Models;
+
+namespace SqlAgMonitor.Models;
 
 /// <summary>
 /// A pivoted row representing one database, with Last Hardened LSN values
 /// per replica stored in an indexer for dynamic column binding.
 /// LSN values are formatted as VLF:Block hex notation (slot stripped).
+/// Lives in the UI layer because it contains presentation concerns:
+/// hex color properties and a DataGrid-specific integer indexer.
 /// </summary>
 public class DatabasePivotRow
 {
