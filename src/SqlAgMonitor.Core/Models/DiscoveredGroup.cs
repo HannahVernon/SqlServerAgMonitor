@@ -1,8 +1,6 @@
-using ReactiveUI;
-
 namespace SqlAgMonitor.Core.Models;
 
-public class DiscoveredGroup : ReactiveObject
+public class DiscoveredGroup : ObservableModel
 {
     private bool _isSelected = true;
 
@@ -19,7 +17,7 @@ public class DiscoveredGroup : ReactiveObject
     public bool IsSelected
     {
         get => _isSelected;
-        set => this.RaiseAndSetIfChanged(ref _isSelected, value);
+        set => SetProperty(ref _isSelected, value);
     }
 }
 

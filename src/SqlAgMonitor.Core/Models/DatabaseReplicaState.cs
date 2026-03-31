@@ -1,8 +1,6 @@
-using ReactiveUI;
-
 namespace SqlAgMonitor.Core.Models;
 
-public class DatabaseReplicaState : ReactiveObject
+public class DatabaseReplicaState : ObservableModel
 {
     private string _databaseName = string.Empty;
     private string _replicaServerName = string.Empty;
@@ -21,30 +19,30 @@ public class DatabaseReplicaState : ReactiveObject
     private decimal _logBlockDifference;
     private long _secondaryLagSeconds;
 
-    public string DatabaseName { get => _databaseName; set => this.RaiseAndSetIfChanged(ref _databaseName, value); }
-    public string ReplicaServerName { get => _replicaServerName; set => this.RaiseAndSetIfChanged(ref _replicaServerName, value); }
-    public string AgName { get => _agName; set => this.RaiseAndSetIfChanged(ref _agName, value); }
-    public bool IsLocal { get => _isLocal; set => this.RaiseAndSetIfChanged(ref _isLocal, value); }
-    public SynchronizationState SynchronizationState { get => _synchronizationState; set => this.RaiseAndSetIfChanged(ref _synchronizationState, value); }
-    public decimal LastHardenedLsn { get => _lastHardenedLsn; set => this.RaiseAndSetIfChanged(ref _lastHardenedLsn, value); }
-    public decimal LastCommitLsn { get => _lastCommitLsn; set => this.RaiseAndSetIfChanged(ref _lastCommitLsn, value); }
-    public long LogSendQueueSizeKb { get => _logSendQueueSizeKb; set => this.RaiseAndSetIfChanged(ref _logSendQueueSizeKb, value); }
-    public long RedoQueueSizeKb { get => _redoQueueSizeKb; set => this.RaiseAndSetIfChanged(ref _redoQueueSizeKb, value); }
-    public long LogSendRateKbPerSec { get => _logSendRateKbPerSec; set => this.RaiseAndSetIfChanged(ref _logSendRateKbPerSec, value); }
-    public long RedoRateKbPerSec { get => _redoRateKbPerSec; set => this.RaiseAndSetIfChanged(ref _redoRateKbPerSec, value); }
-    public bool IsSuspended { get => _isSuspended; set => this.RaiseAndSetIfChanged(ref _isSuspended, value); }
-    public string? SuspendReason { get => _suspendReason; set => this.RaiseAndSetIfChanged(ref _suspendReason, value); }
-    public AvailabilityMode AvailabilityMode { get => _availabilityMode; set => this.RaiseAndSetIfChanged(ref _availabilityMode, value); }
+    public string DatabaseName { get => _databaseName; set => SetProperty(ref _databaseName, value); }
+    public string ReplicaServerName { get => _replicaServerName; set => SetProperty(ref _replicaServerName, value); }
+    public string AgName { get => _agName; set => SetProperty(ref _agName, value); }
+    public bool IsLocal { get => _isLocal; set => SetProperty(ref _isLocal, value); }
+    public SynchronizationState SynchronizationState { get => _synchronizationState; set => SetProperty(ref _synchronizationState, value); }
+    public decimal LastHardenedLsn { get => _lastHardenedLsn; set => SetProperty(ref _lastHardenedLsn, value); }
+    public decimal LastCommitLsn { get => _lastCommitLsn; set => SetProperty(ref _lastCommitLsn, value); }
+    public long LogSendQueueSizeKb { get => _logSendQueueSizeKb; set => SetProperty(ref _logSendQueueSizeKb, value); }
+    public long RedoQueueSizeKb { get => _redoQueueSizeKb; set => SetProperty(ref _redoQueueSizeKb, value); }
+    public long LogSendRateKbPerSec { get => _logSendRateKbPerSec; set => SetProperty(ref _logSendRateKbPerSec, value); }
+    public long RedoRateKbPerSec { get => _redoRateKbPerSec; set => SetProperty(ref _redoRateKbPerSec, value); }
+    public bool IsSuspended { get => _isSuspended; set => SetProperty(ref _isSuspended, value); }
+    public string? SuspendReason { get => _suspendReason; set => SetProperty(ref _suspendReason, value); }
+    public AvailabilityMode AvailabilityMode { get => _availabilityMode; set => SetProperty(ref _availabilityMode, value); }
 
     /// <summary>
     /// Log block position difference from the primary replica, computed by stripping
     /// the slot component from the numeric(25,0) LSN before subtracting.
     /// </summary>
-    public decimal LogBlockDifference { get => _logBlockDifference; set => this.RaiseAndSetIfChanged(ref _logBlockDifference, value); }
+    public decimal LogBlockDifference { get => _logBlockDifference; set => SetProperty(ref _logBlockDifference, value); }
 
     /// <summary>
     /// Synchronization delay in seconds (from sys.dm_hadr_database_replica_states.secondary_lag_seconds).
     /// Only populated on the primary replica for secondary database rows. SQL Server 2016+.
     /// </summary>
-    public long SecondaryLagSeconds { get => _secondaryLagSeconds; set => this.RaiseAndSetIfChanged(ref _secondaryLagSeconds, value); }
+    public long SecondaryLagSeconds { get => _secondaryLagSeconds; set => SetProperty(ref _secondaryLagSeconds, value); }
 }
