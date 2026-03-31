@@ -101,6 +101,12 @@ public class HtmlExportService : IHtmlExportService
         return Task.CompletedTask;
     }
 
+    public void Dispose()
+    {
+        _exportTimer?.Dispose();
+        _exportTimer = null;
+    }
+
     private static string GenerateHtml(IReadOnlyList<MonitoredGroupSnapshot> snapshots)
     {
         var sb = new StringBuilder();
