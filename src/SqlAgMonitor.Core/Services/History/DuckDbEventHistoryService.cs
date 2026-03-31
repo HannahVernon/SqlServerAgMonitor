@@ -351,6 +351,12 @@ public class DuckDbEventHistoryService : IEventHistoryService
     {
         if (!_initialized) return;
 
+        // Clamp retention values to sane minimums to prevent misconfigured or
+        // tampered config.json from deleting all historical data.
+        rawRetentionHours = Math.Max(1, rawRetentionHours);
+        hourlyRetentionDays = Math.Max(1, hourlyRetentionDays);
+        dailyRetentionDays = Math.Max(1, dailyRetentionDays);
+
         // Each step acquires/releases _opLock independently so that high-frequency
         // RecordSnapshotAsync calls can interleave between steps rather than queuing
         // behind a single long-held lock.
@@ -453,6 +459,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             await Task.Run(() =>
             {
+                // Retention values are integers from application config — safe to format into
+                // DuckDB INTERVAL literals. DuckDB does not support parameterized INTERVAL syntax.
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = string.Format(CultureInfo.InvariantCulture, @"
                     DELETE FROM snapshots WHERE timestamp < current_timestamp - INTERVAL '{0} hours';
@@ -477,6 +485,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
     public async Task<IReadOnlyList<AlertEvent>> GetEventsAsync(string? groupName = null, DateTimeOffset? since = null, int limit = 100, CancellationToken cancellationToken = default)
     {
         if (!_initialized) return Array.Empty<AlertEvent>();
+        limit = Math.Max(1, limit);
         await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -496,14 +505,18 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     cmd.Parameters.Add(new DuckDBParameter("since", since.Value.UtcDateTime));
                 }
 
+                // WHERE clause is assembled from code-controlled static fragments containing
+                // DuckDB parameter placeholders (e.g. "group_name = $group_name"). No user input
+                // is interpolated — only the structural SQL keywords (WHERE, AND) are joined in.
                 var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
-                cmd.CommandText = $@"
+                cmd.CommandText = @"
                     SELECT id, timestamp, alert_type, group_name, replica_name, database_name, message, severity, email_sent, syslog_sent
                     FROM events
-                    {whereClause}
+                    " + whereClause + @"
                     ORDER BY timestamp DESC
-                    LIMIT {limit}
+                    LIMIT $limit
                 ";
+                cmd.Parameters.Add(new DuckDBParameter("limit", limit));
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
@@ -579,21 +592,23 @@ public class DuckDbEventHistoryService : IEventHistoryService
                 long totalDeleted = 0;
                 if (maxAgeDays.HasValue)
                 {
+                    var clampedDays = Math.Max(1, maxAgeDays.Value);
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = "DELETE FROM events WHERE timestamp < $cutoff";
-                    cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-maxAgeDays.Value)));
+                    cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-clampedDays)));
                     totalDeleted += cmd.ExecuteNonQuery();
                 }
 
                 if (maxRecords.HasValue)
                 {
+                    var clampedRecords = Math.Max(1, maxRecords.Value);
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
                         DELETE FROM events 
                         WHERE id NOT IN (
                             SELECT id FROM events ORDER BY timestamp DESC LIMIT $max_records
                         )";
-                    cmd.Parameters.Add(new DuckDBParameter("max_records", maxRecords.Value));
+                    cmd.Parameters.Add(new DuckDBParameter("max_records", clampedRecords));
                     totalDeleted += cmd.ExecuteNonQuery();
                 }
 
@@ -671,6 +686,10 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     cmd.Parameters.Add(new DuckDBParameter("database_name", databaseName));
                 }
 
+                // WHERE clause is assembled from code-controlled static fragments containing
+                // DuckDB parameter placeholders (e.g. "group_name = $group_name"). The table name
+                // and time column are selected by the tier enum, not user input. No user-supplied
+                // values are interpolated into the SQL structure.
                 var whereClause = "WHERE " + string.Join(" AND ", filters);
 
                 if (tier == SnapshotTier.Raw)
@@ -782,7 +801,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         groups.Add(reader.GetString(0));
                 }
 
-                // Replicas filtered by selected group
+                // Replicas filtered by selected group.
+                // WHERE clause uses a static fragment with a DuckDB parameter placeholder.
                 using var cmd2 = _connection!.CreateCommand();
                 var replicaWhere = "";
                 if (groupName != null)
@@ -803,7 +823,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         replicas.Add(reader2.GetString(0));
                 }
 
-                // Databases filtered by selected group and replica
+                // Databases filtered by selected group and replica.
+                // WHERE clause assembled from static fragments with DuckDB parameter placeholders.
                 using var cmd3 = _connection!.CreateCommand();
                 var dbFilters = new List<string>();
                 if (groupName != null)

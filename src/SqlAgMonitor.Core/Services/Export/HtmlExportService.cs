@@ -39,7 +39,7 @@ public class HtmlExportService : IHtmlExportService
         }
 
         var exportPath = config.Export.ExportPath;
-        var interval = TimeSpan.FromMinutes(config.Export.ScheduleIntervalMinutes);
+        var interval = TimeSpan.FromMinutes(Math.Max(1, config.Export.ScheduleIntervalMinutes));
 
         // Check if export directory exists and contains any HTML files
         TimeSpan initialDelay;

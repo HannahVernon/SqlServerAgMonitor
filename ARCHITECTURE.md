@@ -335,6 +335,22 @@ snapshots (raw)                    snapshot_hourly                 snapshot_dail
 
 **UI:** The Statistics window (`StatisticsWindow` / `StatisticsViewModel`) uses **LiveCharts2** (`LiveChartsCore.SkiaSharpView.Avalonia`) to render four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference). Excel export uses **ClosedXML** to generate `.xlsx` files.
 
+## SQL Query Safety
+
+All SQL queries follow strict parameterization rules to prevent SQL injection:
+
+### SQL Server (AgControlService, AgMonitorService, DagMonitorService)
+
+- **Read-only DMV queries** use static `const string` SQL with no parameters needed — they query only system catalog views (`sys.availability_groups`, `sys.dm_hadr_*`, etc.) with no user-supplied identifiers.
+- **DDL statements** (`ALTER AVAILABILITY GROUP`, `ALTER DATABASE`) cannot use parameterized identifiers. These pass object names as `SqlParameter` values and use SQL Server's built-in `QUOTENAME()` function server-side to safely escape identifiers, with the result executed via `EXEC(@sql)`.
+
+### DuckDB (DuckDbEventHistoryService)
+
+- **INSERT/DELETE statements** use named DuckDB parameters (`$param_name` with `DuckDBParameter` objects) for all data values.
+- **Dynamic WHERE clauses** are assembled from code-controlled static string fragments that contain parameter placeholders (e.g., `"group_name = $group_name"`). The fragments are joined with `" AND "` and prepended with `"WHERE "`. No user-supplied values are interpolated into the SQL structure — only the structural keywords (`WHERE`, `AND`) and pre-defined column/parameter names appear in the assembled string. This is a standard dynamic query-building pattern used when filter criteria are optional.
+- **Table name selection** in `GetSnapshotDataAsync` chooses between `snapshots`, `snapshot_hourly`, and `snapshot_daily` based on the requested time range. These are hard-coded string literals selected by an internal tier enum, not user input.
+- **INTERVAL literals** in pruning queries use `string.Format` with integer retention values from application configuration. DuckDB does not support parameterized `INTERVAL` syntax, and integers cannot contain SQL syntax.
+
 ## LSN Comparison
 
 SQL Server stores LSNs as `numeric(25,0)` with the structure:

@@ -378,7 +378,7 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
 
     private bool TryPassCooldown(AlertSettings alertSettings)
     {
-        var cooldown = TimeSpan.FromMinutes(alertSettings.MasterCooldownMinutes);
+        var cooldown = TimeSpan.FromMinutes(Math.Max(0, alertSettings.MasterCooldownMinutes));
         var now = DateTimeOffset.UtcNow;
 
         lock (_cooldownLock)
