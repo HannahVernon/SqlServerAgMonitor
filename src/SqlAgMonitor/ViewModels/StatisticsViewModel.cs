@@ -353,7 +353,9 @@ public class StatisticsViewModel : ViewModelBase
             "365 days" => (now.AddDays(-365), now),
             "Custom" => (
                 new DateTimeOffset(DateTime.SpecifyKind(CustomFrom ?? DateTime.Now.AddDays(-1), DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero),
-                new DateTimeOffset(DateTime.SpecifyKind(CustomUntil ?? DateTime.Now, DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero)),
+                // CalendarDatePicker returns midnight; add one day for an exclusive upper bound
+                // so selecting "March 31" includes all of March 31.
+                new DateTimeOffset(DateTime.SpecifyKind((CustomUntil ?? DateTime.Now).AddDays(1), DateTimeKind.Local).ToUniversalTime(), TimeSpan.Zero)),
             _ => (now.AddHours(-24), now)
         };
     }
