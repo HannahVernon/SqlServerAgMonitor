@@ -123,28 +123,24 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             }
         }
 
-        // Restore widths as proportional Star values so columns always fit on screen.
-        // Saved values are pixel widths — convert to Star weights relative to the
-        // narrowest saved column (which becomes 1*).
-        var matchedWidths = new System.Collections.Generic.List<(DataGridColumn col, double saved)>();
+        // Restore widths as Star values. Saved values are already proportional
+        // weights (ActualWidth / totalWidth at save time), so they can be used
+        // directly as Star weights without further normalization.
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
-            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
-                matchedWidths.Add((col, w));
-        }
-
-        if (matchedWidths.Count > 0)
-        {
-            var minWidth = matchedWidths.Min(x => x.saved);
-            foreach (var (col, saved) in matchedWidths)
+            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 0)
             {
-                col.Width = new DataGridLength(saved / minWidth, DataGridLengthUnitType.Star);
+                col.Width = new DataGridLength(w, DataGridLengthUnitType.Star);
             }
         }
     }
 
-    /// <summary>Saves the current tab's DataGrid column state to the in-memory layout.</summary>
+    /// <summary>
+    /// Saves the current tab's DataGrid column state to the in-memory layout.
+    /// Column widths are saved as proportional weights (ActualWidth / total) so they
+    /// can be restored directly as Star values without a lossy pixel-to-star conversion.
+    /// </summary>
     private void SaveCurrentTabColumnState()
     {
         if (_layoutState == null || string.IsNullOrEmpty(_lastActiveTabTitle)) return;
@@ -152,13 +148,19 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
         if (dataGrid == null || dataGrid.Columns.Count == 0) return;
 
+        var totalWidth = dataGrid.Columns.Sum(c => c.ActualWidth);
+        if (totalWidth <= 0) return;
+
         var tabLayout = new TabGridLayout();
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
             if (header == null) continue;
 
-            tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth);
+            // Save proportional weight: each column's share of total width.
+            // This is stable across save/restore cycles because the math is reversible:
+            // Star(w) renders to w/sum * available, and saving again yields w/sum.
+            tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth / totalWidth, 6);
             tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
         }
 
