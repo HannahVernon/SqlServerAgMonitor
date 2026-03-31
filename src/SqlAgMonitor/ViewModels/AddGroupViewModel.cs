@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Reactive;
+using System.Reactive.Disposables;
 using System.Reactive.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,11 +15,12 @@ using SqlAgMonitor.Core.Services.Monitoring;
 
 namespace SqlAgMonitor.ViewModels;
 
-public class AddGroupViewModel : ViewModelBase
+public class AddGroupViewModel : ViewModelBase, IDisposable
 {
     private readonly ISqlConnectionService? _connectionService;
     private readonly IAgDiscoveryService? _discoveryService;
     private readonly ICredentialStore? _credentialStore;
+    private CompositeDisposable _discoverySubscriptions = new();
 
     private string _server = string.Empty;
     private string _authType = "Windows";
@@ -299,6 +301,8 @@ public class AddGroupViewModel : ViewModelBase
         IsDiscovering = true;
         StatusMessage = "Discovering AGs and DAGs...";
         DiscoveredGroups.Clear();
+        _discoverySubscriptions.Dispose();
+        _discoverySubscriptions = new CompositeDisposable();
 
         try
         {
@@ -308,7 +312,7 @@ public class AddGroupViewModel : ViewModelBase
             foreach (var group in groups)
             {
                 group.IsSelected = true;
-                group.WhenAnyValue(g => g.IsSelected)
+                var sub = group.WhenAnyValue(g => g.IsSelected)
                     .Subscribe(_ =>
                     {
                         HasSelectedGroups = DiscoveredGroups.Any(g => g.IsSelected);
@@ -316,6 +320,7 @@ public class AddGroupViewModel : ViewModelBase
                         this.RaisePropertyChanged(nameof(ShowNextButton));
                         this.RaisePropertyChanged(nameof(ShowFinishButton));
                     });
+                _discoverySubscriptions.Add(sub);
                 DiscoveredGroups.Add(group);
             }
 
@@ -496,5 +501,10 @@ public class AddGroupViewModel : ViewModelBase
     {
         AllDagMembersTested = DagMemberConnections.Count > 0 &&
                               DagMemberConnections.All(m => m.ConnectionSucceeded);
+    }
+
+    public void Dispose()
+    {
+        _discoverySubscriptions.Dispose();
     }
 }

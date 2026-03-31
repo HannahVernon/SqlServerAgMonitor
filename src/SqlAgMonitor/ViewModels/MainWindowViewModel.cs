@@ -286,13 +286,15 @@ public class MainWindowViewModel : ViewModelBase
         var credentialStore = App.Services.GetRequiredService<ICredentialStore>();
 
         var vm = new AddGroupViewModel(connectionService, discoveryService, credentialStore);
-        var addWindow = new AddGroupWindow { DataContext = vm };
-        var result = await addWindow.ShowDialog<object?>(window);
-
-        if (result is true && vm.SelectedGroups is { Count: > 0 } groups)
+        try
         {
-            var configService = App.Services.GetRequiredService<IConfigurationService>();
-            var config = configService.Load();
+            var addWindow = new AddGroupWindow { DataContext = vm };
+            var result = await addWindow.ShowDialog<object?>(window);
+
+            if (result is true && vm.SelectedGroups is { Count: > 0 } groups)
+            {
+                var configService = App.Services.GetRequiredService<IConfigurationService>();
+                var config = configService.Load();
 
             foreach (var group in groups)
             {
@@ -353,6 +355,11 @@ public class MainWindowViewModel : ViewModelBase
             StatusText = groups.Count == 1
                 ? $"Now monitoring {groups[0].Name}"
                 : $"Now monitoring {groups.Count} group(s)";
+            }
+        }
+        finally
+        {
+            vm.Dispose();
         }
     }
 
