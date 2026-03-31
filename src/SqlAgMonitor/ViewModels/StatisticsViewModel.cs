@@ -38,6 +38,7 @@ public class StatisticsViewModel : ViewModelBase
     private bool _initializing;
     private bool _autoRefresh;
     private IDisposable? _autoRefreshSubscription;
+    private CancellationTokenSource? _loadCts;
     private bool _showSendQueueChart = true;
     private bool _showRedoQueueChart = true;
     private bool _showLagChart = true;
@@ -359,6 +360,12 @@ public class StatisticsViewModel : ViewModelBase
 
     public async Task LoadDataAsync(CancellationToken cancellationToken = default)
     {
+        // Cancel any in-flight load so concurrent calls from multiple property
+        // setters don't race against each other.
+        _loadCts?.Cancel();
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _loadCts = cts;
+
         var svc = App.Services?.GetService<IEventHistoryService>();
         if (svc == null) return;
 
@@ -372,7 +379,11 @@ public class StatisticsViewModel : ViewModelBase
             var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
             var database = _selectedDatabase == "(All)" ? null : _selectedDatabase;
 
-            var data = await svc.GetSnapshotDataAsync(since, until, group, replica, database, cancellationToken);
+            var data = await svc.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
+
+            // If we were cancelled while awaiting, a newer load is in progress — discard results.
+            if (cts.Token.IsCancellationRequested) return;
+
             _loadedData = data;
 
             if (data.Count > 0)
@@ -389,13 +400,18 @@ public class StatisticsViewModel : ViewModelBase
             var tierLabel = data.Count > 0 ? data[0].Tier.ToString().ToLowerInvariant() : "n/a";
             StatusText = $"{data.Count} data points loaded ({tierLabel} tier)";
         }
+        catch (OperationCanceledException) when (cts.Token.IsCancellationRequested)
+        {
+            // Superseded by a newer load — silently discard.
+        }
         catch (Exception ex)
         {
             StatusText = $"Error: {ex.Message}";
         }
         finally
         {
-            IsLoading = false;
+            if (_loadCts == cts)
+                IsLoading = false;
         }
     }
 
@@ -582,5 +598,8 @@ public class StatisticsViewModel : ViewModelBase
     {
         _autoRefreshSubscription?.Dispose();
         _autoRefreshSubscription = null;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
     }
 }
