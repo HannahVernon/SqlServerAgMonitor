@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.History;
@@ -12,6 +11,7 @@ namespace SqlAgMonitor.ViewModels;
 
 public class AlertHistoryViewModel : ViewModelBase
 {
+    private readonly IEventHistoryService _historyService;
     private bool _isLoading;
     private string _statusText = string.Empty;
 
@@ -31,8 +31,9 @@ public class AlertHistoryViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
-    public AlertHistoryViewModel()
+    public AlertHistoryViewModel(IEventHistoryService historyService)
     {
+        _historyService = historyService;
         RefreshCommand = ReactiveCommand.CreateFromTask(LoadEventsAsync);
     }
 
@@ -42,15 +43,8 @@ public class AlertHistoryViewModel : ViewModelBase
         StatusText = "Loading...";
         try
         {
-            var historyService = App.Services?.GetService<IEventHistoryService>();
-            if (historyService == null)
-            {
-                StatusText = "History service unavailable.";
-                return;
-            }
-
-            var events = await historyService.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
-            var count = await historyService.GetEventCountAsync(cancellationToken: cancellationToken);
+            var events = await _historyService.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
+            var count = await _historyService.GetEventCountAsync(cancellationToken: cancellationToken);
 
             Events.Clear();
             foreach (var evt in events)

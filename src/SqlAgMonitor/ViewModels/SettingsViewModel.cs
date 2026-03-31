@@ -4,7 +4,6 @@ using System.Linq;
 using System.Reactive;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.Notifications;
@@ -13,6 +12,9 @@ namespace SqlAgMonitor.ViewModels;
 
 public class SettingsViewModel : ViewModelBase
 {
+    private readonly IConfigurationService _configService;
+    private readonly IEmailNotificationService _emailService;
+
     private int _globalPollingIntervalSeconds;
     private string _theme = "dark";
 
@@ -99,8 +101,10 @@ public class SettingsViewModel : ViewModelBase
     /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
     public event Action<bool>? CloseRequested;
 
-    public SettingsViewModel()
+    public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService)
     {
+        _configService = configService;
+        _emailService = emailService;
         SaveCommand = ReactiveCommand.Create(OnSave);
         CancelCommand = ReactiveCommand.Create(OnCancel);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
@@ -186,13 +190,11 @@ public class SettingsViewModel : ViewModelBase
         try
         {
             // Save current email settings first so the service reads them
-            var configService = App.Services.GetRequiredService<IConfigurationService>();
-            var config = configService.Load();
+            var config = _configService.Load();
             ApplyTo(config);
-            configService.Save(config);
+            _configService.Save(config);
 
-            var emailService = App.Services.GetRequiredService<IEmailNotificationService>();
-            var success = await emailService.TestConnectionAsync(cancellationToken);
+            var success = await _emailService.TestConnectionAsync(cancellationToken);
             TestEmailStatus = success ? "✓ Test email sent successfully." : "✗ Test email failed.";
         }
         catch (Exception ex)

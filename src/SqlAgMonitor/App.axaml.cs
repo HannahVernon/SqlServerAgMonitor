@@ -9,8 +9,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.Alerting;
+using SqlAgMonitor.Core.Services.Connection;
+using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Core.Services.Notifications;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 using SqlAgMonitor.Views;
@@ -70,11 +75,22 @@ public partial class App : Application
 
             var agMonitor = Services.GetRequiredService<AgMonitorService>();
             var dagMonitor = Services.GetRequiredService<DagMonitorService>();
+            var exportService = Services.GetRequiredService<IHtmlExportService>();
+            var alertEngine = Services.GetRequiredService<IAlertEngine>();
+            var emailService = Services.GetRequiredService<IEmailNotificationService>();
+            var syslogService = Services.GetRequiredService<ISyslogService>();
+            var connectionService = Services.GetRequiredService<ISqlConnectionService>();
+            var discoveryService = Services.GetRequiredService<IAgDiscoveryService>();
+            var credentialStore = Services.GetRequiredService<ICredentialStore>();
             var loggerFactory = Services.GetRequiredService<ILoggerFactory>();
 
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(agMonitor, dagMonitor, loggerFactory),
+                DataContext = new MainWindowViewModel(
+                    agMonitor, dagMonitor, configService, exportService,
+                    alertEngine, historyService, emailService, syslogService,
+                    connectionService, discoveryService, credentialStore,
+                    loggerFactory),
                 Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://SqlAgMonitor/Assets/app-icon.png")))
             };
         }

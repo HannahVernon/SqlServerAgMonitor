@@ -12,7 +12,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
@@ -32,6 +31,15 @@ public class MainWindowViewModel : ViewModelBase
 {
     private readonly AgMonitorService _agMonitor;
     private readonly DagMonitorService _dagMonitor;
+    private readonly IConfigurationService _configService;
+    private readonly IHtmlExportService _exportService;
+    private readonly IAlertEngine _alertEngine;
+    private readonly IEventHistoryService _historyService;
+    private readonly IEmailNotificationService _emailService;
+    private readonly ISyslogService _syslogService;
+    private readonly ISqlConnectionService _connectionService;
+    private readonly IAgDiscoveryService _discoveryService;
+    private readonly ICredentialStore _credentialStore;
     private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
     private readonly Dictionary<string, MonitoredGroupSnapshot> _previousSnapshots = new(StringComparer.OrdinalIgnoreCase);
@@ -78,7 +86,7 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _isAlertHistoryVisible, value);
     }
 
-    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel();
+    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel(_historyService);
 
     public string LastPolledText
     {
@@ -98,15 +106,31 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> ToggleAlertHistoryCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenStatisticsCommand { get; }
 
-    public MainWindowViewModel()
-        : this(null!, null!, null!)
-    {
-    }
-
-    public MainWindowViewModel(AgMonitorService agMonitor, DagMonitorService dagMonitor, ILoggerFactory loggerFactory)
+    public MainWindowViewModel(
+        AgMonitorService agMonitor,
+        DagMonitorService dagMonitor,
+        IConfigurationService configService,
+        IHtmlExportService exportService,
+        IAlertEngine alertEngine,
+        IEventHistoryService historyService,
+        IEmailNotificationService emailService,
+        ISyslogService syslogService,
+        ISqlConnectionService connectionService,
+        IAgDiscoveryService discoveryService,
+        ICredentialStore credentialStore,
+        ILoggerFactory loggerFactory)
     {
         _agMonitor = agMonitor;
         _dagMonitor = dagMonitor;
+        _configService = configService;
+        _exportService = exportService;
+        _alertEngine = alertEngine;
+        _historyService = historyService;
+        _emailService = emailService;
+        _syslogService = syslogService;
+        _connectionService = connectionService;
+        _discoveryService = discoveryService;
+        _credentialStore = credentialStore;
         _logger = loggerFactory?.CreateLogger<MainWindowViewModel>();
 
         var canRemove = this.WhenAnyValue(x => x.SelectedTab)
@@ -157,10 +181,7 @@ public class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-            if (configService is null) return;
-
-            var config = configService.Load();
+            var config = _configService.Load();
             foreach (var group in config.MonitoredGroups)
             {
                 var groupType = Enum.TryParse<AvailabilityGroupType>(group.GroupType, out var gt)
@@ -184,10 +205,7 @@ public class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
-            if (exportService is null) return;
-
-            exportService.StartScheduledExportAsync(() =>
+            _exportService.StartScheduledExportAsync(() =>
                 _previousSnapshots.Values.ToList().AsReadOnly());
         }
         catch (Exception ex)
@@ -210,35 +228,27 @@ public class MainWindowViewModel : ViewModelBase
         _subscriptions.Add(dagSub);
 
         // Wire alert engine to process alerts
-        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
-        if (alertEngine is not null)
-        {
-            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-            var emailService = App.Services?.GetService(typeof(IEmailNotificationService)) as IEmailNotificationService;
-            var syslogService = App.Services?.GetService(typeof(ISyslogService)) as ISyslogService;
+        var alertSub = _alertEngine.Alerts
+            .Subscribe(alert =>
+            {
+                Dispatcher.UIThread.Post(() =>
+                    StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}");
 
-            var alertSub = alertEngine.Alerts
-                .Subscribe(alert =>
-                {
-                    Dispatcher.UIThread.Post(() =>
-                        StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}");
+                // Record in history
+                _ = _historyService.RecordEventAsync(alert);
 
-                    // Record in history
-                    _ = historyService?.RecordEventAsync(alert);
-
-                    // Refresh alert history panel if visible
-                    if (_isAlertHistoryVisible)
+                // Refresh alert history panel if visible
+                if (_isAlertHistoryVisible)
                         _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
 
                     // Send notifications based on config
-                    var config = (App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService)?.Load();
-                    if (config?.Email.Enabled == true)
-                        _ = emailService?.SendAlertEmailAsync(alert);
-                    if (config?.Syslog.Enabled == true)
-                        _ = syslogService?.SendEventAsync(alert);
+                    var config = _configService.Load();
+                    if (config.Email.Enabled)
+                        _ = _emailService.SendAlertEmailAsync(alert);
+                    if (config.Syslog.Enabled)
+                        _ = _syslogService.SendEventAsync(alert);
                 });
             _subscriptions.Add(alertSub);
-        }
     }
 
     private void OnSnapshotReceived(MonitoredGroupSnapshot snapshot)
@@ -255,17 +265,12 @@ public class MainWindowViewModel : ViewModelBase
         ConnectionSummary = $"{MonitorTabs.Count} group(s) monitored";
 
         // Feed to alert engine
-        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
-        if (alertEngine is not null)
-        {
-            _previousSnapshots.TryGetValue(snapshot.Name, out var previous);
-            alertEngine.EvaluateSnapshot(snapshot, previous);
-            _previousSnapshots[snapshot.Name] = snapshot;
-        }
+        _previousSnapshots.TryGetValue(snapshot.Name, out var previous);
+        _alertEngine.EvaluateSnapshot(snapshot, previous);
+        _previousSnapshots[snapshot.Name] = snapshot;
 
         // Record snapshot statistics to DuckDB
-        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-        _ = historyService?.RecordSnapshotAsync(snapshot);
+        _ = _historyService.RecordSnapshotAsync(snapshot);
     }
 
     private MonitorTabViewModel? FindTab(string name)
@@ -283,11 +288,7 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var connectionService = App.Services.GetRequiredService<ISqlConnectionService>();
-        var discoveryService = App.Services.GetRequiredService<IAgDiscoveryService>();
-        var credentialStore = App.Services.GetRequiredService<ICredentialStore>();
-
-        var vm = new AddGroupViewModel(connectionService, discoveryService, credentialStore);
+        var vm = new AddGroupViewModel(_connectionService, _discoveryService, _credentialStore);
         try
         {
             var addWindow = new AddGroupWindow { DataContext = vm };
@@ -295,8 +296,7 @@ public class MainWindowViewModel : ViewModelBase
 
             if (result is true && vm.SelectedGroups is { Count: > 0 } groups)
             {
-                var configService = App.Services.GetRequiredService<IConfigurationService>();
-                var config = configService.Load();
+                var config = _configService.Load();
 
             foreach (var group in groups)
             {
@@ -347,7 +347,7 @@ public class MainWindowViewModel : ViewModelBase
                 config.MonitoredGroups.Add(groupConfig);
             }
 
-            configService.Save(config);
+            _configService.Save(config);
 
             foreach (var group in groups)
             {
@@ -454,11 +454,10 @@ public class MainWindowViewModel : ViewModelBase
         }
 
         // Remove from config
-        var configService = App.Services.GetRequiredService<IConfigurationService>();
-        var config = configService.Load();
+        var config = _configService.Load();
         config.MonitoredGroups.RemoveAll(g =>
             string.Equals(g.Name, groupName, StringComparison.OrdinalIgnoreCase));
-        configService.Save(config);
+        _configService.Save(config);
 
         // Remove tab
         MonitorTabs.Remove(tab);
@@ -475,9 +474,8 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var configService = App.Services.GetRequiredService<IConfigurationService>();
-        var vm = new SettingsViewModel();
-        vm.LoadFrom(configService.Load());
+        var vm = new SettingsViewModel(_configService, _emailService);
+        vm.LoadFrom(_configService.Load());
 
         var settingsWindow = new SettingsWindow { DataContext = vm };
         settingsWindow.ShowDialog(window);
@@ -490,9 +488,7 @@ public class MainWindowViewModel : ViewModelBase
         // Gracefully dispose services that hold resources
         try
         {
-            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
-            if (exportService != null)
-                await exportService.StopScheduledExportAsync();
+            await _exportService.StopScheduledExportAsync();
         }
         catch (Exception ex)
         {
@@ -507,8 +503,7 @@ public class MainWindowViewModel : ViewModelBase
 
         try
         {
-            if (App.Services?.GetService(typeof(IEventHistoryService)) is IEventHistoryService historyService)
-                await historyService.DisposeAsync();
+            await _historyService.DisposeAsync();
         }
         catch (Exception ex)
         {
@@ -661,7 +656,7 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return Task.CompletedTask;
 
-        var vm = new StatisticsViewModel();
+        var vm = new StatisticsViewModel(_historyService, _configService);
         var statsWindow = new Views.StatisticsWindow { DataContext = vm };
         statsWindow.Show(window);
         return Task.CompletedTask;
@@ -671,14 +666,10 @@ public class MainWindowViewModel : ViewModelBase
     {
         try
         {
-            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-            var config = configService?.Load();
-            if (config?.History.AutoPruneEnabled != true) return;
+            var config = _configService.Load();
+            if (!config.History.AutoPruneEnabled) return;
 
-            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-            if (historyService == null) return;
-
-            await historyService.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
+            await _historyService.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -688,15 +679,11 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task SummarizeSnapshotsAsync(CancellationToken cancellationToken = default)
     {
-        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-        var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-        if (historyService == null || configService == null) return;
-
         try
         {
-            var config = configService.Load();
+            var config = _configService.Load();
             var retention = config.History.SnapshotRetention;
-            await historyService.SummarizeSnapshotsAsync(
+            await _historyService.SummarizeSnapshotsAsync(
                 retention.RawRetentionHours,
                 retention.HourlyRetentionDays,
                 retention.DailyRetentionDays,
