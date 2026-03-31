@@ -14,10 +14,10 @@ public class AesCredentialStore : ICredentialStore
     private byte[]? _derivedKey;
     private bool _disposed;
 
-    private const int SaltSize = 32;
-    private const int NonceSize = 12;
-    private const int TagSize = 16;
-    private const int Pbkdf2Iterations = 600_000;
+    private const int SaltSize = 32;           // 256-bit PBKDF2 salt
+    private const int NonceSize = 12;          // 96-bit AES-GCM nonce (NIST SP 800-38D)
+    private const int TagSize = 16;            // 128-bit AES-GCM authentication tag
+    private const int Pbkdf2Iterations = 600_000; // OWASP 2023 recommendation for PBKDF2-SHA256
 
     public bool IsUnlocked => _derivedKey != null;
 

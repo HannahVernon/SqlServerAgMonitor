@@ -12,6 +12,7 @@ public class SyslogService : ISyslogService
     private readonly IConfigurationService _configService;
     private readonly ILogger<SyslogService> _logger;
 
+    // RFC 5424 facility codes. Priority = facility * 8 + severity.
     private static readonly Dictionary<string, int> FacilityCodes = new(StringComparer.OrdinalIgnoreCase)
     {
         ["kern"]     = 0,

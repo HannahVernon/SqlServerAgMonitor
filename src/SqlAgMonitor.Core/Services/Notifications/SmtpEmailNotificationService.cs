@@ -86,7 +86,7 @@ public class SmtpEmailNotificationService : IEmailNotificationService
         var client = new SmtpClient(settings.SmtpServer, settings.SmtpPort)
         {
             EnableSsl = settings.UseTls,
-            Timeout = 30_000
+            Timeout = 30_000 // 30 seconds — generous for TLS handshake + auth over WAN
         };
 
         if (!string.IsNullOrEmpty(settings.CredentialKey))

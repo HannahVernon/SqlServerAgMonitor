@@ -4,6 +4,9 @@ namespace SqlAgMonitor.Core.Configuration;
 
 public class AppConfiguration
 {
+    /// <summary>Default polling interval in seconds for AG/DAG monitoring loops. 16s balances
+    /// responsiveness against SQL Server DMV query load. Per-group overrides via
+    /// <see cref="MonitoredGroupConfig.PollingIntervalSeconds"/>. Clamped to ≥ 5s at runtime.</summary>
     public int GlobalPollingIntervalSeconds { get; set; } = 16;
     public string Theme { get; set; } = "dark";
     public EmailSettings Email { get; set; } = new();
@@ -18,6 +21,7 @@ public class EmailSettings
 {
     public bool Enabled { get; set; }
     public string SmtpServer { get; set; } = string.Empty;
+    /// <summary>Standard SMTP submission port with STARTTLS (RFC 6409).</summary>
     public int SmtpPort { get; set; } = 587;
     public bool UseTls { get; set; } = true;
     public string FromAddress { get; set; } = string.Empty;
@@ -31,6 +35,7 @@ public class SyslogSettings
 {
     public bool Enabled { get; set; }
     public string Server { get; set; } = string.Empty;
+    /// <summary>Standard syslog port (RFC 5424).</summary>
     public int Port { get; set; } = 514;
     public string Protocol { get; set; } = "UDP";
     public string Facility { get; set; } = "local0";
@@ -38,6 +43,8 @@ public class SyslogSettings
 
 public class AlertSettings
 {
+    /// <summary>Minimum minutes between any two published alerts. Prevents alert storms during
+    /// cascading failures. Clamped to ≥ 0 at runtime. Set to 0 to disable cooldown.</summary>
     public int MasterCooldownMinutes { get; set; } = 5;
     public Dictionary<string, AlertTypeConfig> AlertTypeOverrides { get; set; } = new();
 }
@@ -56,6 +63,7 @@ public class ExportSettings
 {
     public bool Enabled { get; set; }
     public string ExportPath { get; set; } = string.Empty;
+    /// <summary>Minutes between HTML export runs. Clamped to ≥ 1 at runtime.</summary>
     public int ScheduleIntervalMinutes { get; set; } = 60;
 }
 
@@ -89,6 +97,7 @@ public class MutedAlert
 
 public class HistorySettings
 {
+    /// <summary>Maximum days to retain alert events before auto-pruning. Clamped to ≥ 1 at runtime.</summary>
     public int? MaxRetentionDays { get; set; } = 90;
     public int? MaxRecords { get; set; }
     public bool AutoPruneEnabled { get; set; } = true;

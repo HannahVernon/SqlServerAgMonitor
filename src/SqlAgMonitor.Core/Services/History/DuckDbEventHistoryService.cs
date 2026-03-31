@@ -640,16 +640,17 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             return await Task.Run(() =>
             {
-                // Determine which tier to query
+                // Auto-select snapshot tier based on query range to balance detail vs performance.
+                // Thresholds align with retention defaults: raw kept 48h, hourly kept 90d.
                 var range = until - since;
                 SnapshotTier tier;
                 string tableName;
-                if (range.TotalHours <= 48)
+                if (range.TotalHours <= 48) // Within raw retention window
                 {
                     tier = SnapshotTier.Raw;
                     tableName = "snapshots";
                 }
-                else if (range.TotalDays <= 90)
+                else if (range.TotalDays <= 90) // Within hourly retention window
                 {
                     tier = SnapshotTier.Hourly;
                     tableName = "snapshot_hourly";

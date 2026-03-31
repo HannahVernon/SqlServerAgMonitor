@@ -128,6 +128,7 @@ public class AgMonitorService : IAgMonitorService
             return Task.CompletedTask;
         }
 
+        // Minimum 5s polling interval to avoid overwhelming SQL Server with DMV queries
         var interval = Math.Max(5, groupConfig.PollingIntervalSeconds ?? config.GlobalPollingIntervalSeconds);
 
         var subscription = Observable

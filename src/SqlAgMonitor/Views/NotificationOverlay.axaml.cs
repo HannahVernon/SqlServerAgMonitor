@@ -19,7 +19,7 @@ public partial class NotificationOverlay : UserControl
 
         NotificationList.ItemsSource = ActiveNotifications;
 
-        _cleanupTimer = new Timer(1000);
+        _cleanupTimer = new Timer(1000); // 1s interval: check for expired notifications
         _cleanupTimer.Elapsed += OnCleanupTimerElapsed;
         _cleanupTimer.Start();
     }
@@ -46,6 +46,7 @@ public partial class NotificationOverlay : UserControl
         {
             ActiveNotifications.Add(notification);
 
+            // Cap at 5 visible notifications to avoid covering too much screen
             while (ActiveNotifications.Count > 5)
                 ActiveNotifications.RemoveAt(0);
         });

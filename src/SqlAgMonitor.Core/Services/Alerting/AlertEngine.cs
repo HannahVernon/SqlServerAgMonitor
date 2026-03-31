@@ -6,6 +6,19 @@ using SqlAgMonitor.Core.Models;
 
 namespace SqlAgMonitor.Core.Services.Alerting;
 
+/// <summary>
+/// Evaluates AG/DAG monitoring snapshots and publishes alert events when state transitions
+/// are detected. Alerts flow through a three-stage gate before publication:
+/// <list type="number">
+///   <item><description>Per-alert-type enable/disable check (configuration).</description></item>
+///   <item><description>Per-group mute check (timed or permanent, with auto-expiration).</description></item>
+///   <item><description>Global cooldown — suppresses all alerts if the last published alert
+///     was within <see cref="AlertSettings.MasterCooldownMinutes"/> (default 5 minutes).
+///     Prevents alert storms during cascading failures.</description></item>
+/// </list>
+/// Alert types detected: ConnectionLost, ConnectionRestored, FailoverDetected,
+/// RoleChanged, SyncModeChanged, SyncFellBehind, SuspendDetected, ResumeDetected.
+/// </summary>
 public sealed class AlertEngine : IAlertEngine, IDisposable
 {
     private readonly IConfigurationService _configService;
@@ -63,6 +76,12 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         }
     }
 
+    /// <summary>
+    /// Mutes a specific alert type for a group. When <paramref name="duration"/> is null,
+    /// the mute is permanent (<see cref="DateTimeOffset.MaxValue"/> sentinel). Timed mutes
+    /// auto-expire: <see cref="IsMuted"/> and <see cref="GetMutedAlerts"/> both clean up
+    /// expired entries on access.
+    /// </summary>
     public void MuteAlert(AlertType alertType, string groupName, TimeSpan? duration)
     {
         var key = MuteKey(alertType, groupName);
@@ -89,6 +108,11 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         _logger.LogInformation("Unmuted alert {AlertType} for group {GroupName}", alertType, groupName);
     }
 
+    /// <summary>
+    /// Returns all active mutes, removing any that have expired. Thread-safe via
+    /// <see cref="ConcurrentDictionary{TKey,TValue}"/>. Permanent mutes have a null
+    /// <c>MutedUntil</c> and <c>IsPermanent = true</c>.
+    /// </summary>
     public IReadOnlyList<MutedAlertInfo> GetMutedAlerts()
     {
         var now = DateTimeOffset.UtcNow;
@@ -294,6 +318,9 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
             .ToDictionary(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, DatabaseReplicaState>(StringComparer.OrdinalIgnoreCase);
 
+        // SyncFellBehind: default 1,000,000 log blocks (~1 MB). Only alert on the
+        // threshold-crossing transition (not while continuously above), so repeated
+        // polls with a large diff don't produce duplicate alerts.
         var syncBehindThreshold = GetThreshold(alertSettings, AlertType.SyncFellBehind, defaultValue: 1_000_000);
 
         foreach (var db in currentReplica.DatabaseStates)
@@ -345,6 +372,11 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         }
     }
 
+    /// <summary>
+    /// Publishes an alert only if (1) the alert type is enabled, (2) it is not muted for
+    /// the group, and (3) the global cooldown has elapsed. This three-stage gate prevents
+    /// alert flooding during cascading failures.
+    /// </summary>
     private void PublishIfNotMuted(AlertEvent alert, AlertSettings alertSettings)
     {
         var alertTypeConfig = GetAlertTypeConfig(alertSettings, alert.AlertType);
@@ -376,6 +408,11 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         _alertSubject.OnNext(alert);
     }
 
+    /// <summary>
+    /// Global cooldown gate. After any alert is published, all subsequent alerts are
+    /// suppressed for <see cref="AlertSettings.MasterCooldownMinutes"/> (default 5 min,
+    /// clamped to ≥ 0). Uses a lock to ensure exactly one alert passes per cooldown window.
+    /// </summary>
     private bool TryPassCooldown(AlertSettings alertSettings)
     {
         var cooldown = TimeSpan.FromMinutes(Math.Max(0, alertSettings.MasterCooldownMinutes));
@@ -393,6 +430,11 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         }
     }
 
+    /// <summary>
+    /// Checks whether an alert is currently muted. Timed mutes that have expired are
+    /// automatically removed from the dictionary. Permanent mutes use
+    /// <see cref="DateTimeOffset.MaxValue"/> as a sentinel and never expire.
+    /// </summary>
     private bool IsMuted(AlertType alertType, string groupName)
     {
         var key = MuteKey(alertType, groupName);
@@ -439,6 +481,11 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
         };
     }
 
+    /// <summary>
+    /// Returns the configured threshold for an alert type, falling back to
+    /// <paramref name="defaultValue"/> if no override exists. Used by SyncFellBehind
+    /// detection where the default threshold is 1,000,000 log blocks (~1 MB).
+    /// </summary>
     private static int GetThreshold(AlertSettings settings, AlertType alertType, int defaultValue)
     {
         if (settings.AlertTypeOverrides.TryGetValue(alertType.ToString(), out var config) &&
