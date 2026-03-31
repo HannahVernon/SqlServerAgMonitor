@@ -11,7 +11,7 @@ namespace SqlAgMonitor.ViewModels;
 
 public class AlertHistoryViewModel : ViewModelBase
 {
-    private readonly IEventHistoryService _historyService;
+    private readonly IEventQueryService _eventQuery;
     private bool _isLoading;
     private string _statusText = string.Empty;
 
@@ -31,9 +31,9 @@ public class AlertHistoryViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
-    public AlertHistoryViewModel(IEventHistoryService historyService)
+    public AlertHistoryViewModel(IEventQueryService eventQuery)
     {
-        _historyService = historyService;
+        _eventQuery = eventQuery;
         RefreshCommand = ReactiveCommand.CreateFromTask(LoadEventsAsync);
     }
 
@@ -43,8 +43,8 @@ public class AlertHistoryViewModel : ViewModelBase
         StatusText = "Loading...";
         try
         {
-            var events = await _historyService.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
-            var count = await _historyService.GetEventCountAsync(cancellationToken: cancellationToken);
+            var events = await _eventQuery.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
+            var count = await _eventQuery.GetEventCountAsync(cancellationToken: cancellationToken);
 
             Events.Clear();
             foreach (var evt in events)
