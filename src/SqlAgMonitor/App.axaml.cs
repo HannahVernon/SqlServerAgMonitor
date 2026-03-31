@@ -77,23 +77,29 @@ public partial class App : Application
             var dagMonitor = Services.GetRequiredService<DagMonitorService>();
             var exportService = Services.GetRequiredService<IHtmlExportService>();
             var alertEngine = Services.GetRequiredService<IAlertEngine>();
+            var alertDispatcher = Services.GetRequiredService<AlertDispatcher>();
             var eventRecorder = Services.GetRequiredService<IEventRecorder>();
             var eventQuery = Services.GetRequiredService<IEventQueryService>();
             var snapshotQuery = Services.GetRequiredService<ISnapshotQueryService>();
             var emailService = Services.GetRequiredService<IEmailNotificationService>();
-            var syslogService = Services.GetRequiredService<ISyslogService>();
             var connectionService = Services.GetRequiredService<ISqlConnectionService>();
             var discoveryService = Services.GetRequiredService<IAgDiscoveryService>();
             var credentialStore = Services.GetRequiredService<ICredentialStore>();
             var loggerFactory = Services.GetRequiredService<ILoggerFactory>();
+            var maintenanceScheduler = Services.GetRequiredService<MaintenanceScheduler>();
+
+            var coordinator = new MonitoringCoordinator(
+                agMonitor, dagMonitor, alertEngine, alertDispatcher,
+                eventRecorder, configService, exportService,
+                loggerFactory.CreateLogger<MonitoringCoordinator>());
 
             desktop.MainWindow = new MainWindow
             {
                 DataContext = new MainWindowViewModel(
-                    agMonitor, dagMonitor, configService, exportService,
-                    alertEngine, eventRecorder, historyMaintenance, eventQuery,
-                    snapshotQuery, emailService, syslogService, connectionService,
-                    discoveryService, credentialStore, loggerFactory),
+                    coordinator, maintenanceScheduler, configService,
+                    historyMaintenance, eventQuery, snapshotQuery,
+                    emailService, connectionService, discoveryService,
+                    credentialStore, loggerFactory),
                 Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://SqlAgMonitor/Assets/app-icon.png")))
             };
         }
