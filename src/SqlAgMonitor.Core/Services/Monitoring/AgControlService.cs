@@ -23,8 +23,9 @@ public class AgControlService : IAgControlService
         string targetReplica,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"ALTER AVAILABILITY GROUP [{EscapeBrackets(agName)}] FAILOVER;";
-        return await ExecuteOnReplicaAsync(targetReplica, sql, "Failover", agName, cancellationToken);
+        var sql = "DECLARE @sql nvarchar(500) = N'ALTER AVAILABILITY GROUP ' + QUOTENAME(@agName) + N' FAILOVER;'; EXEC(@sql);";
+        var parameters = new[] { new SqlParameter("@agName", agName) };
+        return await ExecuteOnReplicaAsync(targetReplica, sql, parameters, "Failover", agName, cancellationToken);
     }
 
     public async Task<bool> ForceFailoverAsync(
@@ -32,8 +33,9 @@ public class AgControlService : IAgControlService
         string targetReplica,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"ALTER AVAILABILITY GROUP [{EscapeBrackets(agName)}] FORCE_FAILOVER_ALLOW_DATA_LOSS;";
-        return await ExecuteOnReplicaAsync(targetReplica, sql, "ForceFailover", agName, cancellationToken);
+        var sql = "DECLARE @sql nvarchar(500) = N'ALTER AVAILABILITY GROUP ' + QUOTENAME(@agName) + N' FORCE_FAILOVER_ALLOW_DATA_LOSS;'; EXEC(@sql);";
+        var parameters = new[] { new SqlParameter("@agName", agName) };
+        return await ExecuteOnReplicaAsync(targetReplica, sql, parameters, "ForceFailover", agName, cancellationToken);
     }
 
     public async Task<bool> SetAvailabilityModeAsync(
@@ -50,11 +52,17 @@ public class AgControlService : IAgControlService
             _ => throw new ArgumentException($"Cannot set availability mode to '{mode}'.", nameof(mode))
         };
 
-        var sql = $"ALTER AVAILABILITY GROUP [{EscapeBrackets(agName)}] " +
-                  $"MODIFY REPLICA ON N'{EscapeQuotes(replicaName)}' " +
-                  $"WITH (AVAILABILITY_MODE = {modeString});";
+        var sql = "DECLARE @sql nvarchar(500) = N'ALTER AVAILABILITY GROUP ' + QUOTENAME(@agName)"
+                + " + N' MODIFY REPLICA ON ' + QUOTENAME(@replicaName, '''')"
+                + $" + N' WITH (AVAILABILITY_MODE = {modeString});';"
+                + " EXEC(@sql);";
+        var parameters = new[]
+        {
+            new SqlParameter("@agName", agName),
+            new SqlParameter("@replicaName", replicaName)
+        };
 
-        return await ExecuteOnReplicaAsync(replicaName, sql, "SetAvailabilityMode", agName, cancellationToken);
+        return await ExecuteOnReplicaAsync(replicaName, sql, parameters, "SetAvailabilityMode", agName, cancellationToken);
     }
 
     public async Task<bool> SuspendDatabaseAsync(
@@ -62,8 +70,9 @@ public class AgControlService : IAgControlService
         string databaseName,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"ALTER DATABASE [{EscapeBrackets(databaseName)}] SET HADR SUSPEND;";
-        return await ExecuteLocalAsync(sql, "SuspendDatabase", agName, databaseName, cancellationToken);
+        var sql = "DECLARE @sql nvarchar(500) = N'ALTER DATABASE ' + QUOTENAME(@dbName) + N' SET HADR SUSPEND;'; EXEC(@sql);";
+        var parameters = new[] { new SqlParameter("@dbName", databaseName) };
+        return await ExecuteLocalAsync(sql, parameters, "SuspendDatabase", agName, databaseName, cancellationToken);
     }
 
     public async Task<bool> ResumeDatabaseAsync(
@@ -71,13 +80,15 @@ public class AgControlService : IAgControlService
         string databaseName,
         CancellationToken cancellationToken = default)
     {
-        var sql = $"ALTER DATABASE [{EscapeBrackets(databaseName)}] SET HADR RESUME;";
-        return await ExecuteLocalAsync(sql, "ResumeDatabase", agName, databaseName, cancellationToken);
+        var sql = "DECLARE @sql nvarchar(500) = N'ALTER DATABASE ' + QUOTENAME(@dbName) + N' SET HADR RESUME;'; EXEC(@sql);";
+        var parameters = new[] { new SqlParameter("@dbName", databaseName) };
+        return await ExecuteLocalAsync(sql, parameters, "ResumeDatabase", agName, databaseName, cancellationToken);
     }
 
     private async Task<bool> ExecuteOnReplicaAsync(
         string server,
         string sql,
+        SqlParameter[] parameters,
         string operationName,
         string agName,
         CancellationToken cancellationToken)
@@ -96,6 +107,7 @@ public class AgControlService : IAgControlService
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = sql;
                 cmd.CommandTimeout = 120;
+                cmd.Parameters.AddRange(parameters);
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
 
                 _logger.LogInformation(
@@ -119,6 +131,7 @@ public class AgControlService : IAgControlService
 
     private async Task<bool> ExecuteLocalAsync(
         string sql,
+        SqlParameter[] parameters,
         string operationName,
         string agName,
         string databaseName,
@@ -138,6 +151,7 @@ public class AgControlService : IAgControlService
                 using var cmd = connection.CreateCommand();
                 cmd.CommandText = sql;
                 cmd.CommandTimeout = 120;
+                cmd.Parameters.AddRange(parameters);
                 await cmd.ExecuteNonQueryAsync(cancellationToken);
 
                 _logger.LogInformation(
@@ -158,10 +172,4 @@ public class AgControlService : IAgControlService
             return false;
         }
     }
-
-    private static string EscapeBrackets(string value) =>
-        value.Replace("]", "]]");
-
-    private static string EscapeQuotes(string value) =>
-        value.Replace("'", "''");
 }
