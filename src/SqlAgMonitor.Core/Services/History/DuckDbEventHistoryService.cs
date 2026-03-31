@@ -667,7 +667,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
                 filters.Add($"{timeColumn} >= $since");
                 cmd.Parameters.Add(new DuckDBParameter("since", since.UtcDateTime));
-                filters.Add($"{timeColumn} <= $until");
+                filters.Add($"{timeColumn} < $until");
                 cmd.Parameters.Add(new DuckDBParameter("until", until.UtcDateTime));
 
                 if (groupName != null)
