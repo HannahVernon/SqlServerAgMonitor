@@ -351,6 +351,12 @@ public class DuckDbEventHistoryService : IEventHistoryService
     {
         if (!_initialized) return;
 
+        // Clamp retention values to sane minimums to prevent misconfigured or
+        // tampered config.json from deleting all historical data.
+        rawRetentionHours = Math.Max(1, rawRetentionHours);
+        hourlyRetentionDays = Math.Max(1, hourlyRetentionDays);
+        dailyRetentionDays = Math.Max(1, dailyRetentionDays);
+
         // Each step acquires/releases _opLock independently so that high-frequency
         // RecordSnapshotAsync calls can interleave between steps rather than queuing
         // behind a single long-held lock.
@@ -479,6 +485,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
     public async Task<IReadOnlyList<AlertEvent>> GetEventsAsync(string? groupName = null, DateTimeOffset? since = null, int limit = 100, CancellationToken cancellationToken = default)
     {
         if (!_initialized) return Array.Empty<AlertEvent>();
+        limit = Math.Max(1, limit);
         await _opLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -585,21 +592,23 @@ public class DuckDbEventHistoryService : IEventHistoryService
                 long totalDeleted = 0;
                 if (maxAgeDays.HasValue)
                 {
+                    var clampedDays = Math.Max(1, maxAgeDays.Value);
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = "DELETE FROM events WHERE timestamp < $cutoff";
-                    cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-maxAgeDays.Value)));
+                    cmd.Parameters.Add(new DuckDBParameter("cutoff", DateTime.UtcNow.AddDays(-clampedDays)));
                     totalDeleted += cmd.ExecuteNonQuery();
                 }
 
                 if (maxRecords.HasValue)
                 {
+                    var clampedRecords = Math.Max(1, maxRecords.Value);
                     using var cmd = _connection!.CreateCommand();
                     cmd.CommandText = @"
                         DELETE FROM events 
                         WHERE id NOT IN (
                             SELECT id FROM events ORDER BY timestamp DESC LIMIT $max_records
                         )";
-                    cmd.Parameters.Add(new DuckDBParameter("max_records", maxRecords.Value));
+                    cmd.Parameters.Add(new DuckDBParameter("max_records", clampedRecords));
                     totalDeleted += cmd.ExecuteNonQuery();
                 }
 
