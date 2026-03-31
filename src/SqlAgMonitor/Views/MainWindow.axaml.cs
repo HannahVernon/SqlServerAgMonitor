@@ -13,6 +13,7 @@ using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.ReactiveUI;
 using Avalonia.VisualTree;
+using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Services;
@@ -24,18 +25,20 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 {
     private bool _isExiting;
     private WindowLayoutState? _layoutState;
+    private readonly ILayoutStateService _layoutService;
     private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
     private string? _lastActiveTabTitle;
 
     public MainWindow()
     {
         InitializeComponent();
+        _layoutService = App.Services.GetRequiredService<ILayoutStateService>();
         Opened += OnWindowOpened;
     }
 
     private void OnWindowOpened(object? sender, EventArgs e)
     {
-        _layoutState = LayoutStateService.Load();
+        _layoutState = _layoutService.Load();
 
         if (_layoutState.IsMaximized)
         {
@@ -164,7 +167,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private void SaveLayout()
     {
         // Re-load from disk to pick up any changes saved by other windows (e.g. Statistics)
-        var state = LayoutStateService.Load();
+        var state = _layoutService.Load();
 
         // Merge in-memory tab column layouts that were tracked during this session
         if (_layoutState != null)
@@ -207,7 +210,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         state.ColumnDisplayIndices = null;
 #pragma warning restore CS0618
 
-        LayoutStateService.Save(state);
+        _layoutService.Save(state);
     }
 
     protected override void OnClosing(WindowClosingEventArgs e)

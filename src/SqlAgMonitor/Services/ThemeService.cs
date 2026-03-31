@@ -3,7 +3,7 @@ using Avalonia.Styling;
 
 namespace SqlAgMonitor.Services;
 
-public class ThemeService
+public class ThemeService : IThemeService
 {
     public void SetTheme(string theme)
     {

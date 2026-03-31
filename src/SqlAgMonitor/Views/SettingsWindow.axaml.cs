@@ -25,7 +25,7 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
                         vm.ApplyTo(config);
                         configService.Save(config);
 
-                        var themeService = new ThemeService();
+                        var themeService = App.Services.GetRequiredService<IThemeService>();
                         themeService.SetTheme(config.Theme);
                     }
 

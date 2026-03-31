@@ -46,7 +46,7 @@ public class WindowLayoutState
     public Dictionary<string, int>? ColumnDisplayIndices { get; set; }
 }
 
-public static class LayoutStateService
+public class LayoutStateService : ILayoutStateService
 {
     private static readonly string LayoutFilePath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
@@ -59,7 +59,7 @@ public static class LayoutStateService
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public static WindowLayoutState Load()
+    public WindowLayoutState Load()
     {
         try
         {
@@ -78,7 +78,7 @@ public static class LayoutStateService
         return new WindowLayoutState();
     }
 
-    public static void Save(WindowLayoutState state)
+    public void Save(WindowLayoutState state)
     {
         try
         {
