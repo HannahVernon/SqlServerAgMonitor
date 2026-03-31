@@ -71,10 +71,9 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
     private void OnSelectedTabChanged(MonitorTabViewModel? newTab)
     {
-        // Save outgoing tab's column state
-        SaveCurrentTabColumnState();
-
-        _lastActiveTabTitle = newTab?.TabTitle;
+        // Column state is saved inside WireUpDataGrid (before columns are cleared),
+        // not here — by the time this handler fires, Avalonia's DataContextChanged
+        // may have already rebuilt the DataGrid for the new tab.
 
         // Rebuild columns for the incoming tab after the visual tree updates.
         // Avalonia's TabControl with ContentTemplate may recreate the DataGrid
@@ -259,7 +258,25 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         var tabVm = dataGrid.DataContext as MonitorTabViewModel;
         if (tabVm == null) return;
 
-        // Track the active tab for save-on-switch
+        // Save the outgoing tab's column widths before rebuilding.
+        // At this point the DataGrid still has the old tab's columns with their
+        // user-resized pixel widths — this is the last safe moment to capture them.
+        if (_layoutState != null
+            && !string.IsNullOrEmpty(_lastActiveTabTitle)
+            && _lastActiveTabTitle != tabVm.TabTitle
+            && dataGrid.Columns.Count > 0)
+        {
+            var tabLayout = new TabGridLayout();
+            foreach (var col in dataGrid.Columns)
+            {
+                var header = col.Header?.ToString();
+                if (header == null) continue;
+                tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth);
+                tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
+            }
+            _layoutState.TabLayouts[_lastActiveTabTitle] = tabLayout;
+        }
+
         _lastActiveTabTitle = tabVm.TabTitle;
 
         BuildPivotColumns(dataGrid, tabVm);
@@ -311,9 +328,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
         dataGrid.Columns.Clear();
 
-        // All columns use Star sizing so they share available width proportionally
-        // and always fit on screen. MinWidth prevents columns from shrinking
-        // below readability.
+        // Columns use Auto sizing so they fit content initially, then the user can
+        // drag to resize in exact pixels. MinWidth prevents columns from collapsing.
 
         // Database Name with health dot
         dataGrid.Columns.Add(new DataGridTemplateColumn
