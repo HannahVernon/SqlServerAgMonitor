@@ -453,6 +453,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
         {
             await Task.Run(() =>
             {
+                // Retention values are integers from application config — safe to format into
+                // DuckDB INTERVAL literals. DuckDB does not support parameterized INTERVAL syntax.
                 using var cmd = _connection!.CreateCommand();
                 cmd.CommandText = string.Format(CultureInfo.InvariantCulture, @"
                     DELETE FROM snapshots WHERE timestamp < current_timestamp - INTERVAL '{0} hours';
@@ -496,14 +498,18 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     cmd.Parameters.Add(new DuckDBParameter("since", since.Value.UtcDateTime));
                 }
 
+                // WHERE clause is assembled from code-controlled static fragments containing
+                // DuckDB parameter placeholders (e.g. "group_name = $group_name"). No user input
+                // is interpolated — only the structural SQL keywords (WHERE, AND) are joined in.
                 var whereClause = where.Count > 0 ? "WHERE " + string.Join(" AND ", where) : "";
-                cmd.CommandText = $@"
+                cmd.CommandText = @"
                     SELECT id, timestamp, alert_type, group_name, replica_name, database_name, message, severity, email_sent, syslog_sent
                     FROM events
-                    {whereClause}
+                    " + whereClause + @"
                     ORDER BY timestamp DESC
-                    LIMIT {limit}
+                    LIMIT $limit
                 ";
+                cmd.Parameters.Add(new DuckDBParameter("limit", limit));
 
                 using var reader = cmd.ExecuteReader();
                 while (reader.Read())
@@ -671,6 +677,10 @@ public class DuckDbEventHistoryService : IEventHistoryService
                     cmd.Parameters.Add(new DuckDBParameter("database_name", databaseName));
                 }
 
+                // WHERE clause is assembled from code-controlled static fragments containing
+                // DuckDB parameter placeholders (e.g. "group_name = $group_name"). The table name
+                // and time column are selected by the tier enum, not user input. No user-supplied
+                // values are interpolated into the SQL structure.
                 var whereClause = "WHERE " + string.Join(" AND ", filters);
 
                 if (tier == SnapshotTier.Raw)
@@ -782,7 +792,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         groups.Add(reader.GetString(0));
                 }
 
-                // Replicas filtered by selected group
+                // Replicas filtered by selected group.
+                // WHERE clause uses a static fragment with a DuckDB parameter placeholder.
                 using var cmd2 = _connection!.CreateCommand();
                 var replicaWhere = "";
                 if (groupName != null)
@@ -803,7 +814,8 @@ public class DuckDbEventHistoryService : IEventHistoryService
                         replicas.Add(reader2.GetString(0));
                 }
 
-                // Databases filtered by selected group and replica
+                // Databases filtered by selected group and replica.
+                // WHERE clause assembled from static fragments with DuckDB parameter placeholders.
                 using var cmd3 = _connection!.CreateCommand();
                 var dbFilters = new List<string>();
                 if (groupName != null)
