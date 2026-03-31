@@ -5,6 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 
@@ -12,16 +13,19 @@ namespace SqlAgMonitor.Views;
 
 public partial class StatisticsWindow : Window
 {
+    private readonly ILayoutStateService _layoutService;
+
     public StatisticsWindow()
     {
         InitializeComponent();
+        _layoutService = App.Services.GetRequiredService<ILayoutStateService>();
         Opened += OnWindowOpened;
         Closed += OnWindowClosed;
     }
 
     private void OnWindowOpened(object? sender, EventArgs e)
     {
-        var state = LayoutStateService.Load();
+        var state = _layoutService.Load();
 
         if (state.StatsWindowWidth.HasValue && state.StatsWindowHeight.HasValue)
         {
@@ -44,7 +48,7 @@ public partial class StatisticsWindow : Window
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
-        var state = LayoutStateService.Load();
+        var state = _layoutService.Load();
 
         if (WindowState == WindowState.Normal)
         {
@@ -60,7 +64,7 @@ public partial class StatisticsWindow : Window
             vm.Dispose();
         }
 
-        LayoutStateService.Save(state);
+        _layoutService.Save(state);
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)

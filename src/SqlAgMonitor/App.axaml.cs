@@ -11,6 +11,7 @@ using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 using SqlAgMonitor.Views;
 
@@ -34,12 +35,17 @@ public partial class App : Application
             builder.AddProvider(new FileLoggerProvider(Program.LogFilePath));
         });
         services.AddSqlAgMonitorCore();
+
+        // UI-layer services
+        services.AddSingleton<IThemeService, ThemeService>();
+        services.AddSingleton<ILayoutStateService, LayoutStateService>();
+
         Services = services.BuildServiceProvider();
 
         // Restore saved theme
         var configService = Services.GetRequiredService<IConfigurationService>();
         var config = configService.Load();
-        new SqlAgMonitor.Services.ThemeService().SetTheme(config.Theme);
+        Services.GetRequiredService<IThemeService>().SetTheme(config.Theme);
 
         // Initialize event history database (errors are logged; DuckDB degrades gracefully if unavailable)
         var historyService = Services.GetRequiredService<IEventHistoryService>();
