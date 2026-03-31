@@ -96,7 +96,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     }
 
     /// <summary>
-    /// Restores saved column widths (as proportional Star values) and display indices
+    /// Restores saved column widths (as pixel values) and display indices
     /// for the given tab's DataGrid.
     /// </summary>
     public void RestoreDataGridLayout(DataGrid dataGrid)
@@ -123,23 +123,20 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             }
         }
 
-        // Restore widths as Star values. Saved values are already proportional
-        // weights (ActualWidth / totalWidth at save time), so they can be used
-        // directly as Star weights without further normalization.
+        // Restore widths as pixel values — no Star normalization, no feedback loop.
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
-            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 0)
+            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
             {
-                col.Width = new DataGridLength(w, DataGridLengthUnitType.Star);
+                col.Width = new DataGridLength(w);
             }
         }
     }
 
     /// <summary>
     /// Saves the current tab's DataGrid column state to the in-memory layout.
-    /// Column widths are saved as proportional weights (ActualWidth / total) so they
-    /// can be restored directly as Star values without a lossy pixel-to-star conversion.
+    /// Column widths are saved as raw pixel values (ActualWidth).
     /// </summary>
     private void SaveCurrentTabColumnState()
     {
@@ -148,19 +145,13 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
         if (dataGrid == null || dataGrid.Columns.Count == 0) return;
 
-        var totalWidth = dataGrid.Columns.Sum(c => c.ActualWidth);
-        if (totalWidth <= 0) return;
-
         var tabLayout = new TabGridLayout();
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
             if (header == null) continue;
 
-            // Save proportional weight: each column's share of total width.
-            // This is stable across save/restore cycles because the math is reversible:
-            // Star(w) renders to w/sum * available, and saving again yields w/sum.
-            tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth / totalWidth, 6);
+            tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth);
             tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
         }
 
@@ -357,8 +348,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                 panel.Children.Add(text);
                 return panel;
             }),
-            Width = new DataGridLength(1.5, DataGridLengthUnitType.Star),
-            MinWidth = 120
+            Width = DataGridLength.Auto,
+            MinWidth = 150
         });
 
         // Dynamic: one LSN column per replica (primary first)
@@ -368,8 +359,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             {
                 Header = col.Header,
                 Binding = new Binding($"[{col.Index}]"),
-                Width = new DataGridLength(1.3, DataGridLengthUnitType.Star),
-                MinWidth = 110
+                Width = DataGridLength.Auto,
+                MinWidth = 140
             });
         }
 
@@ -378,16 +369,16 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         {
             Header = "Log Block Diff",
             Binding = new Binding("MaxLogBlockDiff") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
-            MinWidth = 80
+            Width = DataGridLength.Auto,
+            MinWidth = 100
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Lag (sec)",
             Binding = new Binding("SecondaryLagSeconds"),
-            Width = new DataGridLength(0.6, DataGridLengthUnitType.Star),
-            MinWidth = 55
+            Width = DataGridLength.Auto,
+            MinWidth = 70
         });
 
         // Color-coded sync state
@@ -407,48 +398,48 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     new Binding("SyncStateColorHex") { Converter = HealthColorConverter.Instance });
                 return text;
             }),
-            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
-            MinWidth = 80
+            Width = DataGridLength.Auto,
+            MinWidth = 100
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Suspended",
             Binding = new Binding("SuspendReasonDisplay"),
-            Width = new DataGridLength(0.8, DataGridLengthUnitType.Star),
-            MinWidth = 65
+            Width = DataGridLength.Auto,
+            MinWidth = 80
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Queue (KB)",
             Binding = new Binding("SendQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Queue (KB)",
             Binding = new Binding("RedoQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Rate (KB/s)",
             Binding = new Binding("SendRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Rate (KB/s)",
             Binding = new Binding("RedoRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
     }
 
