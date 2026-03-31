@@ -65,24 +65,31 @@ public partial class StatisticsWindow : Window
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)
     {
-        if (DataContext is not StatisticsViewModel vm) return;
-
-        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        try
         {
-            Title = "Export Statistics to Excel",
-            SuggestedFileName = $"ag-statistics-{DateTime.UtcNow:yyyyMMdd-HHmmss}.xlsx",
-            FileTypeChoices = new[]
+            if (DataContext is not StatisticsViewModel vm) return;
+
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
             {
-                new FilePickerFileType("Excel Workbook") { Patterns = new[] { "*.xlsx" } }
+                Title = "Export Statistics to Excel",
+                SuggestedFileName = $"ag-statistics-{DateTime.UtcNow:yyyyMMdd-HHmmss}.xlsx",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("Excel Workbook") { Patterns = new[] { "*.xlsx" } }
+                }
+            });
+
+            if (file == null) return;
+
+            var path = file.TryGetLocalPath();
+            if (path != null)
+            {
+                vm.ExportCommand.Execute(path).Subscribe();
             }
-        });
-
-        if (file == null) return;
-
-        var path = file.TryGetLocalPath();
-        if (path != null)
+        }
+        catch (Exception ex)
         {
-            vm.ExportCommand.Execute(path).Subscribe();
+            System.Diagnostics.Debug.WriteLine($"Export failed: {ex.Message}");
         }
     }
 }

@@ -112,13 +112,13 @@ public class MainWindowViewModel : ViewModelBase
         var canRemove = this.WhenAnyValue(x => x.SelectedTab)
             .Select(tab => tab != null);
 
-        AddGroupCommand = ReactiveCommand.Create(OnAddGroup);
+        AddGroupCommand = ReactiveCommand.CreateFromTask(OnAddGroupAsync);
         RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
         OpenSettingsCommand = ReactiveCommand.Create(OnOpenSettings);
         ExitCommand = ReactiveCommand.CreateFromTask(OnExitAsync);
         PauseAllCommand = ReactiveCommand.Create(OnPauseAll);
         ResumeAllCommand = ReactiveCommand.Create(OnResumeAll);
-        AboutCommand = ReactiveCommand.Create(OnAbout);
+        AboutCommand = ReactiveCommand.CreateFromTask(OnAboutAsync);
 
         var canRefresh = this.WhenAnyValue(x => x.SelectedTab)
             .Select(tab => tab != null);
@@ -148,10 +148,10 @@ public class MainWindowViewModel : ViewModelBase
         _subscriptions.Add(summarizeSub);
 
         SubscribeToSnapshots();
-        LoadAndStartMonitoredGroups();
+        _ = LoadAndStartMonitoredGroupsAsync();
     }
 
-    private async void LoadAndStartMonitoredGroups()
+    private async Task LoadAndStartMonitoredGroupsAsync()
     {
         try
         {
@@ -276,7 +276,7 @@ public class MainWindowViewModel : ViewModelBase
         return null;
     }
 
-    private async void OnAddGroup()
+    private async Task OnAddGroupAsync()
     {
         var window = GetMainWindow();
         if (window == null) return;
@@ -550,7 +550,7 @@ public class MainWindowViewModel : ViewModelBase
         StatusText = "All monitoring resumed";
     }
 
-    private async void OnAbout()
+    private async Task OnAboutAsync()
     {
         var window = GetMainWindow();
         if (window == null) return;
