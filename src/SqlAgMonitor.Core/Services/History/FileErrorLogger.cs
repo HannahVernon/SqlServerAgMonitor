@@ -10,6 +10,14 @@ public class FileErrorLogger : IDisposable
     private string? _currentLogPath;
     private bool _disposed;
 
+    /// <summary>
+    /// Simple file-based error logger with daily rotation and size limits.
+    /// Used as a last-resort logger when DI/ILogger infrastructure is unavailable.
+    /// Errors within logging are silently swallowed to avoid recursive failures.
+    /// </summary>
+    /// <param name="logDirectory">Log directory; defaults to %APPDATA%/SqlAgMonitor/logs.</param>
+    /// <param name="maxFileSizeBytes">Max size per log file before rotation. Default: 10 MB.</param>
+    /// <param name="maxFiles">Max rotated log files to keep (oldest deleted). Default: 5.</param>
     public FileErrorLogger(string? logDirectory = null, long maxFileSizeBytes = 10 * 1024 * 1024, int maxFiles = 5)
     {
         _logDirectory = logDirectory ?? Path.Combine(

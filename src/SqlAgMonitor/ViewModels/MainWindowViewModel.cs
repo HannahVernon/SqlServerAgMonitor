@@ -135,13 +135,15 @@ public class MainWindowViewModel : ViewModelBase
             .Subscribe(_ => UpdateLastPolledText());
         _subscriptions.Add(timerSub);
 
-        // Prune old events on startup and then every 24 hours
+        // Prune old events: 10s initial delay (let app finish startup), then every 24 hours
         var pruneSub = Observable.Timer(TimeSpan.FromSeconds(10), TimeSpan.FromHours(24))
             .SelectMany(_ => Observable.FromAsync(PruneOldEventsAsync))
             .Subscribe();
         _subscriptions.Add(pruneSub);
 
-        // Summarize snapshots after 5 minutes, then every hour
+        // Summarize snapshots: 5 min initial delay (accumulate raw data first), then hourly.
+        // The 3-step aggregation: raw → hourly (after RawRetentionHours), hourly → daily
+        // (after HourlyRetentionDays), then prune aged daily (after DailyRetentionDays).
         var summarizeSub = Observable.Timer(TimeSpan.FromMinutes(5), TimeSpan.FromHours(1))
             .SelectMany(_ => Observable.FromAsync(SummarizeSnapshotsAsync))
             .Subscribe();

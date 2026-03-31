@@ -86,7 +86,7 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
         {
             DataSource = server,
             ApplicationName = "SqlAgMonitor",
-            ConnectTimeout = 15,
+            ConnectTimeout = 15, // seconds — keep short so UI doesn't hang on unreachable servers
             Encrypt = encrypt ? SqlConnectionEncryptOption.Mandatory : SqlConnectionEncryptOption.Optional,
             TrustServerCertificate = trustServerCertificate,
             MultiSubnetFailover = true

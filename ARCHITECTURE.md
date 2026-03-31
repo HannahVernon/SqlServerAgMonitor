@@ -369,3 +369,23 @@ VLF_sequence (10 digits) × 10^15 + Block_offset (10 digits) × 10^5 + Slot (5 d
 | > 10,000,000,000 | DangerZone | VLF boundary crossed or massive lag |
 
 Display format: `VVVVVVVV:BBBBBBBB` (hex VLF:Block), matching SQL Server's standard LSN display.
+
+## Error Handling Strategy
+
+Services use one of six error handling patterns, chosen based on how critical the operation is:
+
+| Pattern | When to Use | Example |
+|---|---|---|
+| **Silent swallow** | Logging infrastructure — recursive failures must not crash the app | `FileErrorLogger.LogError()`, `FileLoggerProvider.Log()` |
+| **Swallow + default** | Best-effort persistence where corrupted data has a safe fallback | `LayoutStateService.Load()` (returns `new()` on corrupt JSON) |
+| **Log + return false** | Test/validation operations where the caller checks success | `SqlConnectionService.TestConnectionAsync()`, `SyslogService.TestConnectionAsync()` |
+| **Log + continue** | Fire-and-forget side effects that must not block the primary workflow | `SmtpEmailNotificationService.SendAlertEmailAsync()`, `DuckDbEventHistoryService.RecordEventAsync()` |
+| **Log + re-throw** | Critical operations where the caller must know about failure | `SqlConnectionService.GetConnectionAsync()`, `ReconnectingConnectionWrapper.AcquireAsync()` |
+| **Validate + throw** | Configuration/input validation errors requiring user correction | `SmtpEmailNotificationService.ValidateSettings()`, `AesCredentialStore.Unlock()` |
+
+### Guidelines
+
+- **Semaphore-guarded methods** always release in `finally` to prevent deadlocks.
+- **`OperationCanceledException`** is caught separately and used to exit gracefully without logging (it's expected during shutdown).
+- **Reconnection** uses exponential backoff (1s → 2s → 4s → 8s → 16s → 32s → 60s cap) with specific exception handling: `OperationCanceledException` exits, all other exceptions increment the attempt counter.
+- All services log via `ILogger<T>`. The decision to swallow vs. throw is documented with an inline comment at each catch site explaining the rationale.

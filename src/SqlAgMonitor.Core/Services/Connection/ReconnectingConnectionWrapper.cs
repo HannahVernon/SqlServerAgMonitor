@@ -70,6 +70,8 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     private Task? _reconnectTask;
     private bool _disposed;
 
+    // Exponential backoff for reconnection attempts: 1s, 2s, 4s, 8s, 16s, 32s, then
+    // cap at 60s. Last entry repeats indefinitely for all subsequent attempts.
     private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 16, 32, 60];
 
     public IObservable<ConnectionStateChange> StateChanges => _stateChanges.AsObservable();
@@ -190,7 +192,8 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
             }
             catch (OperationCanceledException) { return; }
 
-            // Acquire the usage lock so we don't race with a poll cycle
+            // 2s timeout: if a poll cycle holds the lock, skip this attempt and retry
+            // after the next backoff delay rather than blocking indefinitely
             if (!await _usageLock.WaitAsync(TimeSpan.FromSeconds(2), ct))
                 continue; // Poll is running — try again next iteration
 
