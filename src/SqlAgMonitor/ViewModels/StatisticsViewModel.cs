@@ -13,7 +13,6 @@ using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SkiaSharp;
 using SqlAgMonitor.Core.Configuration;
@@ -25,6 +24,8 @@ namespace SqlAgMonitor.ViewModels;
 
 public class StatisticsViewModel : ViewModelBase
 {
+    private readonly IEventHistoryService _historyService;
+    private readonly IConfigurationService _configService;
     private string _selectedTimeRange = "24 hours";
     private DateTime? _customFrom = DateTime.UtcNow.AddDays(-1);
     private DateTime? _customUntil = DateTime.UtcNow;
@@ -221,25 +222,20 @@ public class StatisticsViewModel : ViewModelBase
     // Holds the loaded data for export
     private IReadOnlyList<SnapshotDataPoint> _loadedData = Array.Empty<SnapshotDataPoint>();
 
-    public StatisticsViewModel()
+    public StatisticsViewModel(IEventHistoryService historyService, IConfigurationService configService)
     {
+        _historyService = historyService;
+        _configService = configService;
         LoadCommand = ReactiveCommand.CreateFromTask(LoadDataAsync);
         ExportCommand = ReactiveCommand.CreateFromTask<string>(ExportToExcelAsync);
     }
 
     public async Task InitializeAsync(StatisticsState? savedState = null)
     {
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null)
-        {
-            StatusText = "History service unavailable.";
-            return;
-        }
-
         _initializing = true;
         try
         {
-            var filters = await svc.GetSnapshotFiltersAsync();
+            var filters = await _historyService.GetSnapshotFiltersAsync();
 
             GroupNames.Clear();
             GroupNames.Add("(All)");
@@ -294,13 +290,10 @@ public class StatisticsViewModel : ViewModelBase
 
     private async Task RefreshCascadingFiltersAsync(bool groupChanged)
     {
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null) return;
-
         var group = _selectedGroup == "(All)" ? null : _selectedGroup;
         var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
 
-        var filters = await svc.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
+        var filters = await _historyService.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
 
         _initializing = true;
         try
@@ -368,9 +361,6 @@ public class StatisticsViewModel : ViewModelBase
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _loadCts = cts;
 
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null) return;
-
         IsLoading = true;
         StatusText = "Loading...";
 
@@ -381,7 +371,7 @@ public class StatisticsViewModel : ViewModelBase
             var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
             var database = _selectedDatabase == "(All)" ? null : _selectedDatabase;
 
-            var data = await svc.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
+            var data = await _historyService.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
 
             // If we were cancelled while awaiting, a newer load is in progress — discard results.
             if (cts.Token.IsCancellationRequested) return;
@@ -577,8 +567,7 @@ public class StatisticsViewModel : ViewModelBase
 
         if (!enabled) return;
 
-        var configService = App.Services?.GetService<IConfigurationService>();
-        var intervalSeconds = configService?.Load().GlobalPollingIntervalSeconds ?? 16;
+        var intervalSeconds = _configService.Load().GlobalPollingIntervalSeconds;
 
         _autoRefreshSubscription = Observable.Interval(TimeSpan.FromSeconds(intervalSeconds))
             .ObserveOn(RxApp.MainThreadScheduler)
