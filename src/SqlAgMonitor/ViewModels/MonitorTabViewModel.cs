@@ -5,6 +5,7 @@ using System.Linq;
 using Avalonia.Media;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Models;
 
 namespace SqlAgMonitor.ViewModels;
 
