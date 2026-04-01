@@ -29,6 +29,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private WindowLayoutState? _layoutState;
     private readonly ILayoutStateService _layoutService;
     private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
+    private DataGrid? _alertHistoryGrid;
     private string? _lastActiveTabTitle;
 
     public MainWindow()
@@ -153,7 +154,12 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         if (_layoutState == null || string.IsNullOrEmpty(_lastActiveTabTitle)) return;
 
-        var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+        // When the outgoing tab is Alert History, the DataGrid may already be removed
+        // from the visual tree by the TabControl's template swap. Use the cached reference.
+        var dataGrid = _lastActiveTabTitle == AlertHistoryTabKey
+            ? _alertHistoryGrid
+            : this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+
         if (dataGrid == null || dataGrid.Columns.Count == 0) return;
 
         var tabLayout = new TabGridLayout();
@@ -202,6 +208,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private void AlertHistoryGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is not DataGrid dataGrid) return;
+        _alertHistoryGrid = dataGrid;
         DataGridAutoFitHelper.Attach(dataGrid);
         RestoreAlertHistoryLayout(dataGrid);
     }
