@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -39,6 +40,7 @@ public class MainWindowViewModel : ViewModelBase
     private readonly ICredentialStore _credentialStore;
     private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
+    private readonly string _versionText;
 
     private object? _selectedTab;
     private string _statusText = "Ready";
@@ -141,7 +143,11 @@ public class MainWindowViewModel : ViewModelBase
         ToggleAlertHistoryCommand = ReactiveCommand.CreateFromTask(OnToggleAlertHistoryAsync);
         OpenStatisticsCommand = ReactiveCommand.CreateFromTask(OnOpenStatisticsAsync);
 
-        StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
+        var infoVersion = Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion;
+        _versionText = infoVersion != null ? $"v{infoVersion}" : "v0.0.0";
+        StatusText = $"SQL Server AG Monitor {_versionText} — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
         // Initialize AllTabs with Alert History as the first tab
         AllTabs.Add(AlertHistory);
@@ -482,7 +488,7 @@ public class MainWindowViewModel : ViewModelBase
                 Children =
                 {
                     new TextBlock { Text = "SQL Server AG Monitor", FontSize = 22, FontWeight = FontWeight.Bold, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center },
-                    new TextBlock { Text = "Version 1.0.0", FontSize = 14, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.7 },
+                    new TextBlock { Text = $"Version {_versionText}", FontSize = 14, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.7 },
                     new TextBlock { Text = "by Hannah Vernon", FontSize = 14, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.7 },
                     new Separator { Margin = new Avalonia.Thickness(0, 4) },
                     new TextBlock { Text = "Avalonia UI • ReactiveUI • .NET 9", FontSize = 12, HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center, Opacity = 0.5 },

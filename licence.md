@@ -66,3 +66,4 @@ The following packages are licensed under the
 | Package | Version | Copyright |
 |---------|---------|-----------|
 | [SixLabors.Fonts](https://github.com/SixLabors/Fonts) | 1.0.0 | © Six Labors |
+| [MinVer](https://github.com/adamralph/minver) | 6.0.0 | © MinVer contributors |
