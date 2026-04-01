@@ -16,6 +16,7 @@ using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Helpers;
 using SqlAgMonitor.Models;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
@@ -198,6 +199,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private void AlertHistoryGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is not DataGrid dataGrid) return;
+        DataGridAutoFitHelper.Attach(dataGrid);
         RestoreAlertHistoryLayout(dataGrid);
     }
 
@@ -285,6 +287,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private void DataGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (sender is not DataGrid dataGrid) return;
+
+        DataGridAutoFitHelper.Attach(dataGrid);
 
         // Wire up columns for the current DataContext
         WireUpDataGrid(dataGrid);

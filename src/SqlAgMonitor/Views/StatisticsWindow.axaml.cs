@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using SqlAgMonitor.Helpers;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 
@@ -41,6 +42,7 @@ public partial class StatisticsWindow : Window
         }
 
         RestoreColumnWidths(state);
+        DataGridAutoFitHelper.Attach(SummaryGrid);
 
         if (DataContext is StatisticsViewModel vm)
         {
