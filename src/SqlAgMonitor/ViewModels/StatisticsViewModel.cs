@@ -676,5 +676,13 @@ public class StatisticsViewModel : ViewModelBase
         _loadCts?.Cancel();
         _loadCts?.Dispose();
         _loadCts = null;
+
+        // Clear chart series and axes so the LiveCharts render loop stops
+        // accessing SkiaSharp paint/font objects before they are finalized.
+        SendQueueSeries = [];
+        RedoQueueSeries = [];
+        LagSeries = [];
+        LogBlockDiffSeries = [];
+        XAxes = [];
     }
 }

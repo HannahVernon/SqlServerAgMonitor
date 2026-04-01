@@ -74,6 +74,12 @@ public partial class StatisticsWindow : Window
         if (DataContext is StatisticsViewModel vm)
         {
             state.StatsState = vm.SaveState();
+
+            // Detach DataContext first so LiveCharts bindings release their
+            // reference to the series/axes. Then dispose the VM which clears
+            // the series arrays. This prevents the SkiaSharp render loop from
+            // accessing disposed paint/font objects mid-frame.
+            DataContext = null;
             vm.Dispose();
         }
 
