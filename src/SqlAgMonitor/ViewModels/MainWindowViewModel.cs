@@ -149,6 +149,9 @@ public class MainWindowViewModel : ViewModelBase
             AllTabs.Add(tab);
         SelectedTab = AllTabs.FirstOrDefault();
 
+        // Load historical events so the Alert History tab isn't empty on startup
+        _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
+
         MonitorTabs.CollectionChanged += (_, e) =>
         {
             if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems != null)
