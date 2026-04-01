@@ -567,7 +567,6 @@ public class StatisticsViewModel : ViewModelBase
             date => date.ToString(format, CultureInfo.InvariantCulture))
         {
             MinStep = stepHours,
-            ForceStepToMin = true,
             LabelsRotation = -45,
             TextSize = 11,
             LabelsPaint = new SolidColorPaint(SKColors.LightGray)
