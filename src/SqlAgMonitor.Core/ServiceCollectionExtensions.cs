@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
 
         // Alerting
         services.AddSingleton<IAlertEngine, AlertEngine>();
+        services.AddSingleton<AlertDispatcher>();
 
         // Notifications
         services.AddSingleton<IEmailNotificationService, SmtpEmailNotificationService>();
@@ -53,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEventQueryService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
         services.AddSingleton<ISnapshotQueryService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
         services.AddSingleton<IHistoryMaintenanceService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<MaintenanceScheduler>();
         services.AddSingleton<FileErrorLogger>();
 
         // Export
