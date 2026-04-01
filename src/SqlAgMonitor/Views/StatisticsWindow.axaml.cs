@@ -23,7 +23,7 @@ public partial class StatisticsWindow : Window
         Closed += OnWindowClosed;
     }
 
-    private void OnWindowOpened(object? sender, EventArgs e)
+    private async void OnWindowOpened(object? sender, EventArgs e)
     {
         var state = _layoutService.Load();
 
@@ -42,7 +42,14 @@ public partial class StatisticsWindow : Window
 
         if (DataContext is StatisticsViewModel vm)
         {
-            _ = vm.InitializeAsync(state.StatsState);
+            try
+            {
+                await vm.InitializeAsync(state.StatsState);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Statistics initialization failed: {ex.Message}");
+            }
         }
     }
 

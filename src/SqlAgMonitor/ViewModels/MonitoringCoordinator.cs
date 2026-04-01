@@ -138,9 +138,16 @@ public sealed class MonitoringCoordinator : IDisposable
 
     public async Task<MonitoredGroupSnapshot> PollOnceAsync(string groupName, AvailabilityGroupType groupType)
     {
-        return groupType == AvailabilityGroupType.DistributedAvailabilityGroup
+        var snapshot = groupType == AvailabilityGroupType.DistributedAvailabilityGroup
             ? await _dagMonitor.PollOnceAsync(groupName)
             : await _agMonitor.PollOnceAsync(groupName);
+
+        // Process through the same pipeline as subscription-based snapshots
+        // so the tab, alert engine, and event recorder are all updated.
+        Dispatcher.UIThread.VerifyAccess();
+        OnSnapshotReceived(snapshot);
+
+        return snapshot;
     }
 
     public MonitorTabViewModel? FindTab(string name)
