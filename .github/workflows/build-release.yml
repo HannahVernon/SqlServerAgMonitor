@@ -1,0 +1,131 @@
+name: Build and Release
+
+on:
+  workflow_run:
+    workflows: ["Version Bump"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find latest version tag
+        id: tag
+        run: |
+          git fetch --tags
+          tag=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1)
+          if [ -z "$tag" ]; then
+            echo "::error::No version tag found"
+            exit 1
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building release for $tag (version $version)"
+
+  build:
+    needs: prepare
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            artifact: SqlAgMonitor-win-x64
+          - rid: linux-x64
+            os: ubuntu-latest
+            artifact: SqlAgMonitor-linux-x64
+          - rid: osx-x64
+            os: macos-latest
+            artifact: SqlAgMonitor-osx-x64
+          - rid: osx-arm64
+            os: macos-latest
+            artifact: SqlAgMonitor-osx-arm64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout at tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity normal
+
+      - name: Publish
+        run: >
+          dotnet publish src/SqlAgMonitor/SqlAgMonitor.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          --output ./publish/${{ matrix.artifact }}
+          -p:PublishSingleFile=false
+
+      - name: Create zip (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path ./publish/${{ matrix.artifact }}/* -DestinationPath ./${{ matrix.artifact }}-${{ needs.prepare.outputs.version }}.zip
+
+      - name: Create zip (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: cd ./publish && zip -r ../${{ matrix.artifact }}-${{ needs.prepare.outputs.version }}.zip ${{ matrix.artifact }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ./${{ matrix.artifact }}-${{ needs.prepare.outputs.version }}.zip
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: "Release ${{ needs.prepare.outputs.tag }}"
+          body: |
+            ## SQL Server AG Monitor ${{ needs.prepare.outputs.tag }}
+
+            ### Downloads
+
+            | Platform | File |
+            |----------|------|
+            | Windows x64 | `SqlAgMonitor-win-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | Linux x64 | `SqlAgMonitor-linux-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | macOS x64 | `SqlAgMonitor-osx-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | macOS ARM64 | `SqlAgMonitor-osx-arm64-${{ needs.prepare.outputs.version }}.zip` |
+
+            Self-contained builds — no .NET runtime installation required.
+          files: ./artifacts/**/*.zip
+          draft: false
+          prerelease: false
