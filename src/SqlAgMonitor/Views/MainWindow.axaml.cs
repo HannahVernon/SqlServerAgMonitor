@@ -67,6 +67,9 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         {
             vm.WhenAnyValue(x => x.SelectedTab)
                 .Subscribe(OnSelectedTabChanged);
+
+            // Load alert history once the window is fully shown and dispatcher is active
+            _ = vm.AlertHistory.LoadEventsAsync();
         }
     }
 
