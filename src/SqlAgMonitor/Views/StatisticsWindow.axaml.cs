@@ -1,10 +1,14 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Reactive.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
+using Avalonia.VisualTree;
+using LiveChartsCore.SkiaSharpView.Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using SqlAgMonitor.Helpers;
 using SqlAgMonitor.Services;
@@ -75,12 +79,27 @@ public partial class StatisticsWindow : Window
         {
             state.StatsState = vm.SaveState();
 
-            // Detach DataContext first so LiveCharts bindings release their
-            // reference to the series/axes. Then dispose the VM which clears
-            // the series arrays. This prevents the SkiaSharp render loop from
-            // accessing disposed paint/font objects mid-frame.
+            // LiveCharts' SkiaSharp render loop runs on the composition thread
+            // and may be mid-frame when we close. To prevent a native crash
+            // (AccessViolation in sk_font_get_size/sk_font_set_edging):
+            //
+            // 1. Remove all CartesianChart controls from the visual tree so the
+            //    composition thread has nothing to render on the next frame.
+            // 2. Null the DataContext to detach bindings.
+            // 3. Defer VM.Dispose() to a low-priority callback so at least one
+            //    render cycle completes with the charts removed.
+            var charts = this.GetVisualDescendants().OfType<CartesianChart>().ToList();
+            foreach (var chart in charts)
+            {
+                if (chart.Parent is Panel panel)
+                    panel.Children.Remove(chart);
+                else if (chart.Parent is Decorator decorator)
+                    decorator.Child = null;
+            }
+
             DataContext = null;
-            vm.Dispose();
+
+            Dispatcher.UIThread.Post(() => vm.Dispose(), DispatcherPriority.Background);
         }
 
         _layoutService.Save(state);

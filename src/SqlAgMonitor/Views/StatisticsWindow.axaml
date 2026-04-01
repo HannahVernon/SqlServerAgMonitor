@@ -117,6 +117,7 @@
                                 <lvc:CartesianChart Series="{Binding SendQueueSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding SendQueueYAxes}"
+                                                    AnimationsSpeed="00:00:00"
                                                     TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
@@ -129,6 +130,7 @@
                                 <lvc:CartesianChart Series="{Binding RedoQueueSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding RedoQueueYAxes}"
+                                                    AnimationsSpeed="00:00:00"
                                                     TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
@@ -141,6 +143,7 @@
                                 <lvc:CartesianChart Series="{Binding LagSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding LagYAxes}"
+                                                    AnimationsSpeed="00:00:00"
                                                     TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
@@ -153,6 +156,7 @@
                                 <lvc:CartesianChart Series="{Binding LogBlockDiffSeries}"
                                                     XAxes="{Binding XAxes}"
                                                     YAxes="{Binding LogBlockDiffYAxes}"
+                                                    AnimationsSpeed="00:00:00"
                                                     TooltipTextSize="12"
                                                     MinHeight="200" />
                             </DockPanel>
