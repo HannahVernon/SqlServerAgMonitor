@@ -107,8 +107,10 @@
                     </DataGrid.Columns>
                 </DataGrid>
 
-                <!-- Charts in a 2x2 grid -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <!-- Charts in a 2x2 grid — hidden during data loads to prevent the
+                     composition thread from accessing SkiaSharp objects mid-transition -->
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                              IsVisible="{Binding !IsLoading}">
                     <Grid RowDefinitions="*,*" ColumnDefinitions="*,*" Margin="4">
                         <Border Grid.Row="0" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
                             <DockPanel>

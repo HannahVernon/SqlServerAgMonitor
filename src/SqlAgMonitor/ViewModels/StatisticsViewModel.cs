@@ -32,7 +32,7 @@ public class StatisticsViewModel : ViewModelBase
     private string? _selectedGroup;
     private string? _selectedReplica;
     private string? _selectedDatabase;
-    private bool _isLoading;
+    private bool _isLoading = true;
     private string _statusText = "Select a time range to load data.";
     private bool _isCustomRange;
     private SnapshotTier _activeTier;
