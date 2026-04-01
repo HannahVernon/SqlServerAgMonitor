@@ -30,6 +30,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private readonly ILayoutStateService _layoutService;
     private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
     private DataGrid? _alertHistoryGrid;
+    private DataGrid? _monitorGrid;
     private string? _lastActiveTabTitle;
 
     public MainWindow()
@@ -122,18 +123,21 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         if (!_layoutState.TabLayouts.TryGetValue(tabKey, out var tabLayout))
             return;
 
-        // Restore column display order
-        foreach (var col in dataGrid.Columns)
-        {
-            var header = col.Header?.ToString();
-            if (header == null) continue;
+        // Collect DisplayIndex assignments, then apply sorted ascending.
+        // Setting DisplayIndex one-at-a-time causes Avalonia to rearrange
+        // columns immediately, creating cascading shifts if applied in
+        // arbitrary order.
+        var indexAssignments = dataGrid.Columns
+            .Select(col => (col, header: col.Header?.ToString()))
+            .Where(x => x.header != null
+                && tabLayout.ColumnDisplayIndices.TryGetValue(x.header!, out _))
+            .Select(x => (x.col, index: tabLayout.ColumnDisplayIndices[x.header!]))
+            .Where(x => x.index >= 0 && x.index < dataGrid.Columns.Count)
+            .OrderBy(x => x.index)
+            .ToList();
 
-            if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
-                && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
-            {
-                col.DisplayIndex = displayIndex;
-            }
-        }
+        foreach (var (col, index) in indexAssignments)
+            col.DisplayIndex = index;
 
         // Restore widths as pixel values — no Star normalization, no feedback loop.
         foreach (var col in dataGrid.Columns)
@@ -154,11 +158,14 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         if (_layoutState == null || string.IsNullOrEmpty(_lastActiveTabTitle)) return;
 
-        // When the outgoing tab is Alert History, the DataGrid may already be removed
-        // from the visual tree by the TabControl's template swap. Use the cached reference.
+        // Use cached DataGrid references instead of searching the visual tree.
+        // When the TabControl swaps templates (e.g., monitor tab → Alert History),
+        // the outgoing DataGrid is already removed from the visual tree by the
+        // time this runs — a visual tree search would find the WRONG grid and
+        // save the incoming tab's columns under the outgoing tab's key.
         var dataGrid = _lastActiveTabTitle == AlertHistoryTabKey
             ? _alertHistoryGrid
-            : this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+            : _monitorGrid;
 
         if (dataGrid == null || dataGrid.Columns.Count == 0) return;
 
@@ -183,17 +190,17 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         if (_layoutState == null) return;
         if (!_layoutState.TabLayouts.TryGetValue(AlertHistoryTabKey, out var tabLayout)) return;
 
-        foreach (var col in dataGrid.Columns)
-        {
-            var header = col.Header?.ToString();
-            if (header == null) continue;
+        var indexAssignments = dataGrid.Columns
+            .Select(col => (col, header: col.Header?.ToString()))
+            .Where(x => x.header != null
+                && tabLayout.ColumnDisplayIndices.TryGetValue(x.header!, out _))
+            .Select(x => (x.col, index: tabLayout.ColumnDisplayIndices[x.header!]))
+            .Where(x => x.index >= 0 && x.index < dataGrid.Columns.Count)
+            .OrderBy(x => x.index)
+            .ToList();
 
-            if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
-                && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
-            {
-                col.DisplayIndex = displayIndex;
-            }
-        }
+        foreach (var (col, index) in indexAssignments)
+            col.DisplayIndex = index;
 
         foreach (var col in dataGrid.Columns)
         {
@@ -298,6 +305,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         if (sender is not DataGrid dataGrid) return;
 
+        _monitorGrid = dataGrid;
         DataGridAutoFitHelper.Attach(dataGrid);
 
         // Wire up columns for the current DataContext
