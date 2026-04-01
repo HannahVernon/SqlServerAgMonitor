@@ -40,6 +40,8 @@ public partial class StatisticsWindow : Window
                 (int)state.StatsWindowY.Value);
         }
 
+        RestoreColumnWidths(state);
+
         if (DataContext is StatisticsViewModel vm)
         {
             try
@@ -65,6 +67,8 @@ public partial class StatisticsWindow : Window
             state.StatsWindowHeight = Bounds.Height;
         }
 
+        SaveColumnWidths(state);
+
         if (DataContext is StatisticsViewModel vm)
         {
             state.StatsState = vm.SaveState();
@@ -72,6 +76,36 @@ public partial class StatisticsWindow : Window
         }
 
         _layoutService.Save(state);
+    }
+
+    private void SaveColumnWidths(WindowLayoutState state)
+    {
+        if (SummaryGrid.Columns.Count == 0) return;
+
+        var layout = new TabGridLayout();
+        foreach (var col in SummaryGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header == null) continue;
+            layout.ColumnWidths[header] = Math.Round(col.ActualWidth);
+        }
+        state.StatsGridLayout = layout;
+    }
+
+    private void RestoreColumnWidths(WindowLayoutState state)
+    {
+        if (state.StatsGridLayout == null) return;
+
+        foreach (var col in SummaryGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header != null
+                && state.StatsGridLayout.ColumnWidths.TryGetValue(header, out var w)
+                && w > 10)
+            {
+                col.Width = new DataGridLength(w);
+            }
+        }
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)

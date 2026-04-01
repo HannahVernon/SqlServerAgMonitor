@@ -78,6 +78,7 @@
             <Grid RowDefinitions="Auto,*">
                 <!-- Summary DataGrid -->
                 <DataGrid Grid.Row="0"
+                          x:Name="SummaryGrid"
                           ItemsSource="{Binding SummaryRows}"
                           IsReadOnly="True"
                           AutoGenerateColumns="False"
