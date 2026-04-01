@@ -40,10 +40,6 @@ public class StatisticsViewModel : ViewModelBase
     private bool _autoRefresh;
     private IDisposable? _autoRefreshSubscription;
     private CancellationTokenSource? _loadCts;
-    private bool _showSendQueueChart = true;
-    private bool _showRedoQueueChart = true;
-    private bool _showLagChart = true;
-    private bool _showLogBlockDiffChart = true;
 
     public static string[] TimeRangeOptions { get; } =
         ["15 minutes", "1 hour", "4 hours", "8 hours", "24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
@@ -86,30 +82,6 @@ public class StatisticsViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _autoRefresh, value);
             ConfigureAutoRefresh(value);
         }
-    }
-
-    public bool ShowSendQueueChart
-    {
-        get => _showSendQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showSendQueueChart, value);
-    }
-
-    public bool ShowRedoQueueChart
-    {
-        get => _showRedoQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showRedoQueueChart, value);
-    }
-
-    public bool ShowLagChart
-    {
-        get => _showLagChart;
-        set => this.RaiseAndSetIfChanged(ref _showLagChart, value);
-    }
-
-    public bool ShowLogBlockDiffChart
-    {
-        get => _showLogBlockDiffChart;
-        set => this.RaiseAndSetIfChanged(ref _showLogBlockDiffChart, value);
     }
 
     public string? SelectedGroup
@@ -206,16 +178,13 @@ public class StatisticsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _logBlockDiffSeries, value);
     }
 
-    // Shared X-axis for all charts (time axis)
-    public Axis[] XAxes { get; } =
-    [
-        new DateTimeAxis(TimeSpan.FromHours(1), date => date.ToString("MM/dd HH:mm", CultureInfo.InvariantCulture))
-        {
-            LabelsRotation = -45,
-            TextSize = 11,
-            LabelsPaint = new SolidColorPaint(SKColors.LightGray)
-        }
-    ];
+    // X-axis — rebuilt after each data load to show ~5 evenly-spaced time labels
+    private Axis[] _xAxes = [CreateDefaultXAxis(TimeSpan.FromHours(24))];
+    public Axis[] XAxes
+    {
+        get => _xAxes;
+        set => this.RaiseAndSetIfChanged(ref _xAxes, value);
+    }
 
     public Axis[] SendQueueYAxes { get; } = [CreateYAxis("KB")];
     public Axis[] RedoQueueYAxes { get; } = [CreateYAxis("KB")];
@@ -386,6 +355,9 @@ public class StatisticsViewModel : ViewModelBase
 
             if (data.Count > 0)
                 _activeTier = data[0].Tier;
+
+            // Rebuild X-axis with ~5 evenly-spaced labels for the queried range
+            XAxes = [CreateDefaultXAxis(until - since)];
 
             // Replace summary grid in one shot — avoids per-item CollectionChanged
             // notifications that would freeze the UI with large result sets.
@@ -574,6 +546,33 @@ public class StatisticsViewModel : ViewModelBase
         LabelsPaint = new SolidColorPaint(SKColors.LightGray),
         MinLimit = 0
     };
+
+    /// <summary>
+    /// Creates a <see cref="DateTimeAxis"/> whose <see cref="Axis.MinStep"/> is set so that
+    /// approximately 5 labels appear across the given time range.
+    /// </summary>
+    private static Axis CreateDefaultXAxis(TimeSpan range)
+    {
+        // Pick a human-friendly label format based on range width
+        var format = range.TotalDays > 7
+            ? "MM/dd"
+            : range.TotalHours > 4
+                ? "MM/dd HH:mm"
+                : "HH:mm";
+
+        // Step in hours — DateTimeAxis unit is TimeSpan.FromHours(1)
+        var stepHours = Math.Max(range.TotalHours / 5.0, 1.0 / 60);
+
+        return new DateTimeAxis(TimeSpan.FromHours(1),
+            date => date.ToString(format, CultureInfo.InvariantCulture))
+        {
+            MinStep = stepHours,
+            ForceStepToMin = true,
+            LabelsRotation = -45,
+            TextSize = 11,
+            LabelsPaint = new SolidColorPaint(SKColors.LightGray)
+        };
+    }
 
     private void ConfigureAutoRefresh(bool enabled)
     {
