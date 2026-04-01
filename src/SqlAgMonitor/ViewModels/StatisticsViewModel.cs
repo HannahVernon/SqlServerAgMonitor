@@ -359,15 +359,18 @@ public class StatisticsViewModel : ViewModelBase
             // Rebuild X-axis with ~5 evenly-spaced labels for the queried range
             XAxes = [CreateDefaultXAxis(until - since)];
 
-            // Replace summary grid in one shot — avoids per-item CollectionChanged
-            // notifications that would freeze the UI with large result sets.
-            SummaryRows = new ObservableCollection<SnapshotDataPoint>(data);
-
-            // Build chart series off the UI thread (LINQ grouping + mapping is CPU-bound)
-            var (send, redo, lag, logDiff) = await Task.Run(
-                () => BuildChartSeries(data), cts.Token).ConfigureAwait(true);
+            // Build summaries and chart series off the UI thread (CPU-bound LINQ)
+            var (summaryRows, send, redo, lag, logDiff) = await Task.Run(
+                () =>
+                {
+                    var summary = BuildSummaryRows(data);
+                    var charts = BuildChartSeries(data);
+                    return (summary, charts.Send, charts.Redo, charts.Lag, charts.LogDiff);
+                }, cts.Token).ConfigureAwait(true);
 
             if (cts.Token.IsCancellationRequested) return;
+
+            SummaryRows = new ObservableCollection<SnapshotDataPoint>(summaryRows);
 
             SendQueueSeries = send;
             RedoQueueSeries = redo;
@@ -390,6 +393,74 @@ public class StatisticsViewModel : ViewModelBase
             if (_loadCts == cts)
                 IsLoading = false;
         }
+    }
+
+    /// <summary>
+    /// Aggregates raw time-series data into one row per Group/Replica/Database,
+    /// computing weighted averages for Avg columns and global Min/Max for extremes.
+    /// </summary>
+    private static List<SnapshotDataPoint> BuildSummaryRows(IReadOnlyList<SnapshotDataPoint> data)
+    {
+        if (data.Count == 0) return [];
+
+        return data
+            .GroupBy(d => (d.GroupName, d.ReplicaName, d.DatabaseName))
+            .Select(g =>
+            {
+                var totalSamples = g.Sum(d => (long)d.SampleCount);
+                // Most recent row for categorical/state fields
+                var latest = g.MaxBy(d => d.Timestamp)!;
+
+                return new SnapshotDataPoint
+                {
+                    Timestamp = latest.Timestamp,
+                    GroupName = g.Key.GroupName,
+                    ReplicaName = g.Key.ReplicaName,
+                    DatabaseName = g.Key.DatabaseName,
+                    SampleCount = (int)Math.Min(totalSamples, int.MaxValue),
+
+                    LogSendQueueKbMin = g.Min(d => d.LogSendQueueKbMin),
+                    LogSendQueueKbMax = g.Max(d => d.LogSendQueueKbMax),
+                    LogSendQueueKbAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogSendQueueKbAvg * d.SampleCount) / totalSamples : 0,
+
+                    RedoQueueKbMin = g.Min(d => d.RedoQueueKbMin),
+                    RedoQueueKbMax = g.Max(d => d.RedoQueueKbMax),
+                    RedoQueueKbAvg = totalSamples > 0
+                        ? g.Sum(d => d.RedoQueueKbAvg * d.SampleCount) / totalSamples : 0,
+
+                    LogSendRateMin = g.Min(d => d.LogSendRateMin),
+                    LogSendRateMax = g.Max(d => d.LogSendRateMax),
+                    LogSendRateAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogSendRateAvg * d.SampleCount) / totalSamples : 0,
+
+                    RedoRateMin = g.Min(d => d.RedoRateMin),
+                    RedoRateMax = g.Max(d => d.RedoRateMax),
+                    RedoRateAvg = totalSamples > 0
+                        ? g.Sum(d => d.RedoRateAvg * d.SampleCount) / totalSamples : 0,
+
+                    LogBlockDiffMin = g.Min(d => d.LogBlockDiffMin),
+                    LogBlockDiffMax = g.Max(d => d.LogBlockDiffMax),
+                    LogBlockDiffAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogBlockDiffAvg * d.SampleCount) / totalSamples : 0,
+
+                    SecondaryLagMin = g.Min(d => d.SecondaryLagMin),
+                    SecondaryLagMax = g.Max(d => d.SecondaryLagMax),
+                    SecondaryLagAvg = totalSamples > 0
+                        ? g.Sum(d => d.SecondaryLagAvg * d.SampleCount) / totalSamples : 0,
+
+                    Role = latest.Role,
+                    SyncState = latest.SyncState,
+                    AnySuspended = g.Any(d => d.AnySuspended),
+                    LastHardenedLsn = latest.LastHardenedLsn,
+                    LastCommitLsn = latest.LastCommitLsn,
+                    Tier = latest.Tier
+                };
+            })
+            .OrderBy(d => d.GroupName)
+            .ThenBy(d => d.ReplicaName)
+            .ThenBy(d => d.DatabaseName)
+            .ToList();
     }
 
     private static (ISeries[] Send, ISeries[] Redo, ISeries[] Lag, ISeries[] LogDiff) BuildChartSeries(
