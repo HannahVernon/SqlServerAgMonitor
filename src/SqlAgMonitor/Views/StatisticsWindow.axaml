@@ -68,16 +68,7 @@
                 <CheckBox Content="Auto-refresh" IsChecked="{Binding AutoRefresh}"
                           VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 16 0" />
 
-                <!-- Chart visibility toggles -->
-                <TextBlock Text="Charts:" VerticalAlignment="Center" Margin="0 0 6 0" Foreground="#a6adc8" />
-                <CheckBox Content="Send Queue" IsChecked="{Binding ShowSendQueueChart}"
-                          VerticalAlignment="Center" Foreground="#89b4fa" Margin="0 0 6 0" />
-                <CheckBox Content="Redo Queue" IsChecked="{Binding ShowRedoQueueChart}"
-                          VerticalAlignment="Center" Foreground="#a6e3a1" Margin="0 0 6 0" />
-                <CheckBox Content="Lag" IsChecked="{Binding ShowLagChart}"
-                          VerticalAlignment="Center" Foreground="#fab387" Margin="0 0 6 0" />
-                <CheckBox Content="Log Diff" IsChecked="{Binding ShowLogBlockDiffChart}"
-                          VerticalAlignment="Center" Foreground="#f38ba8" />
+
             </WrapPanel>
         </Border>
 
@@ -87,6 +78,7 @@
             <Grid RowDefinitions="Auto,*">
                 <!-- Summary DataGrid -->
                 <DataGrid Grid.Row="0"
+                          x:Name="SummaryGrid"
                           ItemsSource="{Binding SummaryRows}"
                           IsReadOnly="True"
                           AutoGenerateColumns="False"
@@ -98,11 +90,10 @@
                           BorderThickness="0 0 0 1"
                           BorderBrush="#313244">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='yyyy-MM-dd HH:mm'}" Width="140" />
                         <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="120" />
                         <DataGridTextColumn Header="Replica" Binding="{Binding ReplicaName}" Width="120" />
                         <DataGridTextColumn Header="Database" Binding="{Binding DatabaseName}" Width="120" />
-                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount}" Width="65" />
+                        <DataGridTextColumn Header="Samples" Binding="{Binding SampleCount, StringFormat=\{0:N0\}}" Width="75" />
                         <DataGridTextColumn Header="Send Q Avg (KB)" Binding="{Binding LogSendQueueKbAvg, StringFormat=\{0:N0\}}" Width="110" />
                         <DataGridTextColumn Header="Send Q Max (KB)" Binding="{Binding LogSendQueueKbMax, StringFormat=\{0:N0\}}" Width="110" />
                         <DataGridTextColumn Header="Redo Q Avg (KB)" Binding="{Binding RedoQueueKbAvg, StringFormat=\{0:N0\}}" Width="110" />
@@ -112,14 +103,14 @@
                         <DataGridTextColumn Header="Log Diff Avg" Binding="{Binding LogBlockDiffAvg, StringFormat=\{0:N0\}}" Width="100" />
                         <DataGridTextColumn Header="Sync State" Binding="{Binding SyncState}" Width="100" />
                         <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="80" />
+                        <DataGridTextColumn Header="Last Seen" Binding="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='MM/dd HH:mm'}" Width="100" />
                     </DataGrid.Columns>
                 </DataGrid>
 
                 <!-- Charts in a 2x2 grid -->
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                     <Grid RowDefinitions="*,*" ColumnDefinitions="*,*" Margin="4">
-                        <Border Grid.Row="0" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e"
-                                IsVisible="{Binding ShowSendQueueChart}">
+                        <Border Grid.Row="0" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Top" Text="Log Send Queue (KB)" FontWeight="Bold"
                                            Foreground="#89b4fa" Margin="8 4" FontSize="13" />
@@ -131,8 +122,7 @@
                             </DockPanel>
                         </Border>
 
-                        <Border Grid.Row="0" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e"
-                                IsVisible="{Binding ShowRedoQueueChart}">
+                        <Border Grid.Row="0" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Top" Text="Redo Queue (KB)" FontWeight="Bold"
                                            Foreground="#a6e3a1" Margin="8 4" FontSize="13" />
@@ -144,8 +134,7 @@
                             </DockPanel>
                         </Border>
 
-                        <Border Grid.Row="1" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e"
-                                IsVisible="{Binding ShowLagChart}">
+                        <Border Grid.Row="1" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Top" Text="Secondary Lag (seconds)" FontWeight="Bold"
                                            Foreground="#fab387" Margin="8 4" FontSize="13" />
@@ -157,8 +146,7 @@
                             </DockPanel>
                         </Border>
 
-                        <Border Grid.Row="1" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e"
-                                IsVisible="{Binding ShowLogBlockDiffChart}">
+                        <Border Grid.Row="1" Grid.Column="1" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">
                             <DockPanel>
                                 <TextBlock DockPanel.Dock="Top" Text="Log Block Difference" FontWeight="Bold"
                                            Foreground="#f38ba8" Margin="8 4" FontSize="13" />

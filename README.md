@@ -2,7 +2,7 @@
 
 A cross-platform desktop application for real-time monitoring of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs). Built with Avalonia UI for Windows, macOS, and Linux.
 
-📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md)
+📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 🔮 [Service Plan](SERVICE-PLAN.md) · 🤝 [Contributing](CONTRIBUTING.md)
 
 ## What It Monitors
 
@@ -76,12 +76,12 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **Multi-tab monitoring** — One tab per AG/DAG, each with its own persistent SQL connection and configurable polling interval.
 - **Auto-discovery wizard** — Connect to a server to automatically discover all AGs and DAGs, then select which to monitor.
 - **Event history** — DuckDB-backed structured event storage with daily rotating log files. Automatic pruning by age (default 90 days) and/or record count.
-- **Alert History panel** — Toggleable right-side panel (View → Alert History) showing chronological alert events with sortable columns. Auto-refreshes when new alerts arrive.
+- **Alert History tab** — Persistent first tab (View → Alert History) showing chronological alert events with sortable columns. Auto-refreshes when new alerts arrive.
 - **Scheduled HTML export** — Periodic health reports saved to a configurable directory.
 - **System tray** — Closing the window minimizes to the system tray; monitoring and alerting continue in the background. Use File → Exit for a full shutdown.
 - **Themes** — Light, dark, and high-contrast.
 - **Secure credentials** — DPAPI encryption on Windows; AES-256 encrypted fallback on other platforms. No plain-text passwords.
-- **DataGrid features** — Right-click to copy cell, row, or all rows. Per-replica LSN columns displayed as hex `VLF:Block`. Color-coded sync state cells. Per-tab column layout persistence (widths, order, sort).
+- **DataGrid features** — Right-click to copy cell, row, or all rows. Per-replica LSN columns displayed as hex `VLF:Block`. Color-coded sync state cells. Per-tab column layout persistence (widths, order, sort). Double-click column header edge to auto-fit width to content.
 - **SQL Server 2014+ compatibility** — Automatically falls back to a legacy query when `secondary_lag_seconds` is unavailable (SQL error 207). The time-lag column shows 0 on SQL Server 2014; all other metrics remain fully functional.
 - **Statistics & Trends** — Historical trend charts (View → Statistics…) with time range presets from 24 hours to 1 year plus custom date pickers. Three-tier data retention (raw snapshots → hourly → daily summaries) with automatic rollup and pruning. Summary grid, four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference), and one-click Excel export.
 - **Keyboard shortcuts** — F5 to refresh the active tab, standard menu accelerators.
@@ -101,6 +101,8 @@ Each alert type can be individually enabled/disabled and configured with custom 
 
 ## Building
 
+Requires [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (pinned via `global.json`).
+
 ```bash
 dotnet build
 ```
@@ -119,7 +121,8 @@ SqlAgMonitor.sln
 │   ├── Views/                     # AXAML views
 │   ├── ViewModels/                # ReactiveUI ViewModels
 │   ├── Controls/                  # Custom controls (topology diagram)
-│   └── Converters/                # Value converters
+│   ├── Converters/                # Value converters
+│   └── Helpers/                   # DataGrid auto-fit helper
 ├── src/SqlAgMonitor.Core/         # Shared business logic
 │   ├── Models/                    # Domain models
 │   ├── Services/                  # Service implementations

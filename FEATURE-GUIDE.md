@@ -25,10 +25,8 @@
 | Light Theme | Switch to light theme |
 | Dark Theme | Switch to dark theme |
 | High Contrast Theme | Switch to high-contrast theme |
-| Alert History | Toggle the Alert History panel on the right side of the window |
+| Alert History | Toggle the Alert History tab (always-visible first tab) |
 | Statistics… | Open the Statistics & Trends window with historical charts and data export |
-| Dark Theme | Switch to dark theme |
-| High Contrast Theme | Switch to high-contrast theme |
 
 ### Monitoring Menu
 
@@ -143,13 +141,14 @@ For each replica in the AG, a column is auto-generated:
 - **Click column headers** to sort
 - **Drag column headers** to reorder
 - **Drag column edges** to resize (proportionally sized by default)
+- **Double-click column header edge** to auto-fit column width to content
 - **Layout is persisted** per tab — column widths, order, and sort are saved and restored
 
 ---
 
-## Alert History Panel
+## Alert History Tab
 
-Toggle via **View → Alert History** (checkbox menu item). A panel appears on the right side of the main window showing a chronological DataGrid of all alert events stored in DuckDB.
+The Alert History tab is the always-visible first tab in the main window, showing a chronological DataGrid of all alert events stored in DuckDB. Events load automatically on startup and refresh when new alerts arrive.
 
 ### Columns
 
@@ -164,11 +163,11 @@ Toggle via **View → Alert History** (checkbox menu item). A panel appears on t
 | Message | Descriptive alert message |
 
 ### Behavior
-- Loads the most recent 1,000 events on open
-- **Auto-refreshes** when a new alert fires while the panel is open
+- Loads the most recent 1,000 events on startup
+- **Auto-refreshes** when a new alert fires
 - **Refresh button** to manually reload
 - **Sortable columns** — click any column header to sort
-- **Close** via the ✕ button or by toggling View → Alert History again
+- **Double-click column header edge** to auto-fit column width to content
 
 ---
 

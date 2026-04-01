@@ -9,8 +9,13 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.Alerting;
+using SqlAgMonitor.Core.Services.Connection;
+using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Core.Services.Notifications;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 using SqlAgMonitor.Views;
@@ -48,12 +53,12 @@ public partial class App : Application
         Services.GetRequiredService<IThemeService>().SetTheme(config.Theme);
 
         // Initialize event history database (errors are logged; DuckDB degrades gracefully if unavailable)
-        var historyService = Services.GetRequiredService<IEventHistoryService>();
+        var historyMaintenance = Services.GetRequiredService<IHistoryMaintenanceService>();
         _ = Task.Run(async () =>
         {
             try
             {
-                await historyService.InitializeAsync();
+                await historyMaintenance.InitializeAsync();
             }
             catch (Exception ex)
             {
@@ -70,11 +75,31 @@ public partial class App : Application
 
             var agMonitor = Services.GetRequiredService<AgMonitorService>();
             var dagMonitor = Services.GetRequiredService<DagMonitorService>();
+            var exportService = Services.GetRequiredService<IHtmlExportService>();
+            var alertEngine = Services.GetRequiredService<IAlertEngine>();
+            var alertDispatcher = Services.GetRequiredService<AlertDispatcher>();
+            var eventRecorder = Services.GetRequiredService<IEventRecorder>();
+            var eventQuery = Services.GetRequiredService<IEventQueryService>();
+            var snapshotQuery = Services.GetRequiredService<ISnapshotQueryService>();
+            var emailService = Services.GetRequiredService<IEmailNotificationService>();
+            var connectionService = Services.GetRequiredService<ISqlConnectionService>();
+            var discoveryService = Services.GetRequiredService<IAgDiscoveryService>();
+            var credentialStore = Services.GetRequiredService<ICredentialStore>();
             var loggerFactory = Services.GetRequiredService<ILoggerFactory>();
+            var maintenanceScheduler = Services.GetRequiredService<MaintenanceScheduler>();
+
+            var coordinator = new MonitoringCoordinator(
+                agMonitor, dagMonitor, alertEngine, alertDispatcher,
+                eventRecorder, configService, exportService,
+                loggerFactory.CreateLogger<MonitoringCoordinator>());
 
             desktop.MainWindow = new MainWindow
             {
-                DataContext = new MainWindowViewModel(agMonitor, dagMonitor, loggerFactory),
+                DataContext = new MainWindowViewModel(
+                    coordinator, maintenanceScheduler, configService,
+                    historyMaintenance, eventQuery, snapshotQuery,
+                    emailService, connectionService, discoveryService,
+                    credentialStore, loggerFactory),
                 Icon = new WindowIcon(AssetLoader.Open(new Uri("avares://SqlAgMonitor/Assets/app-icon.png")))
             };
         }

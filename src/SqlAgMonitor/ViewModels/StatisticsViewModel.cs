@@ -13,7 +13,6 @@ using LiveChartsCore;
 using LiveChartsCore.Defaults;
 using LiveChartsCore.SkiaSharpView;
 using LiveChartsCore.SkiaSharpView.Painting;
-using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SkiaSharp;
 using SqlAgMonitor.Core.Configuration;
@@ -25,6 +24,8 @@ namespace SqlAgMonitor.ViewModels;
 
 public class StatisticsViewModel : ViewModelBase
 {
+    private readonly ISnapshotQueryService _snapshotQuery;
+    private readonly IConfigurationService _configService;
     private string _selectedTimeRange = "24 hours";
     private DateTime? _customFrom = DateTime.UtcNow.AddDays(-1);
     private DateTime? _customUntil = DateTime.UtcNow;
@@ -39,10 +40,6 @@ public class StatisticsViewModel : ViewModelBase
     private bool _autoRefresh;
     private IDisposable? _autoRefreshSubscription;
     private CancellationTokenSource? _loadCts;
-    private bool _showSendQueueChart = true;
-    private bool _showRedoQueueChart = true;
-    private bool _showLagChart = true;
-    private bool _showLogBlockDiffChart = true;
 
     public static string[] TimeRangeOptions { get; } =
         ["15 minutes", "1 hour", "4 hours", "8 hours", "24 hours", "7 days", "30 days", "90 days", "180 days", "365 days", "Custom"];
@@ -85,30 +82,6 @@ public class StatisticsViewModel : ViewModelBase
             this.RaiseAndSetIfChanged(ref _autoRefresh, value);
             ConfigureAutoRefresh(value);
         }
-    }
-
-    public bool ShowSendQueueChart
-    {
-        get => _showSendQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showSendQueueChart, value);
-    }
-
-    public bool ShowRedoQueueChart
-    {
-        get => _showRedoQueueChart;
-        set => this.RaiseAndSetIfChanged(ref _showRedoQueueChart, value);
-    }
-
-    public bool ShowLagChart
-    {
-        get => _showLagChart;
-        set => this.RaiseAndSetIfChanged(ref _showLagChart, value);
-    }
-
-    public bool ShowLogBlockDiffChart
-    {
-        get => _showLogBlockDiffChart;
-        set => this.RaiseAndSetIfChanged(ref _showLogBlockDiffChart, value);
     }
 
     public string? SelectedGroup
@@ -166,8 +139,14 @@ public class StatisticsViewModel : ViewModelBase
     public ObservableCollection<string> ReplicaNames { get; } = new() { "(All)" };
     public ObservableCollection<string> DatabaseNames { get; } = new() { "(All)" };
 
-    // Summary grid data
-    public ObservableCollection<SnapshotDataPoint> SummaryRows { get; } = new();
+    // Summary grid data — settable so large result sets can be swapped in
+    // with a single PropertyChanged notification instead of per-item Add().
+    private ObservableCollection<SnapshotDataPoint> _summaryRows = new();
+    public ObservableCollection<SnapshotDataPoint> SummaryRows
+    {
+        get => _summaryRows;
+        set => this.RaiseAndSetIfChanged(ref _summaryRows, value);
+    }
 
     // Chart series
     private ISeries[] _sendQueueSeries = [];
@@ -199,16 +178,13 @@ public class StatisticsViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _logBlockDiffSeries, value);
     }
 
-    // Shared X-axis for all charts (time axis)
-    public Axis[] XAxes { get; } =
-    [
-        new DateTimeAxis(TimeSpan.FromHours(1), date => date.ToString("MM/dd HH:mm", CultureInfo.InvariantCulture))
-        {
-            LabelsRotation = -45,
-            TextSize = 11,
-            LabelsPaint = new SolidColorPaint(SKColors.LightGray)
-        }
-    ];
+    // X-axis — rebuilt after each data load to show ~5 evenly-spaced time labels
+    private Axis[] _xAxes = [CreateDefaultXAxis(TimeSpan.FromHours(24))];
+    public Axis[] XAxes
+    {
+        get => _xAxes;
+        set => this.RaiseAndSetIfChanged(ref _xAxes, value);
+    }
 
     public Axis[] SendQueueYAxes { get; } = [CreateYAxis("KB")];
     public Axis[] RedoQueueYAxes { get; } = [CreateYAxis("KB")];
@@ -221,25 +197,20 @@ public class StatisticsViewModel : ViewModelBase
     // Holds the loaded data for export
     private IReadOnlyList<SnapshotDataPoint> _loadedData = Array.Empty<SnapshotDataPoint>();
 
-    public StatisticsViewModel()
+    public StatisticsViewModel(ISnapshotQueryService snapshotQuery, IConfigurationService configService)
     {
+        _snapshotQuery = snapshotQuery;
+        _configService = configService;
         LoadCommand = ReactiveCommand.CreateFromTask(LoadDataAsync);
         ExportCommand = ReactiveCommand.CreateFromTask<string>(ExportToExcelAsync);
     }
 
     public async Task InitializeAsync(StatisticsState? savedState = null)
     {
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null)
-        {
-            StatusText = "History service unavailable.";
-            return;
-        }
-
         _initializing = true;
         try
         {
-            var filters = await svc.GetSnapshotFiltersAsync();
+            var filters = await _snapshotQuery.GetSnapshotFiltersAsync();
 
             GroupNames.Clear();
             GroupNames.Add("(All)");
@@ -294,13 +265,10 @@ public class StatisticsViewModel : ViewModelBase
 
     private async Task RefreshCascadingFiltersAsync(bool groupChanged)
     {
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null) return;
-
         var group = _selectedGroup == "(All)" ? null : _selectedGroup;
         var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
 
-        var filters = await svc.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
+        var filters = await _snapshotQuery.GetSnapshotFiltersAsync(group, groupChanged ? null : replica);
 
         _initializing = true;
         try
@@ -368,9 +336,6 @@ public class StatisticsViewModel : ViewModelBase
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _loadCts = cts;
 
-        var svc = App.Services?.GetService<IEventHistoryService>();
-        if (svc == null) return;
-
         IsLoading = true;
         StatusText = "Loading...";
 
@@ -381,7 +346,7 @@ public class StatisticsViewModel : ViewModelBase
             var replica = _selectedReplica == "(All)" ? null : _selectedReplica;
             var database = _selectedDatabase == "(All)" ? null : _selectedDatabase;
 
-            var data = await svc.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
+            var data = await _snapshotQuery.GetSnapshotDataAsync(since, until, group, replica, database, cts.Token);
 
             // If we were cancelled while awaiting, a newer load is in progress — discard results.
             if (cts.Token.IsCancellationRequested) return;
@@ -391,13 +356,26 @@ public class StatisticsViewModel : ViewModelBase
             if (data.Count > 0)
                 _activeTier = data[0].Tier;
 
-            // Update summary grid
-            SummaryRows.Clear();
-            foreach (var row in data)
-                SummaryRows.Add(row);
+            // Rebuild X-axis with ~5 evenly-spaced labels for the queried range
+            XAxes = [CreateDefaultXAxis(until - since)];
 
-            // Build chart series grouped by replica+database
-            BuildChartSeries(data);
+            // Build summaries and chart series off the UI thread (CPU-bound LINQ)
+            var (summaryRows, send, redo, lag, logDiff) = await Task.Run(
+                () =>
+                {
+                    var summary = BuildSummaryRows(data);
+                    var charts = BuildChartSeries(data);
+                    return (summary, charts.Send, charts.Redo, charts.Lag, charts.LogDiff);
+                }, cts.Token).ConfigureAwait(true);
+
+            if (cts.Token.IsCancellationRequested) return;
+
+            SummaryRows = new ObservableCollection<SnapshotDataPoint>(summaryRows);
+
+            SendQueueSeries = send;
+            RedoQueueSeries = redo;
+            LagSeries = lag;
+            LogBlockDiffSeries = logDiff;
 
             var tierLabel = data.Count > 0 ? data[0].Tier.ToString().ToLowerInvariant() : "n/a";
             StatusText = $"{data.Count} data points loaded ({tierLabel} tier)";
@@ -417,7 +395,76 @@ public class StatisticsViewModel : ViewModelBase
         }
     }
 
-    private void BuildChartSeries(IReadOnlyList<SnapshotDataPoint> data)
+    /// <summary>
+    /// Aggregates raw time-series data into one row per Group/Replica/Database,
+    /// computing weighted averages for Avg columns and global Min/Max for extremes.
+    /// </summary>
+    private static List<SnapshotDataPoint> BuildSummaryRows(IReadOnlyList<SnapshotDataPoint> data)
+    {
+        if (data.Count == 0) return [];
+
+        return data
+            .GroupBy(d => (d.GroupName, d.ReplicaName, d.DatabaseName))
+            .Select(g =>
+            {
+                var totalSamples = g.Sum(d => (long)d.SampleCount);
+                // Most recent row for categorical/state fields
+                var latest = g.MaxBy(d => d.Timestamp)!;
+
+                return new SnapshotDataPoint
+                {
+                    Timestamp = latest.Timestamp,
+                    GroupName = g.Key.GroupName,
+                    ReplicaName = g.Key.ReplicaName,
+                    DatabaseName = g.Key.DatabaseName,
+                    SampleCount = (int)Math.Min(totalSamples, int.MaxValue),
+
+                    LogSendQueueKbMin = g.Min(d => d.LogSendQueueKbMin),
+                    LogSendQueueKbMax = g.Max(d => d.LogSendQueueKbMax),
+                    LogSendQueueKbAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogSendQueueKbAvg * d.SampleCount) / totalSamples : 0,
+
+                    RedoQueueKbMin = g.Min(d => d.RedoQueueKbMin),
+                    RedoQueueKbMax = g.Max(d => d.RedoQueueKbMax),
+                    RedoQueueKbAvg = totalSamples > 0
+                        ? g.Sum(d => d.RedoQueueKbAvg * d.SampleCount) / totalSamples : 0,
+
+                    LogSendRateMin = g.Min(d => d.LogSendRateMin),
+                    LogSendRateMax = g.Max(d => d.LogSendRateMax),
+                    LogSendRateAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogSendRateAvg * d.SampleCount) / totalSamples : 0,
+
+                    RedoRateMin = g.Min(d => d.RedoRateMin),
+                    RedoRateMax = g.Max(d => d.RedoRateMax),
+                    RedoRateAvg = totalSamples > 0
+                        ? g.Sum(d => d.RedoRateAvg * d.SampleCount) / totalSamples : 0,
+
+                    LogBlockDiffMin = g.Min(d => d.LogBlockDiffMin),
+                    LogBlockDiffMax = g.Max(d => d.LogBlockDiffMax),
+                    LogBlockDiffAvg = totalSamples > 0
+                        ? g.Sum(d => d.LogBlockDiffAvg * d.SampleCount) / totalSamples : 0,
+
+                    SecondaryLagMin = g.Min(d => d.SecondaryLagMin),
+                    SecondaryLagMax = g.Max(d => d.SecondaryLagMax),
+                    SecondaryLagAvg = totalSamples > 0
+                        ? g.Sum(d => d.SecondaryLagAvg * d.SampleCount) / totalSamples : 0,
+
+                    Role = latest.Role,
+                    SyncState = latest.SyncState,
+                    AnySuspended = g.Any(d => d.AnySuspended),
+                    LastHardenedLsn = latest.LastHardenedLsn,
+                    LastCommitLsn = latest.LastCommitLsn,
+                    Tier = latest.Tier
+                };
+            })
+            .OrderBy(d => d.GroupName)
+            .ThenBy(d => d.ReplicaName)
+            .ThenBy(d => d.DatabaseName)
+            .ToList();
+    }
+
+    private static (ISeries[] Send, ISeries[] Redo, ISeries[] Lag, ISeries[] LogDiff) BuildChartSeries(
+        IReadOnlyList<SnapshotDataPoint> data)
     {
         // Group by replica + database for multi-line charts
         var groups = data
@@ -431,10 +478,11 @@ public class StatisticsViewModel : ViewModelBase
             SKColors.Turquoise, SKColors.LightCoral
         };
 
-        SendQueueSeries = BuildLineSeries(groups, colors, d => d.LogSendQueueKbAvg);
-        RedoQueueSeries = BuildLineSeries(groups, colors, d => d.RedoQueueKbAvg);
-        LagSeries = BuildLineSeries(groups, colors, d => d.SecondaryLagAvg);
-        LogBlockDiffSeries = BuildLineSeries(groups, colors, d => d.LogBlockDiffAvg);
+        return (
+            BuildLineSeries(groups, colors, d => d.LogSendQueueKbAvg),
+            BuildLineSeries(groups, colors, d => d.RedoQueueKbAvg),
+            BuildLineSeries(groups, colors, d => d.SecondaryLagAvg),
+            BuildLineSeries(groups, colors, d => d.LogBlockDiffAvg));
     }
 
     private static ISeries[] BuildLineSeries(
@@ -570,6 +618,32 @@ public class StatisticsViewModel : ViewModelBase
         MinLimit = 0
     };
 
+    /// <summary>
+    /// Creates a <see cref="DateTimeAxis"/> whose <see cref="Axis.MinStep"/> is set so that
+    /// approximately 5 labels appear across the given time range.
+    /// </summary>
+    private static Axis CreateDefaultXAxis(TimeSpan range)
+    {
+        // Pick a human-friendly label format based on range width
+        var format = range.TotalDays > 7
+            ? "MM/dd"
+            : range.TotalHours > 4
+                ? "MM/dd HH:mm"
+                : "HH:mm";
+
+        // Step in hours — DateTimeAxis unit is TimeSpan.FromHours(1)
+        var stepHours = Math.Max(range.TotalHours / 5.0, 1.0 / 60);
+
+        return new DateTimeAxis(TimeSpan.FromHours(1),
+            date => date.ToString(format, CultureInfo.InvariantCulture))
+        {
+            MinStep = stepHours,
+            LabelsRotation = -45,
+            TextSize = 11,
+            LabelsPaint = new SolidColorPaint(SKColors.LightGray)
+        };
+    }
+
     private void ConfigureAutoRefresh(bool enabled)
     {
         _autoRefreshSubscription?.Dispose();
@@ -577,8 +651,7 @@ public class StatisticsViewModel : ViewModelBase
 
         if (!enabled) return;
 
-        var configService = App.Services?.GetService<IConfigurationService>();
-        var intervalSeconds = configService?.Load().GlobalPollingIntervalSeconds ?? 16;
+        var intervalSeconds = _configService.Load().GlobalPollingIntervalSeconds;
 
         _autoRefreshSubscription = Observable.Interval(TimeSpan.FromSeconds(intervalSeconds))
             .ObserveOn(RxApp.MainThreadScheduler)
@@ -603,5 +676,13 @@ public class StatisticsViewModel : ViewModelBase
         _loadCts?.Cancel();
         _loadCts?.Dispose();
         _loadCts = null;
+
+        // Clear chart series and axes so the LiveCharts render loop stops
+        // accessing SkiaSharp paint/font objects before they are finalized.
+        SendQueueSeries = [];
+        RedoQueueSeries = [];
+        LagSeries = [];
+        LogBlockDiffSeries = [];
+        XAxes = [];
     }
 }

@@ -6,6 +6,7 @@ using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using SqlAgMonitor.Helpers;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
 
@@ -23,7 +24,7 @@ public partial class StatisticsWindow : Window
         Closed += OnWindowClosed;
     }
 
-    private void OnWindowOpened(object? sender, EventArgs e)
+    private async void OnWindowOpened(object? sender, EventArgs e)
     {
         var state = _layoutService.Load();
 
@@ -40,9 +41,19 @@ public partial class StatisticsWindow : Window
                 (int)state.StatsWindowY.Value);
         }
 
+        RestoreColumnWidths(state);
+        DataGridAutoFitHelper.Attach(SummaryGrid);
+
         if (DataContext is StatisticsViewModel vm)
         {
-            _ = vm.InitializeAsync(state.StatsState);
+            try
+            {
+                await vm.InitializeAsync(state.StatsState);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Statistics initialization failed: {ex.Message}");
+            }
         }
     }
 
@@ -58,13 +69,51 @@ public partial class StatisticsWindow : Window
             state.StatsWindowHeight = Bounds.Height;
         }
 
+        SaveColumnWidths(state);
+
         if (DataContext is StatisticsViewModel vm)
         {
             state.StatsState = vm.SaveState();
+
+            // Detach DataContext first so LiveCharts bindings release their
+            // reference to the series/axes. Then dispose the VM which clears
+            // the series arrays. This prevents the SkiaSharp render loop from
+            // accessing disposed paint/font objects mid-frame.
+            DataContext = null;
             vm.Dispose();
         }
 
         _layoutService.Save(state);
+    }
+
+    private void SaveColumnWidths(WindowLayoutState state)
+    {
+        if (SummaryGrid.Columns.Count == 0) return;
+
+        var layout = new TabGridLayout();
+        foreach (var col in SummaryGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header == null) continue;
+            layout.ColumnWidths[header] = Math.Round(col.ActualWidth);
+        }
+        state.StatsGridLayout = layout;
+    }
+
+    private void RestoreColumnWidths(WindowLayoutState state)
+    {
+        if (state.StatsGridLayout == null) return;
+
+        foreach (var col in SummaryGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header != null
+                && state.StatsGridLayout.ColumnWidths.TryGetValue(header, out var w)
+                && w > 10)
+            {
+                col.Width = new DataGridLength(w);
+            }
+        }
     }
 
     private async void OnExportClick(object? sender, RoutedEventArgs e)

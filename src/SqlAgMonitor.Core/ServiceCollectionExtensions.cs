@@ -40,15 +40,21 @@ public static class ServiceCollectionExtensions
 
         // Alerting
         services.AddSingleton<IAlertEngine, AlertEngine>();
+        services.AddSingleton<AlertDispatcher>();
 
         // Notifications
         services.AddSingleton<IEmailNotificationService, SmtpEmailNotificationService>();
         services.AddSingleton<ISyslogService, SyslogService>();
         services.AddSingleton<IOsNotificationService, OsNotificationService>();
 
-        // History
+        // History — single concrete instance exposed through focused interfaces
         services.AddSingleton<DuckDbEventHistoryService>();
         services.AddSingleton<IEventHistoryService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<IEventRecorder>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<IEventQueryService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<ISnapshotQueryService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<IHistoryMaintenanceService>(sp => sp.GetRequiredService<DuckDbEventHistoryService>());
+        services.AddSingleton<MaintenanceScheduler>();
         services.AddSingleton<FileErrorLogger>();
 
         // Export

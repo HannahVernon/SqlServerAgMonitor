@@ -34,20 +34,28 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | Package | Version | Copyright |
 |---------|---------|-----------|
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.Controls.DataGrid](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.Desktop](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.Fonts.Inter](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.ReactiveUI](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.Themes.Fluent](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
+| [Avalonia.Diagnostics](https://github.com/AvaloniaUI/Avalonia) | 11.3.9 | © AvaloniaUI |
 | [ReactiveUI](https://github.com/reactiveui/ReactiveUI) | 20.1.1 | © ReactiveUI contributors |
 | [System.Reactive](https://github.com/dotnet/reactive) | 6.1.0 | © .NET Foundation |
 | [DynamicData](https://github.com/reactivemarbles/DynamicData) | 8.4.1 | © ReactiveUI contributors |
 | [Splat](https://github.com/reactiveui/splat) | 15.1.1 | © ReactiveUI contributors |
-| [LiveChartsCore](https://github.com/beto-rodriguez/LiveCharts2) | 2.0.0 | © Alberto Rodriguez |
+| [LiveChartsCore.SkiaSharpView.Avalonia](https://github.com/beto-rodriguez/LiveCharts2) | 2.0.0 | © Alberto Rodriguez |
 | [SkiaSharp](https://github.com/mono/SkiaSharp) | 2.88.9 | © Microsoft Corporation |
 | [HarfBuzzSharp](https://github.com/nicknijenhuis/HarfBuzzSharp) | 8.3.1.1 | © Microsoft Corporation |
 | [ClosedXML](https://github.com/ClosedXML/ClosedXML) | 0.105.0 | © ClosedXML contributors |
 | [DocumentFormat.OpenXml](https://github.com/dotnet/Open-XML-SDK) | 3.1.1 | © Microsoft Corporation |
 | [ExcelNumberFormat](https://github.com/andersnm/ExcelNumberFormat) | 1.1.0 | © andersnm |
-| [DuckDB.NET](https://github.com/Giorgi/DuckDB.NET) | 1.5.0 (Full) | © Giorgi Dalakishvili |
+| [DuckDB.NET.Data.Full](https://github.com/Giorgi/DuckDB.NET) | 1.5.0 | © Giorgi Dalakishvili |
 | [Microsoft.Data.SqlClient](https://github.com/dotnet/SqlClient) | 7.0.0 | © Microsoft Corporation |
 | [Microsoft.Extensions.DependencyInjection](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [Microsoft.Extensions.DependencyInjection.Abstractions](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Logging](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [Microsoft.Extensions.Logging.Abstractions](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 
 ### Apache License 2.0

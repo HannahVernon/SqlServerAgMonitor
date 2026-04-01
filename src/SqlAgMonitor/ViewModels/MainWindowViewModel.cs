@@ -5,14 +5,12 @@ using System.Linq;
 using System.Reactive;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Media;
 using Avalonia.Threading;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
@@ -20,7 +18,6 @@ using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.Alerting;
 using SqlAgMonitor.Core.Services.Connection;
 using SqlAgMonitor.Core.Services.Credentials;
-using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Core.Services.Notifications;
@@ -30,27 +27,36 @@ namespace SqlAgMonitor.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
-    private readonly AgMonitorService _agMonitor;
-    private readonly DagMonitorService _dagMonitor;
+    private readonly MonitoringCoordinator _coordinator;
+    private readonly MaintenanceScheduler _maintenanceScheduler;
+    private readonly IConfigurationService _configService;
+    private readonly IHistoryMaintenanceService _historyMaintenance;
+    private readonly IEventQueryService _eventQuery;
+    private readonly ISnapshotQueryService _snapshotQuery;
+    private readonly IEmailNotificationService _emailService;
+    private readonly ISqlConnectionService _connectionService;
+    private readonly IAgDiscoveryService _discoveryService;
+    private readonly ICredentialStore _credentialStore;
     private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
-    private readonly Dictionary<string, MonitoredGroupSnapshot> _previousSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
-    private MonitorTabViewModel? _selectedTab;
+    private object? _selectedTab;
     private string _statusText = "Ready";
     private string _connectionSummary = "No groups monitored";
     private bool _isAllPaused;
     private string _lastPolledText = string.Empty;
-    private bool _isAlertHistoryVisible;
     private AlertHistoryViewModel? _alertHistoryVm;
 
-    public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
+    public ObservableCollection<MonitorTabViewModel> MonitorTabs => _coordinator.MonitorTabs;
+    public ObservableCollection<object> AllTabs { get; } = new();
 
-    public MonitorTabViewModel? SelectedTab
+    public object? SelectedTab
     {
         get => _selectedTab;
         set => this.RaiseAndSetIfChanged(ref _selectedTab, value);
     }
+
+    private MonitorTabViewModel? SelectedMonitorTab => SelectedTab as MonitorTabViewModel;
 
     public string StatusText
     {
@@ -72,13 +78,7 @@ public class MainWindowViewModel : ViewModelBase
 
     public bool IsNotAllPaused => !_isAllPaused;
 
-    public bool IsAlertHistoryVisible
-    {
-        get => _isAlertHistoryVisible;
-        set => this.RaiseAndSetIfChanged(ref _isAlertHistoryVisible, value);
-    }
-
-    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel();
+    public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel(_eventQuery);
 
     public string LastPolledText
     {
@@ -98,19 +98,33 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> ToggleAlertHistoryCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenStatisticsCommand { get; }
 
-    public MainWindowViewModel()
-        : this(null!, null!, null!)
+    public MainWindowViewModel(
+        MonitoringCoordinator coordinator,
+        MaintenanceScheduler maintenanceScheduler,
+        IConfigurationService configService,
+        IHistoryMaintenanceService historyMaintenance,
+        IEventQueryService eventQuery,
+        ISnapshotQueryService snapshotQuery,
+        IEmailNotificationService emailService,
+        ISqlConnectionService connectionService,
+        IAgDiscoveryService discoveryService,
+        ICredentialStore credentialStore,
+        ILoggerFactory loggerFactory)
     {
-    }
-
-    public MainWindowViewModel(AgMonitorService agMonitor, DagMonitorService dagMonitor, ILoggerFactory loggerFactory)
-    {
-        _agMonitor = agMonitor;
-        _dagMonitor = dagMonitor;
+        _coordinator = coordinator;
+        _maintenanceScheduler = maintenanceScheduler;
+        _configService = configService;
+        _historyMaintenance = historyMaintenance;
+        _eventQuery = eventQuery;
+        _snapshotQuery = snapshotQuery;
+        _emailService = emailService;
+        _connectionService = connectionService;
+        _discoveryService = discoveryService;
+        _credentialStore = credentialStore;
         _logger = loggerFactory?.CreateLogger<MainWindowViewModel>();
 
         var canRemove = this.WhenAnyValue(x => x.SelectedTab)
-            .Select(tab => tab != null);
+            .Select(tab => tab is MonitorTabViewModel);
 
         AddGroupCommand = ReactiveCommand.CreateFromTask(OnAddGroupAsync);
         RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
@@ -121,7 +135,7 @@ public class MainWindowViewModel : ViewModelBase
         AboutCommand = ReactiveCommand.CreateFromTask(OnAboutAsync);
 
         var canRefresh = this.WhenAnyValue(x => x.SelectedTab)
-            .Select(tab => tab != null);
+            .Select(tab => tab is MonitorTabViewModel);
         RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
         OpenLogDirectoryCommand = ReactiveCommand.Create(OnOpenLogDirectory);
         ToggleAlertHistoryCommand = ReactiveCommand.CreateFromTask(OnToggleAlertHistoryAsync);
@@ -129,153 +143,74 @@ public class MainWindowViewModel : ViewModelBase
 
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
 
+        // Initialize AllTabs with Alert History as the first tab
+        AllTabs.Add(AlertHistory);
+        foreach (var tab in MonitorTabs)
+            AllTabs.Add(tab);
+        SelectedTab = AllTabs.FirstOrDefault();
+
+        MonitorTabs.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (var item in e.NewItems)
+                {
+                    var insertIndex = e.NewStartingIndex + 1; // +1 for Alert History at index 0
+                    if (insertIndex <= AllTabs.Count)
+                        AllTabs.Insert(insertIndex, item!);
+                    else
+                        AllTabs.Add(item!);
+                }
+            }
+            else if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove && e.OldItems != null)
+            {
+                foreach (var item in e.OldItems)
+                    AllTabs.Remove(item!);
+            }
+            else if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                // Rebuild: keep Alert History, re-add monitor tabs
+                while (AllTabs.Count > 1)
+                    AllTabs.RemoveAt(AllTabs.Count - 1);
+                foreach (var tab in MonitorTabs)
+                    AllTabs.Add(tab);
+            }
+        };
+
         // Update "last polled" text every second
         var timerSub = Observable.Interval(TimeSpan.FromSeconds(1))
             .ObserveOn(RxApp.MainThreadScheduler)
             .Subscribe(_ => UpdateLastPolledText());
         _subscriptions.Add(timerSub);
 
-        // Prune old events: 10s initial delay (let app finish startup), then every 24 hours
-        var pruneSub = Observable.Timer(TimeSpan.FromSeconds(10), TimeSpan.FromHours(24))
-            .SelectMany(_ => Observable.FromAsync(PruneOldEventsAsync))
-            .Subscribe();
-        _subscriptions.Add(pruneSub);
+        // Wire coordinator events to UI state
+        _coordinator.SnapshotProcessed += snapshot =>
+        {
+            SelectedTab ??= AllTabs.FirstOrDefault();
+            ConnectionSummary = $"{MonitorTabs.Count} group(s) monitored";
+        };
 
-        // Summarize snapshots: 5 min initial delay (accumulate raw data first), then hourly.
-        // The 3-step aggregation: raw → hourly (after RawRetentionHours), hourly → daily
-        // (after HourlyRetentionDays), then prune aged daily (after DailyRetentionDays).
-        var summarizeSub = Observable.Timer(TimeSpan.FromMinutes(5), TimeSpan.FromHours(1))
-            .SelectMany(_ => Observable.FromAsync(SummarizeSnapshotsAsync))
-            .Subscribe();
-        _subscriptions.Add(summarizeSub);
+        _coordinator.AlertRaised += alert =>
+        {
+            StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}";
+            _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
+        };
 
-        SubscribeToSnapshots();
-        _ = LoadAndStartMonitoredGroupsAsync();
+        _coordinator.SubscribeToMonitors();
+        _ = InitializeAsync();
     }
 
-    private async Task LoadAndStartMonitoredGroupsAsync()
+    private async Task InitializeAsync()
     {
-        try
+        await _coordinator.LoadAndStartAsync();
+        var groupCount = MonitorTabs.Count;
+        if (groupCount > 0)
         {
-            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-            if (configService is null) return;
-
-            var config = configService.Load();
-            foreach (var group in config.MonitoredGroups)
-            {
-                var groupType = Enum.TryParse<AvailabilityGroupType>(group.GroupType, out var gt)
-                    ? gt : AvailabilityGroupType.AvailabilityGroup;
-                await StartMonitoringGroupAsync(group.Name, groupType);
-            }
-
-            if (config.MonitoredGroups.Count > 0)
-                StatusText = $"Loaded {config.MonitoredGroups.Count} monitored group(s)";
-
-            // Start scheduled HTML export if configured
-            StartScheduledExport();
+            StatusText = $"Loaded {groupCount} monitored group(s)";
+            // Select the first monitor tab (index 1, after Alert History)
+            if (AllTabs.Count > 1)
+                SelectedTab = AllTabs[1];
         }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Error loading monitored groups at startup.");
-        }
-    }
-
-    private void StartScheduledExport()
-    {
-        try
-        {
-            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
-            if (exportService is null) return;
-
-            exportService.StartScheduledExportAsync(() =>
-                _previousSnapshots.Values.ToList().AsReadOnly());
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to start scheduled HTML export.");
-        }
-    }
-
-    private void SubscribeToSnapshots()
-    {
-        if (_agMonitor is null || _dagMonitor is null)
-            return;
-
-        var agSub = _agMonitor.Snapshots
-            .Subscribe(snapshot => Dispatcher.UIThread.Post(() => OnSnapshotReceived(snapshot)));
-        _subscriptions.Add(agSub);
-
-        var dagSub = _dagMonitor.Snapshots
-            .Subscribe(snapshot => Dispatcher.UIThread.Post(() => OnSnapshotReceived(snapshot)));
-        _subscriptions.Add(dagSub);
-
-        // Wire alert engine to process alerts
-        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
-        if (alertEngine is not null)
-        {
-            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-            var emailService = App.Services?.GetService(typeof(IEmailNotificationService)) as IEmailNotificationService;
-            var syslogService = App.Services?.GetService(typeof(ISyslogService)) as ISyslogService;
-
-            var alertSub = alertEngine.Alerts
-                .Subscribe(alert =>
-                {
-                    Dispatcher.UIThread.Post(() =>
-                        StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}");
-
-                    // Record in history
-                    _ = historyService?.RecordEventAsync(alert);
-
-                    // Refresh alert history panel if visible
-                    if (_isAlertHistoryVisible)
-                        _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
-
-                    // Send notifications based on config
-                    var config = (App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService)?.Load();
-                    if (config?.Email.Enabled == true)
-                        _ = emailService?.SendAlertEmailAsync(alert);
-                    if (config?.Syslog.Enabled == true)
-                        _ = syslogService?.SendEventAsync(alert);
-                });
-            _subscriptions.Add(alertSub);
-        }
-    }
-
-    private void OnSnapshotReceived(MonitoredGroupSnapshot snapshot)
-    {
-        var existing = FindTab(snapshot.Name);
-        if (existing is null)
-        {
-            existing = new MonitorTabViewModel { TabTitle = snapshot.Name, GroupType = snapshot.GroupType };
-            MonitorTabs.Add(existing);
-            SelectedTab ??= existing;
-        }
-
-        existing.ApplySnapshot(snapshot);
-        ConnectionSummary = $"{MonitorTabs.Count} group(s) monitored";
-
-        // Feed to alert engine
-        var alertEngine = App.Services?.GetService(typeof(IAlertEngine)) as IAlertEngine;
-        if (alertEngine is not null)
-        {
-            _previousSnapshots.TryGetValue(snapshot.Name, out var previous);
-            alertEngine.EvaluateSnapshot(snapshot, previous);
-            _previousSnapshots[snapshot.Name] = snapshot;
-        }
-
-        // Record snapshot statistics to DuckDB
-        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-        _ = historyService?.RecordSnapshotAsync(snapshot);
-    }
-
-    private MonitorTabViewModel? FindTab(string name)
-    {
-        foreach (var tab in MonitorTabs)
-        {
-            if (string.Equals(tab.TabTitle, name, StringComparison.OrdinalIgnoreCase))
-                return tab;
-        }
-        return null;
     }
 
     private async Task OnAddGroupAsync()
@@ -283,11 +218,7 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var connectionService = App.Services.GetRequiredService<ISqlConnectionService>();
-        var discoveryService = App.Services.GetRequiredService<IAgDiscoveryService>();
-        var credentialStore = App.Services.GetRequiredService<ICredentialStore>();
-
-        var vm = new AddGroupViewModel(connectionService, discoveryService, credentialStore);
+        var vm = new AddGroupViewModel(_connectionService, _discoveryService, _credentialStore);
         try
         {
             var addWindow = new AddGroupWindow { DataContext = vm };
@@ -295,8 +226,7 @@ public class MainWindowViewModel : ViewModelBase
 
             if (result is true && vm.SelectedGroups is { Count: > 0 } groups)
             {
-                var configService = App.Services.GetRequiredService<IConfigurationService>();
-                var config = configService.Load();
+                var config = _configService.Load();
 
             foreach (var group in groups)
             {
@@ -347,11 +277,11 @@ public class MainWindowViewModel : ViewModelBase
                 config.MonitoredGroups.Add(groupConfig);
             }
 
-            configService.Save(config);
+            _configService.Save(config);
 
             foreach (var group in groups)
             {
-                await StartMonitoringGroupAsync(group.Name, group.GroupType);
+                await _coordinator.StartGroupAsync(group.Name, group.GroupType);
             }
 
             StatusText = groups.Count == 1
@@ -365,25 +295,9 @@ public class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private async Task StartMonitoringGroupAsync(string groupName, AvailabilityGroupType groupType)
-    {
-        try
-        {
-            if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
-                await _dagMonitor.StartMonitoringAsync(groupName);
-            else
-                await _agMonitor.StartMonitoringAsync(groupName);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to start monitoring {Group}.", groupName);
-            StatusText = $"Error starting monitoring for {groupName}: {ex.Message}";
-        }
-    }
-
     private async Task OnRemoveGroupAsync()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab is null) return;
 
         var window = GetMainWindow();
@@ -443,10 +357,7 @@ public class MainWindowViewModel : ViewModelBase
         // Stop monitoring
         try
         {
-            if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
-                await _dagMonitor.StopMonitoringAsync(groupName);
-            else
-                await _agMonitor.StopMonitoringAsync(groupName);
+            await _coordinator.StopGroupAsync(groupName, groupType);
         }
         catch (Exception ex)
         {
@@ -454,16 +365,16 @@ public class MainWindowViewModel : ViewModelBase
         }
 
         // Remove from config
-        var configService = App.Services.GetRequiredService<IConfigurationService>();
-        var config = configService.Load();
+        var config = _configService.Load();
         config.MonitoredGroups.RemoveAll(g =>
             string.Equals(g.Name, groupName, StringComparison.OrdinalIgnoreCase));
-        configService.Save(config);
+        _configService.Save(config);
 
         // Remove tab
         MonitorTabs.Remove(tab);
-        _previousSnapshots.Remove(groupName, out _);
-        SelectedTab = MonitorTabs.FirstOrDefault();
+        SelectedTab = MonitorTabs.Count > 0
+            ? MonitorTabs.FirstOrDefault()
+            : AllTabs.FirstOrDefault();
         ConnectionSummary = MonitorTabs.Count > 0
             ? $"{MonitorTabs.Count} group(s) monitored"
             : "No groups monitored";
@@ -475,9 +386,8 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var configService = App.Services.GetRequiredService<IConfigurationService>();
-        var vm = new SettingsViewModel();
-        vm.LoadFrom(configService.Load());
+        var vm = new SettingsViewModel(_configService, _emailService);
+        vm.LoadFrom(_configService.Load());
 
         var settingsWindow = new SettingsWindow { DataContext = vm };
         settingsWindow.ShowDialog(window);
@@ -486,33 +396,26 @@ public class MainWindowViewModel : ViewModelBase
     private async Task OnExitAsync()
     {
         _subscriptions.Dispose();
+        _coordinator.Dispose();
+        _maintenanceScheduler.Dispose();
 
         // Gracefully dispose services that hold resources
         try
         {
-            var exportService = App.Services?.GetService(typeof(IHtmlExportService)) as IHtmlExportService;
-            if (exportService != null)
-                await exportService.StopScheduledExportAsync();
+            await _coordinator.DisposeMonitorsAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Error stopping export service on shutdown.");
+            _logger?.LogDebug(ex, "Error disposing monitors on shutdown.");
         }
-
-        try { await _agMonitor.DisposeAsync(); }
-        catch (Exception ex) { _logger.LogDebug(ex, "Error disposing AG monitor on shutdown."); }
-
-        try { await _dagMonitor.DisposeAsync(); }
-        catch (Exception ex) { _logger.LogDebug(ex, "Error disposing DAG monitor on shutdown."); }
 
         try
         {
-            if (App.Services?.GetService(typeof(IEventHistoryService)) is IEventHistoryService historyService)
-                await historyService.DisposeAsync();
+            await _historyMaintenance.DisposeAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Error disposing event history service on shutdown.");
+            _logger?.LogDebug(ex, "Error disposing event history service on shutdown.");
         }
 
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -599,24 +502,14 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task OnRefreshAsync()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab == null) return;
 
         StatusText = $"Refreshing {tab.TabTitle}...";
 
         try
         {
-            MonitoredGroupSnapshot snapshot;
-            if (tab.GroupType == AvailabilityGroupType.DistributedAvailabilityGroup)
-            {
-                snapshot = await _dagMonitor.PollOnceAsync(tab.TabTitle);
-            }
-            else
-            {
-                snapshot = await _agMonitor.PollOnceAsync(tab.TabTitle);
-            }
-
-            Dispatcher.UIThread.Post(() => OnSnapshotReceived(snapshot));
+            var snapshot = await _coordinator.PollOnceAsync(tab.TabTitle, tab.GroupType);
             StatusText = $"Refreshed {tab.TabTitle}";
         }
         catch (Exception ex)
@@ -627,7 +520,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateLastPolledText()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab?.LastPolledAt is { } polledAt)
         {
             var elapsed = DateTimeOffset.Now - polledAt;
@@ -649,11 +542,8 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task OnToggleAlertHistoryAsync()
     {
-        IsAlertHistoryVisible = !IsAlertHistoryVisible;
-        if (IsAlertHistoryVisible)
-        {
-            await AlertHistory.LoadEventsAsync();
-        }
+        SelectedTab = AlertHistory;
+        await AlertHistory.LoadEventsAsync();
     }
 
     private Task OnOpenStatisticsAsync()
@@ -661,50 +551,9 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return Task.CompletedTask;
 
-        var vm = new StatisticsViewModel();
+        var vm = new StatisticsViewModel(_snapshotQuery, _configService);
         var statsWindow = new Views.StatisticsWindow { DataContext = vm };
         statsWindow.Show(window);
         return Task.CompletedTask;
-    }
-
-    private async Task PruneOldEventsAsync(CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-            var config = configService?.Load();
-            if (config?.History.AutoPruneEnabled != true) return;
-
-            var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-            if (historyService == null) return;
-
-            await historyService.PruneEventsAsync(config.History.MaxRetentionDays, config.History.MaxRecords, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to prune old events.");
-        }
-    }
-
-    private async Task SummarizeSnapshotsAsync(CancellationToken cancellationToken = default)
-    {
-        var historyService = App.Services?.GetService(typeof(IEventHistoryService)) as IEventHistoryService;
-        var configService = App.Services?.GetService(typeof(IConfigurationService)) as IConfigurationService;
-        if (historyService == null || configService == null) return;
-
-        try
-        {
-            var config = configService.Load();
-            var retention = config.History.SnapshotRetention;
-            await historyService.SummarizeSnapshotsAsync(
-                retention.RawRetentionHours,
-                retention.HourlyRetentionDays,
-                retention.DailyRetentionDays,
-                cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "Failed to summarize snapshots.");
-        }
     }
 }

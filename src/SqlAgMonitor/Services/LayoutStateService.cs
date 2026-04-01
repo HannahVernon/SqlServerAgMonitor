@@ -37,6 +37,9 @@ public class WindowLayoutState
     public double? StatsWindowHeight { get; set; }
     public StatisticsState? StatsState { get; set; }
 
+    /// <summary>Column widths for the statistics summary DataGrid.</summary>
+    public TabGridLayout? StatsGridLayout { get; set; }
+
     /// <summary>Per-tab grid column layouts, keyed by tab title (AG/DAG name).</summary>
     public Dictionary<string, TabGridLayout> TabLayouts { get; set; } = new();
 }

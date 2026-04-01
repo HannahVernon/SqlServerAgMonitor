@@ -16,6 +16,7 @@ using Avalonia.VisualTree;
 using Microsoft.Extensions.DependencyInjection;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Helpers;
 using SqlAgMonitor.Models;
 using SqlAgMonitor.Services;
 using SqlAgMonitor.ViewModels;
@@ -28,6 +29,7 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     private WindowLayoutState? _layoutState;
     private readonly ILayoutStateService _layoutService;
     private readonly System.Collections.Generic.HashSet<MonitorTabViewModel> _subscribedVms = new();
+    private DataGrid? _alertHistoryGrid;
     private string? _lastActiveTabTitle;
 
     public MainWindow()
@@ -66,24 +68,22 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         {
             vm.WhenAnyValue(x => x.SelectedTab)
                 .Subscribe(OnSelectedTabChanged);
+
+            // Load alert history once the window is fully shown and dispatcher is active
+            _ = vm.AlertHistory.LoadEventsAsync();
         }
     }
 
-    private void OnSelectedTabChanged(MonitorTabViewModel? newTab)
+    private const string AlertHistoryTabKey = "Alert History";
+
+    private void OnSelectedTabChanged(object? newTab)
     {
-        // Save outgoing tab's column state
+        // Save outgoing tab's column state before switching
         SaveCurrentTabColumnState();
 
-        _lastActiveTabTitle = newTab?.TabTitle;
-
-        // Rebuild columns for the incoming tab after the visual tree updates.
-        // Avalonia's TabControl with ContentTemplate may recreate the DataGrid
-        // (orphaning any DataContextChanged handler on the old instance) or may
-        // recycle it but not fire DataContextChanged reliably. Post to the
-        // dispatcher so we run after the template is applied and DataContext
-        // has propagated.
-        if (newTab != null)
+        if (newTab is MonitorTabViewModel monitorTab)
         {
+            _lastActiveTabTitle = monitorTab.TabTitle;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 var dg = this.GetVisualDescendants()
@@ -93,10 +93,22 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     WireUpDataGrid(dg);
             }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
+        else if (newTab is AlertHistoryViewModel)
+        {
+            _lastActiveTabTitle = AlertHistoryTabKey;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var dg = this.GetVisualDescendants()
+                    .OfType<DataGrid>()
+                    .FirstOrDefault();
+                if (dg != null)
+                    RestoreAlertHistoryLayout(dg);
+            }, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
     }
 
     /// <summary>
-    /// Restores saved column widths (as proportional Star values) and display indices
+    /// Restores saved column widths (as pixel values) and display indices
     /// for the given tab's DataGrid.
     /// </summary>
     public void RestoreDataGridLayout(DataGrid dataGrid)
@@ -123,33 +135,31 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             }
         }
 
-        // Restore widths as proportional Star values so columns always fit on screen.
-        // Saved values are pixel widths — convert to Star weights relative to the
-        // narrowest saved column (which becomes 1*).
-        var matchedWidths = new System.Collections.Generic.List<(DataGridColumn col, double saved)>();
+        // Restore widths as pixel values — no Star normalization, no feedback loop.
         foreach (var col in dataGrid.Columns)
         {
             var header = col.Header?.ToString();
             if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
-                matchedWidths.Add((col, w));
-        }
-
-        if (matchedWidths.Count > 0)
-        {
-            var minWidth = matchedWidths.Min(x => x.saved);
-            foreach (var (col, saved) in matchedWidths)
             {
-                col.Width = new DataGridLength(saved / minWidth, DataGridLengthUnitType.Star);
+                col.Width = new DataGridLength(w);
             }
         }
     }
 
-    /// <summary>Saves the current tab's DataGrid column state to the in-memory layout.</summary>
+    /// <summary>
+    /// Saves the current tab's DataGrid column state to the in-memory layout.
+    /// Column widths are saved as raw pixel values (ActualWidth).
+    /// </summary>
     private void SaveCurrentTabColumnState()
     {
         if (_layoutState == null || string.IsNullOrEmpty(_lastActiveTabTitle)) return;
 
-        var dataGrid = this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+        // When the outgoing tab is Alert History, the DataGrid may already be removed
+        // from the visual tree by the TabControl's template swap. Use the cached reference.
+        var dataGrid = _lastActiveTabTitle == AlertHistoryTabKey
+            ? _alertHistoryGrid
+            : this.GetVisualDescendants().OfType<DataGrid>().FirstOrDefault();
+
         if (dataGrid == null || dataGrid.Columns.Count == 0) return;
 
         var tabLayout = new TabGridLayout();
@@ -163,6 +173,44 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         }
 
         _layoutState.TabLayouts[_lastActiveTabTitle] = tabLayout;
+    }
+
+    /// <summary>
+    /// Restores saved column widths and display indices for the Alert History DataGrid.
+    /// </summary>
+    private void RestoreAlertHistoryLayout(DataGrid dataGrid)
+    {
+        if (_layoutState == null) return;
+        if (!_layoutState.TabLayouts.TryGetValue(AlertHistoryTabKey, out var tabLayout)) return;
+
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header == null) continue;
+
+            if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
+                && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
+            {
+                col.DisplayIndex = displayIndex;
+            }
+        }
+
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
+            {
+                col.Width = new DataGridLength(w);
+            }
+        }
+    }
+
+    private void AlertHistoryGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not DataGrid dataGrid) return;
+        _alertHistoryGrid = dataGrid;
+        DataGridAutoFitHelper.Attach(dataGrid);
+        RestoreAlertHistoryLayout(dataGrid);
     }
 
     private void SaveLayout()
@@ -250,6 +298,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
     {
         if (sender is not DataGrid dataGrid) return;
 
+        DataGridAutoFitHelper.Attach(dataGrid);
+
         // Wire up columns for the current DataContext
         WireUpDataGrid(dataGrid);
 
@@ -266,7 +316,25 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         var tabVm = dataGrid.DataContext as MonitorTabViewModel;
         if (tabVm == null) return;
 
-        // Track the active tab for save-on-switch
+        // Save the outgoing tab's column widths before rebuilding.
+        // At this point the DataGrid still has the old tab's columns with their
+        // user-resized pixel widths — this is the last safe moment to capture them.
+        if (_layoutState != null
+            && !string.IsNullOrEmpty(_lastActiveTabTitle)
+            && _lastActiveTabTitle != tabVm.TabTitle
+            && dataGrid.Columns.Count > 0)
+        {
+            var tabLayout = new TabGridLayout();
+            foreach (var col in dataGrid.Columns)
+            {
+                var header = col.Header?.ToString();
+                if (header == null) continue;
+                tabLayout.ColumnWidths[header] = Math.Round(col.ActualWidth);
+                tabLayout.ColumnDisplayIndices[header] = col.DisplayIndex;
+            }
+            _layoutState.TabLayouts[_lastActiveTabTitle] = tabLayout;
+        }
+
         _lastActiveTabTitle = tabVm.TabTitle;
 
         BuildPivotColumns(dataGrid, tabVm);
@@ -318,9 +386,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
         dataGrid.Columns.Clear();
 
-        // All columns use Star sizing so they share available width proportionally
-        // and always fit on screen. MinWidth prevents columns from shrinking
-        // below readability.
+        // Columns use Auto sizing so they fit content initially, then the user can
+        // drag to resize in exact pixels. MinWidth prevents columns from collapsing.
 
         // Database Name with health dot
         dataGrid.Columns.Add(new DataGridTemplateColumn
@@ -355,8 +422,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                 panel.Children.Add(text);
                 return panel;
             }),
-            Width = new DataGridLength(1.5, DataGridLengthUnitType.Star),
-            MinWidth = 120
+            Width = DataGridLength.Auto,
+            MinWidth = 150
         });
 
         // Dynamic: one LSN column per replica (primary first)
@@ -366,8 +433,8 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
             {
                 Header = col.Header,
                 Binding = new Binding($"[{col.Index}]"),
-                Width = new DataGridLength(1.3, DataGridLengthUnitType.Star),
-                MinWidth = 110
+                Width = DataGridLength.Auto,
+                MinWidth = 140
             });
         }
 
@@ -376,16 +443,16 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         {
             Header = "Log Block Diff",
             Binding = new Binding("MaxLogBlockDiff") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
-            MinWidth = 80
+            Width = DataGridLength.Auto,
+            MinWidth = 100
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Lag (sec)",
             Binding = new Binding("SecondaryLagSeconds"),
-            Width = new DataGridLength(0.6, DataGridLengthUnitType.Star),
-            MinWidth = 55
+            Width = DataGridLength.Auto,
+            MinWidth = 70
         });
 
         // Color-coded sync state
@@ -405,48 +472,48 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     new Binding("SyncStateColorHex") { Converter = HealthColorConverter.Instance });
                 return text;
             }),
-            Width = new DataGridLength(1.0, DataGridLengthUnitType.Star),
-            MinWidth = 80
+            Width = DataGridLength.Auto,
+            MinWidth = 100
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Suspended",
             Binding = new Binding("SuspendReasonDisplay"),
-            Width = new DataGridLength(0.8, DataGridLengthUnitType.Star),
-            MinWidth = 65
+            Width = DataGridLength.Auto,
+            MinWidth = 80
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Queue (KB)",
             Binding = new Binding("SendQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Queue (KB)",
             Binding = new Binding("RedoQueueKb") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Send Rate (KB/s)",
             Binding = new Binding("SendRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
 
         dataGrid.Columns.Add(new DataGridTextColumn
         {
             Header = "Redo Rate (KB/s)",
             Binding = new Binding("RedoRateKbPerSec") { StringFormat = "{0:N0}" },
-            Width = new DataGridLength(0.9, DataGridLengthUnitType.Star),
-            MinWidth = 70
+            Width = DataGridLength.Auto,
+            MinWidth = 90
         });
     }
 

@@ -56,7 +56,9 @@ SQL Server AG Monitor is a .NET 9 desktop application built on Avalonia UI and R
 SqlAgMonitor.sln
 ├── src/SqlAgMonitor/                     # Avalonia desktop app (WinExe, .NET 9)
 │   ├── Assets/                           # App icon (SVG, PNG, ICO)
-│   ├── Controls/TopologyControl.cs       # Animated AG topology diagram
+│   ├── Controls/
+│   │   ├── TopologyControl.cs            # Animated AG topology diagram
+│   │   └── NotificationOverlay.cs        # In-app toast notification overlay
 │   ├── Converters/                       # Avalonia value converters
 │   ├── Services/
 │   │   ├── FileLoggerProvider.cs         # Daily rotating file logger
@@ -65,12 +67,18 @@ SqlAgMonitor.sln
 │   ├── ViewModels/
 │   │   ├── MainWindowViewModel.cs        # Root VM: tabs, polling, alert wiring
 │   │   ├── MonitorTabViewModel.cs        # Per-group: snapshot → pivot rows
+│   │   ├── AlertHistoryViewModel.cs      # Alert history tab (event grid)
+│   │   ├── StatisticsViewModel.cs        # Statistics window (charts, export)
 │   │   ├── AddGroupViewModel.cs          # Discovery wizard
+│   │   ├── DagMemberConnectionVm.cs      # Per-member connection state for Add Group wizard
 │   │   └── SettingsViewModel.cs          # Settings dialog
 │   ├── Views/
-│   │   ├── MainWindow.axaml(.cs)         # Main window, dynamic DataGrid
+│   │   ├── MainWindow.axaml(.cs)         # Main window, tab control, dynamic DataGrid
+│   │   ├── StatisticsWindow.axaml(.cs)   # Statistics & trends (View → Statistics…)
 │   │   ├── AddGroupWindow.axaml(.cs)     # AG/DAG discovery wizard
 │   │   └── SettingsWindow.axaml(.cs)     # Settings dialog
+│   ├── Helpers/
+│   │   └── DataGridAutoFitHelper.cs      # Double-click column separator to auto-fit
 │   ├── App.axaml(.cs)                    # DI bootstrap, tray icon, theme
 │   ├── Program.cs                        # Entry point, logging setup
 │   └── ViewLocator.cs                    # Convention: *ViewModel → *View
@@ -99,7 +107,10 @@ SqlAgMonitor.sln
 │   │   │   ├── AesCredentialStore.cs     # AES-256-GCM + PBKDF2 fallback
 │   │   │   └── PlatformCredentialStoreFactory.cs
 │   │   ├── History/
-│   │   │   └── DuckDbEventHistoryService.cs  # Event persistence
+│   │   │   ├── DuckDbConnectionManager.cs    # Shared DuckDB connection + schema migrations
+│   │   │   ├── DuckDbEventStore.cs           # Alert event write/query (IEventRecorder, IEventQueryService)
+│   │   │   ├── DuckDbSnapshotStore.cs        # Snapshot write/query (ISnapshotRecorder, ISnapshotQueryService)
+│   │   │   └── MaintenanceScheduler.cs       # Periodic pruning + summarization timer
 │   │   ├── Monitoring/
 │   │   │   ├── AgMonitorService.cs       # AG polling (timer → DMV → snapshot)
 │   │   │   ├── DagMonitorService.cs      # DAG polling (per-member connections)
@@ -123,7 +134,7 @@ SqlAgMonitor.sln
 | ReactiveUI | 20.1.1 | Reactive MVVM (commands, bindings, observables) |
 | System.Reactive | 6.1.0 | Observable pipelines (Timer, SelectMany, Where) |
 | Microsoft.Data.SqlClient | 7.0.0 | SQL Server connectivity |
-| DuckDB.NET.Data | 1.5.0 | Embedded event history and statistics database |
+| DuckDB.NET.Data.Full | 1.5.0 | Embedded event history and statistics database |
 | LiveChartsCore.SkiaSharpView.Avalonia | — | Trend charts in Statistics window |
 | ClosedXML | — | Excel export (.xlsx) from Statistics window |
 | System.Security.Cryptography.ProtectedData | 10.0.5 | Windows DPAPI |
@@ -344,7 +355,7 @@ All SQL queries follow strict parameterization rules to prevent SQL injection:
 - **Read-only DMV queries** use static `const string` SQL with no parameters needed — they query only system catalog views (`sys.availability_groups`, `sys.dm_hadr_*`, etc.) with no user-supplied identifiers.
 - **DDL statements** (`ALTER AVAILABILITY GROUP`, `ALTER DATABASE`) cannot use parameterized identifiers. These pass object names as `SqlParameter` values and use SQL Server's built-in `QUOTENAME()` function server-side to safely escape identifiers, with the result executed via `EXEC(@sql)`.
 
-### DuckDB (DuckDbEventHistoryService)
+### DuckDB (DuckDbEventStore / DuckDbSnapshotStore)
 
 - **INSERT/DELETE statements** use named DuckDB parameters (`$param_name` with `DuckDBParameter` objects) for all data values.
 - **Dynamic WHERE clauses** are assembled from code-controlled static string fragments that contain parameter placeholders (e.g., `"group_name = $group_name"`). The fragments are joined with `" AND "` and prepended with `"WHERE "`. No user-supplied values are interpolated into the SQL structure — only the structural keywords (`WHERE`, `AND`) and pre-defined column/parameter names appear in the assembled string. This is a standard dynamic query-building pattern used when filter criteria are optional.
@@ -379,7 +390,7 @@ Services use one of six error handling patterns, chosen based on how critical th
 | **Silent swallow** | Logging infrastructure — recursive failures must not crash the app | `FileErrorLogger.LogError()`, `FileLoggerProvider.Log()` |
 | **Swallow + default** | Best-effort persistence where corrupted data has a safe fallback | `LayoutStateService.Load()` (returns `new()` on corrupt JSON) |
 | **Log + return false** | Test/validation operations where the caller checks success | `SqlConnectionService.TestConnectionAsync()`, `SyslogService.TestConnectionAsync()` |
-| **Log + continue** | Fire-and-forget side effects that must not block the primary workflow | `SmtpEmailNotificationService.SendAlertEmailAsync()`, `DuckDbEventHistoryService.RecordEventAsync()` |
+| **Log + continue** | Fire-and-forget side effects that must not block the primary workflow | `SmtpEmailNotificationService.SendAlertEmailAsync()`, `DuckDbEventStore.RecordEventAsync()` |
 | **Log + re-throw** | Critical operations where the caller must know about failure | `SqlConnectionService.GetConnectionAsync()`, `ReconnectingConnectionWrapper.AcquireAsync()` |
 | **Validate + throw** | Configuration/input validation errors requiring user correction | `SmtpEmailNotificationService.ValidateSettings()`, `AesCredentialStore.Unlock()` |
 

@@ -3,7 +3,7 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.DependencyInjection;
+using Avalonia.Media;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.History;
@@ -12,8 +12,13 @@ namespace SqlAgMonitor.ViewModels;
 
 public class AlertHistoryViewModel : ViewModelBase
 {
+    private readonly IEventQueryService _eventQuery;
     private bool _isLoading;
     private string _statusText = string.Empty;
+
+    public string TabTitle => "Alert History";
+
+    public IBrush HealthBrush { get; } = Brushes.DodgerBlue;
 
     public ObservableCollection<AlertEvent> Events { get; } = new();
 
@@ -31,8 +36,9 @@ public class AlertHistoryViewModel : ViewModelBase
 
     public ReactiveCommand<Unit, Unit> RefreshCommand { get; }
 
-    public AlertHistoryViewModel()
+    public AlertHistoryViewModel(IEventQueryService eventQuery)
     {
+        _eventQuery = eventQuery;
         RefreshCommand = ReactiveCommand.CreateFromTask(LoadEventsAsync);
     }
 
@@ -42,15 +48,8 @@ public class AlertHistoryViewModel : ViewModelBase
         StatusText = "Loading...";
         try
         {
-            var historyService = App.Services?.GetService<IEventHistoryService>();
-            if (historyService == null)
-            {
-                StatusText = "History service unavailable.";
-                return;
-            }
-
-            var events = await historyService.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
-            var count = await historyService.GetEventCountAsync(cancellationToken: cancellationToken);
+            var events = await _eventQuery.GetEventsAsync(limit: 1000, cancellationToken: cancellationToken);
+            var count = await _eventQuery.GetEventCountAsync(cancellationToken: cancellationToken);
 
             Events.Clear();
             foreach (var evt in events)

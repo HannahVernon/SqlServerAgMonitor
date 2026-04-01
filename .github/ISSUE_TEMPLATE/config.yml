@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/HannahVernon/SqlServerAgMonitor/blob/dev/README.md
+    about: Check the README, Architecture, and Feature Guide before opening an issue.
