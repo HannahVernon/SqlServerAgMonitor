@@ -154,28 +154,37 @@ public class StatisticsViewModel : ViewModelBase
     private ISeries[] _lagSeries = [];
     private ISeries[] _logBlockDiffSeries = [];
 
+    // Retain previous-generation series so the GC cannot finalize their
+    // SkiaSharp paint/font handles while the composition-thread render loop
+    // might still be mid-frame drawing them. Overwritten on the next refresh.
+    private ISeries[] _retainedSend = [];
+    private ISeries[] _retainedRedo = [];
+    private ISeries[] _retainedLag = [];
+    private ISeries[] _retainedLogDiff = [];
+    private Axis[] _retainedXAxes = [];
+
     public ISeries[] SendQueueSeries
     {
         get => _sendQueueSeries;
-        set => this.RaiseAndSetIfChanged(ref _sendQueueSeries, value);
+        set { _retainedSend = _sendQueueSeries; this.RaiseAndSetIfChanged(ref _sendQueueSeries, value); }
     }
 
     public ISeries[] RedoQueueSeries
     {
         get => _redoQueueSeries;
-        set => this.RaiseAndSetIfChanged(ref _redoQueueSeries, value);
+        set { _retainedRedo = _redoQueueSeries; this.RaiseAndSetIfChanged(ref _redoQueueSeries, value); }
     }
 
     public ISeries[] LagSeries
     {
         get => _lagSeries;
-        set => this.RaiseAndSetIfChanged(ref _lagSeries, value);
+        set { _retainedLag = _lagSeries; this.RaiseAndSetIfChanged(ref _lagSeries, value); }
     }
 
     public ISeries[] LogBlockDiffSeries
     {
         get => _logBlockDiffSeries;
-        set => this.RaiseAndSetIfChanged(ref _logBlockDiffSeries, value);
+        set { _retainedLogDiff = _logBlockDiffSeries; this.RaiseAndSetIfChanged(ref _logBlockDiffSeries, value); }
     }
 
     // X-axis — rebuilt after each data load to show ~5 evenly-spaced time labels
@@ -183,7 +192,7 @@ public class StatisticsViewModel : ViewModelBase
     public Axis[] XAxes
     {
         get => _xAxes;
-        set => this.RaiseAndSetIfChanged(ref _xAxes, value);
+        set { _retainedXAxes = _xAxes; this.RaiseAndSetIfChanged(ref _xAxes, value); }
     }
 
     public Axis[] SendQueueYAxes { get; } = [CreateYAxis("KB")];
@@ -684,5 +693,12 @@ public class StatisticsViewModel : ViewModelBase
         LagSeries = [];
         LogBlockDiffSeries = [];
         XAxes = [];
+
+        // Release retained previous-generation series
+        _retainedSend = [];
+        _retainedRedo = [];
+        _retainedLag = [];
+        _retainedLogDiff = [];
+        _retainedXAxes = [];
     }
 }
