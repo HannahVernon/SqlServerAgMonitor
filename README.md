@@ -2,7 +2,7 @@
 
 A cross-platform desktop application for real-time monitoring of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs). Built with Avalonia UI for Windows, macOS, and Linux.
 
-📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md)
+📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 🔮 [Service Plan](SERVICE-PLAN.md)
 
 ## What It Monitors
 
