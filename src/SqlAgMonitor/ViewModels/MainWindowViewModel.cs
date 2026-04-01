@@ -40,21 +40,23 @@ public class MainWindowViewModel : ViewModelBase
     private readonly ILogger? _logger;
     private readonly CompositeDisposable _subscriptions = new();
 
-    private MonitorTabViewModel? _selectedTab;
+    private object? _selectedTab;
     private string _statusText = "Ready";
     private string _connectionSummary = "No groups monitored";
     private bool _isAllPaused;
     private string _lastPolledText = string.Empty;
-    private bool _isAlertHistoryVisible;
     private AlertHistoryViewModel? _alertHistoryVm;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs => _coordinator.MonitorTabs;
+    public ObservableCollection<object> AllTabs { get; } = new();
 
-    public MonitorTabViewModel? SelectedTab
+    public object? SelectedTab
     {
         get => _selectedTab;
         set => this.RaiseAndSetIfChanged(ref _selectedTab, value);
     }
+
+    private MonitorTabViewModel? SelectedMonitorTab => SelectedTab as MonitorTabViewModel;
 
     public string StatusText
     {
@@ -75,12 +77,6 @@ public class MainWindowViewModel : ViewModelBase
     }
 
     public bool IsNotAllPaused => !_isAllPaused;
-
-    public bool IsAlertHistoryVisible
-    {
-        get => _isAlertHistoryVisible;
-        set => this.RaiseAndSetIfChanged(ref _isAlertHistoryVisible, value);
-    }
 
     public AlertHistoryViewModel AlertHistory => _alertHistoryVm ??= new AlertHistoryViewModel(_eventQuery);
 
@@ -128,7 +124,7 @@ public class MainWindowViewModel : ViewModelBase
         _logger = loggerFactory?.CreateLogger<MainWindowViewModel>();
 
         var canRemove = this.WhenAnyValue(x => x.SelectedTab)
-            .Select(tab => tab != null);
+            .Select(tab => tab is MonitorTabViewModel);
 
         AddGroupCommand = ReactiveCommand.CreateFromTask(OnAddGroupAsync);
         RemoveGroupCommand = ReactiveCommand.CreateFromTask(OnRemoveGroupAsync, canRemove);
@@ -139,13 +135,47 @@ public class MainWindowViewModel : ViewModelBase
         AboutCommand = ReactiveCommand.CreateFromTask(OnAboutAsync);
 
         var canRefresh = this.WhenAnyValue(x => x.SelectedTab)
-            .Select(tab => tab != null);
+            .Select(tab => tab is MonitorTabViewModel);
         RefreshCommand = ReactiveCommand.CreateFromTask(OnRefreshAsync, canRefresh);
         OpenLogDirectoryCommand = ReactiveCommand.Create(OnOpenLogDirectory);
         ToggleAlertHistoryCommand = ReactiveCommand.CreateFromTask(OnToggleAlertHistoryAsync);
         OpenStatisticsCommand = ReactiveCommand.CreateFromTask(OnOpenStatisticsAsync);
 
         StatusText = $"SQL Server AG Monitor v1.0 — {DateTimeOffset.Now:yyyy-MM-dd HH:mm}";
+
+        // Initialize AllTabs with Alert History as the first tab
+        AllTabs.Add(AlertHistory);
+        foreach (var tab in MonitorTabs)
+            AllTabs.Add(tab);
+        SelectedTab = AllTabs.FirstOrDefault();
+
+        MonitorTabs.CollectionChanged += (_, e) =>
+        {
+            if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add && e.NewItems != null)
+            {
+                foreach (var item in e.NewItems)
+                {
+                    var insertIndex = e.NewStartingIndex + 1; // +1 for Alert History at index 0
+                    if (insertIndex <= AllTabs.Count)
+                        AllTabs.Insert(insertIndex, item!);
+                    else
+                        AllTabs.Add(item!);
+                }
+            }
+            else if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Remove && e.OldItems != null)
+            {
+                foreach (var item in e.OldItems)
+                    AllTabs.Remove(item!);
+            }
+            else if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
+            {
+                // Rebuild: keep Alert History, re-add monitor tabs
+                while (AllTabs.Count > 1)
+                    AllTabs.RemoveAt(AllTabs.Count - 1);
+                foreach (var tab in MonitorTabs)
+                    AllTabs.Add(tab);
+            }
+        };
 
         // Update "last polled" text every second
         var timerSub = Observable.Interval(TimeSpan.FromSeconds(1))
@@ -156,15 +186,14 @@ public class MainWindowViewModel : ViewModelBase
         // Wire coordinator events to UI state
         _coordinator.SnapshotProcessed += snapshot =>
         {
-            SelectedTab ??= MonitorTabs.FirstOrDefault();
+            SelectedTab ??= AllTabs.FirstOrDefault();
             ConnectionSummary = $"{MonitorTabs.Count} group(s) monitored";
         };
 
         _coordinator.AlertRaised += alert =>
         {
             StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}";
-            if (_isAlertHistoryVisible)
-                _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
+            _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
         };
 
         _coordinator.SubscribeToMonitors();
@@ -176,7 +205,12 @@ public class MainWindowViewModel : ViewModelBase
         await _coordinator.LoadAndStartAsync();
         var groupCount = MonitorTabs.Count;
         if (groupCount > 0)
+        {
             StatusText = $"Loaded {groupCount} monitored group(s)";
+            // Select the first monitor tab (index 1, after Alert History)
+            if (AllTabs.Count > 1)
+                SelectedTab = AllTabs[1];
+        }
     }
 
     private async Task OnAddGroupAsync()
@@ -263,7 +297,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task OnRemoveGroupAsync()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab is null) return;
 
         var window = GetMainWindow();
@@ -338,7 +372,9 @@ public class MainWindowViewModel : ViewModelBase
 
         // Remove tab
         MonitorTabs.Remove(tab);
-        SelectedTab = MonitorTabs.FirstOrDefault();
+        SelectedTab = MonitorTabs.Count > 0
+            ? MonitorTabs.FirstOrDefault()
+            : AllTabs.FirstOrDefault();
         ConnectionSummary = MonitorTabs.Count > 0
             ? $"{MonitorTabs.Count} group(s) monitored"
             : "No groups monitored";
@@ -466,7 +502,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task OnRefreshAsync()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab == null) return;
 
         StatusText = $"Refreshing {tab.TabTitle}...";
@@ -484,7 +520,7 @@ public class MainWindowViewModel : ViewModelBase
 
     private void UpdateLastPolledText()
     {
-        var tab = SelectedTab;
+        var tab = SelectedMonitorTab;
         if (tab?.LastPolledAt is { } polledAt)
         {
             var elapsed = DateTimeOffset.Now - polledAt;
@@ -506,11 +542,8 @@ public class MainWindowViewModel : ViewModelBase
 
     private async Task OnToggleAlertHistoryAsync()
     {
-        IsAlertHistoryVisible = !IsAlertHistoryVisible;
-        if (IsAlertHistoryVisible)
-        {
-            await AlertHistory.LoadEventsAsync();
-        }
+        SelectedTab = AlertHistory;
+        await AlertHistory.LoadEventsAsync();
     }
 
     private Task OnOpenStatisticsAsync()

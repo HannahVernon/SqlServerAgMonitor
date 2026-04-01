@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Reactive;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Media;
 using ReactiveUI;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.History;
@@ -14,6 +15,10 @@ public class AlertHistoryViewModel : ViewModelBase
     private readonly IEventQueryService _eventQuery;
     private bool _isLoading;
     private string _statusText = string.Empty;
+
+    public string TabTitle => "Alert History";
+
+    public IBrush HealthBrush { get; } = Brushes.DodgerBlue;
 
     public ObservableCollection<AlertEvent> Events { get; } = new();
 

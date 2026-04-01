@@ -28,9 +28,11 @@ internal sealed class DuckDbEventStore
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     INSERT INTO events (id, timestamp, alert_type, group_name, replica_name, database_name, message, severity, email_sent, syslog_sent)
-                    VALUES (nextval('event_seq'), $timestamp, $alert_type, $group_name, $replica_name, $database_name, $message, $severity, $email_sent, $syslog_sent)
+                    VALUES (nextval('event_seq'), $ts, $alert_type, $group_name, $replica_name, $database_name, $message, $severity, $email_sent, $syslog_sent)
                 ";
-                cmd.Parameters.Add(new DuckDBParameter("timestamp", alertEvent.Timestamp.UtcDateTime));
+                var utcDt = alertEvent.Timestamp.UtcDateTime;
+                _logger.LogDebug("Recording event: type={Type}, timestamp={Timestamp:O}", alertEvent.AlertType, utcDt);
+                cmd.Parameters.Add(new DuckDBParameter("ts", utcDt));
                 cmd.Parameters.Add(new DuckDBParameter("alert_type", alertEvent.AlertType.ToString()));
                 cmd.Parameters.Add(new DuckDBParameter("group_name", alertEvent.GroupName));
                 cmd.Parameters.Add(new DuckDBParameter("replica_name", (object?)alertEvent.ReplicaName ?? DBNull.Value));
@@ -68,8 +70,8 @@ internal sealed class DuckDbEventStore
                 }
                 if (since != null)
                 {
-                    where.Add("timestamp >= $since");
-                    cmd.Parameters.Add(new DuckDBParameter("since", since.Value.UtcDateTime));
+                    where.Add("timestamp >= $since_ts");
+                    cmd.Parameters.Add(new DuckDBParameter("since_ts", since.Value.UtcDateTime));
                 }
 
                 // WHERE clause assembled from code-controlled static fragments with

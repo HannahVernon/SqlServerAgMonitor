@@ -69,20 +69,16 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         }
     }
 
-    private void OnSelectedTabChanged(MonitorTabViewModel? newTab)
-    {
-        // Column state is saved inside WireUpDataGrid (before columns are cleared),
-        // not here — by the time this handler fires, Avalonia's DataContextChanged
-        // may have already rebuilt the DataGrid for the new tab.
+    private const string AlertHistoryTabKey = "Alert History";
 
-        // Rebuild columns for the incoming tab after the visual tree updates.
-        // Avalonia's TabControl with ContentTemplate may recreate the DataGrid
-        // (orphaning any DataContextChanged handler on the old instance) or may
-        // recycle it but not fire DataContextChanged reliably. Post to the
-        // dispatcher so we run after the template is applied and DataContext
-        // has propagated.
-        if (newTab != null)
+    private void OnSelectedTabChanged(object? newTab)
+    {
+        // Save outgoing tab's column state before switching
+        SaveCurrentTabColumnState();
+
+        if (newTab is MonitorTabViewModel monitorTab)
         {
+            _lastActiveTabTitle = monitorTab.TabTitle;
             Avalonia.Threading.Dispatcher.UIThread.Post(() =>
             {
                 var dg = this.GetVisualDescendants()
@@ -90,6 +86,18 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
                     .FirstOrDefault();
                 if (dg != null)
                     WireUpDataGrid(dg);
+            }, Avalonia.Threading.DispatcherPriority.Loaded);
+        }
+        else if (newTab is AlertHistoryViewModel)
+        {
+            _lastActiveTabTitle = AlertHistoryTabKey;
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                var dg = this.GetVisualDescendants()
+                    .OfType<DataGrid>()
+                    .FirstOrDefault();
+                if (dg != null)
+                    RestoreAlertHistoryLayout(dg);
             }, Avalonia.Threading.DispatcherPriority.Loaded);
         }
     }
@@ -155,6 +163,42 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
         }
 
         _layoutState.TabLayouts[_lastActiveTabTitle] = tabLayout;
+    }
+
+    /// <summary>
+    /// Restores saved column widths and display indices for the Alert History DataGrid.
+    /// </summary>
+    private void RestoreAlertHistoryLayout(DataGrid dataGrid)
+    {
+        if (_layoutState == null) return;
+        if (!_layoutState.TabLayouts.TryGetValue(AlertHistoryTabKey, out var tabLayout)) return;
+
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header == null) continue;
+
+            if (tabLayout.ColumnDisplayIndices.TryGetValue(header, out var displayIndex)
+                && displayIndex >= 0 && displayIndex < dataGrid.Columns.Count)
+            {
+                col.DisplayIndex = displayIndex;
+            }
+        }
+
+        foreach (var col in dataGrid.Columns)
+        {
+            var header = col.Header?.ToString();
+            if (header != null && tabLayout.ColumnWidths.TryGetValue(header, out var w) && w > 10)
+            {
+                col.Width = new DataGridLength(w);
+            }
+        }
+    }
+
+    private void AlertHistoryGrid_Loaded(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (sender is not DataGrid dataGrid) return;
+        RestoreAlertHistoryLayout(dataGrid);
     }
 
     private void SaveLayout()
