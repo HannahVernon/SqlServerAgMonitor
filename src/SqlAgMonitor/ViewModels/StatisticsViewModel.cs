@@ -167,8 +167,14 @@ public class StatisticsViewModel : ViewModelBase
     public ObservableCollection<string> ReplicaNames { get; } = new() { "(All)" };
     public ObservableCollection<string> DatabaseNames { get; } = new() { "(All)" };
 
-    // Summary grid data
-    public ObservableCollection<SnapshotDataPoint> SummaryRows { get; } = new();
+    // Summary grid data — settable so large result sets can be swapped in
+    // with a single PropertyChanged notification instead of per-item Add().
+    private ObservableCollection<SnapshotDataPoint> _summaryRows = new();
+    public ObservableCollection<SnapshotDataPoint> SummaryRows
+    {
+        get => _summaryRows;
+        set => this.RaiseAndSetIfChanged(ref _summaryRows, value);
+    }
 
     // Chart series
     private ISeries[] _sendQueueSeries = [];
@@ -381,13 +387,20 @@ public class StatisticsViewModel : ViewModelBase
             if (data.Count > 0)
                 _activeTier = data[0].Tier;
 
-            // Update summary grid
-            SummaryRows.Clear();
-            foreach (var row in data)
-                SummaryRows.Add(row);
+            // Replace summary grid in one shot — avoids per-item CollectionChanged
+            // notifications that would freeze the UI with large result sets.
+            SummaryRows = new ObservableCollection<SnapshotDataPoint>(data);
 
-            // Build chart series grouped by replica+database
-            BuildChartSeries(data);
+            // Build chart series off the UI thread (LINQ grouping + mapping is CPU-bound)
+            var (send, redo, lag, logDiff) = await Task.Run(
+                () => BuildChartSeries(data), cts.Token).ConfigureAwait(true);
+
+            if (cts.Token.IsCancellationRequested) return;
+
+            SendQueueSeries = send;
+            RedoQueueSeries = redo;
+            LagSeries = lag;
+            LogBlockDiffSeries = logDiff;
 
             var tierLabel = data.Count > 0 ? data[0].Tier.ToString().ToLowerInvariant() : "n/a";
             StatusText = $"{data.Count} data points loaded ({tierLabel} tier)";
@@ -407,7 +420,8 @@ public class StatisticsViewModel : ViewModelBase
         }
     }
 
-    private void BuildChartSeries(IReadOnlyList<SnapshotDataPoint> data)
+    private static (ISeries[] Send, ISeries[] Redo, ISeries[] Lag, ISeries[] LogDiff) BuildChartSeries(
+        IReadOnlyList<SnapshotDataPoint> data)
     {
         // Group by replica + database for multi-line charts
         var groups = data
@@ -421,10 +435,11 @@ public class StatisticsViewModel : ViewModelBase
             SKColors.Turquoise, SKColors.LightCoral
         };
 
-        SendQueueSeries = BuildLineSeries(groups, colors, d => d.LogSendQueueKbAvg);
-        RedoQueueSeries = BuildLineSeries(groups, colors, d => d.RedoQueueKbAvg);
-        LagSeries = BuildLineSeries(groups, colors, d => d.SecondaryLagAvg);
-        LogBlockDiffSeries = BuildLineSeries(groups, colors, d => d.LogBlockDiffAvg);
+        return (
+            BuildLineSeries(groups, colors, d => d.LogSendQueueKbAvg),
+            BuildLineSeries(groups, colors, d => d.RedoQueueKbAvg),
+            BuildLineSeries(groups, colors, d => d.SecondaryLagAvg),
+            BuildLineSeries(groups, colors, d => d.LogBlockDiffAvg));
     }
 
     private static ISeries[] BuildLineSeries(
