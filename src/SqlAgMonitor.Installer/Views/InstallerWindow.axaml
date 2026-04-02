@@ -167,8 +167,12 @@
                 <!-- Step 5: Admin Credentials -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep5}">
                     <TextBlock Text="Step 5 of 6 — Admin Credentials" FontWeight="SemiBold" FontSize="15" />
-                    <TextBlock Text="Create the initial admin account for the service. You'll use these credentials to connect from the desktop app." 
+                    <TextBlock Text="Create the initial admin account for the service." 
                                TextWrapping="Wrap" Opacity="0.7" />
+                    <Border Background="#33005599" CornerRadius="4" Padding="10" Margin="0,2,0,0">
+                        <TextBlock TextWrapping="Wrap" FontSize="12"
+                                   Text="ℹ These credentials are what the SQL AG Monitor desktop app will use to authenticate when connecting to this service. Make a note of them — you'll enter them in the desktop app's Settings → Service tab." />
+                    </Border>
                     <StackPanel Spacing="4">
                         <TextBlock Text="Username" />
                         <TextBox Text="{Binding AdminUsername}" Watermark="admin" />
