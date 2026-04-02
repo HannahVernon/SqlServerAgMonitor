@@ -54,6 +54,7 @@ public class InstallerViewModel : ReactiveObject
     private bool _useStoreCertificate = true;
     private CertificateEntry? _selectedCertificate;
     private string _certificatePath = string.Empty;
+    private string _certificateWarning = string.Empty;
 
     // Step 5: Admin credentials
     private string _adminUsername = "admin";
@@ -182,9 +183,14 @@ public class InstallerViewModel : ReactiveObject
     public CertificateEntry? SelectedCertificate
     {
         get => _selectedCertificate;
-        set => this.RaiseAndSetIfChanged(ref _selectedCertificate, value);
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _selectedCertificate, value);
+            ValidateSelectedCertificateKey();
+        }
     }
     public string CertificatePath { get => _certificatePath; set => this.RaiseAndSetIfChanged(ref _certificatePath, value); }
+    public string CertificateWarning { get => _certificateWarning; set => this.RaiseAndSetIfChanged(ref _certificateWarning, value); }
 
     /// <summary>Selected certificate thumbprint — from store selection or empty if using .pfx file.</summary>
     public string SelectedThumbprint => SelectedCertificate?.Thumbprint ?? string.Empty;
@@ -688,19 +694,11 @@ public class InstallerViewModel : ReactiveObject
         if (keyFilePath == null)
         {
             var reason = providerName != null && providerName.Contains("Platform", StringComparison.OrdinalIgnoreCase)
-                ? $"The selected certificate uses a TPM-backed key ({providerName}) whose private key "
-                  + "cannot be shared via file ACLs."
-                : "The private key file for the selected certificate could not be located.";
+                ? $"TPM-backed key ({providerName}) — cannot grant file ACL access."
+                : "Private key file not found — cannot grant access.";
 
-            Log($"Cannot grant key access: {reason}");
-
-            throw new InvalidOperationException(
-                $"{reason}\n\n"
-                + $"The service account '{ServiceAccount}' may not be able to perform TLS handshakes.\n\n"
-                + "To fix this, either:\n"
-                + "  • Select a certificate with a software-based key (not TPM-backed)\n"
-                + "  • Manually grant the service account access to the private key using the\n"
-                + "    Certificates MMC snap-in → Right-click certificate → All Tasks → Manage Private Keys");
+            Log($"Skipping private key ACL grant: {reason}");
+            return;
         }
 
         Log($"Private key file: {keyFilePath} (provider: {providerName})");
@@ -953,6 +951,70 @@ public class InstallerViewModel : ReactiveObject
         catch
         {
             // May fail if not running elevated or store is empty — that's OK
+        }
+    }
+
+    private void ValidateSelectedCertificateKey()
+    {
+        CertificateWarning = string.Empty;
+
+        if (_selectedCertificate == null) return;
+
+        try
+        {
+            using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly);
+            var certs = store.Certificates.Find(
+                X509FindType.FindByThumbprint, _selectedCertificate.Thumbprint, validOnly: false);
+            store.Close();
+
+            if (certs.Count == 0) return;
+
+            var cert = certs[0];
+            string? providerName = null;
+
+            try
+            {
+                using var rsa = cert.GetRSAPrivateKey();
+                if (rsa is RSACng rsaCng)
+                    providerName = rsaCng.Key.Provider?.Provider;
+            }
+            catch (CryptographicException)
+            {
+                // Key inaccessible — likely TPM
+            }
+
+            if (providerName == null)
+            {
+                try
+                {
+                    using var ecdsa = cert.GetECDsaPrivateKey();
+                    if (ecdsa is ECDsaCng ecdsaCng)
+                        providerName = ecdsaCng.Key.Provider?.Provider;
+                }
+                catch (CryptographicException)
+                {
+                    /* not ECDsa or inaccessible */
+                }
+            }
+
+            if (providerName != null && providerName.Contains("Platform", StringComparison.OrdinalIgnoreCase))
+            {
+                CertificateWarning = $"⚠ This certificate uses a TPM-backed key ({providerName}). "
+                    + $"The service account '{ServiceAccount}' will not be able to use it for TLS. "
+                    + "Please select a certificate with a software-based private key instead.";
+                Log($"Certificate {_selectedCertificate.Thumbprint} uses TPM provider: {providerName}");
+            }
+            else if (providerName == null)
+            {
+                CertificateWarning = "⚠ Could not access this certificate's private key. "
+                    + $"The service account '{ServiceAccount}' may not be able to use it for TLS.";
+                Log($"Certificate {_selectedCertificate.Thumbprint}: private key inaccessible");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"Certificate key validation failed: {ex.Message}");
         }
     }
 

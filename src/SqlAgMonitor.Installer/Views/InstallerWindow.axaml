@@ -130,6 +130,12 @@
                                     Margin="24,0,0,0" Padding="12,4"
                                     IsEnabled="{Binding UseStoreCertificate}" />
 
+                            <TextBlock Text="{Binding CertificateWarning}" 
+                                       TextWrapping="Wrap" Foreground="#FFFFAA00" FontWeight="SemiBold"
+                                       Margin="24,4,0,0"
+                                       IsVisible="{Binding CertificateWarning, 
+                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                             <RadioButton Content="Use a .pfx certificate file" 
                                          IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
                             
