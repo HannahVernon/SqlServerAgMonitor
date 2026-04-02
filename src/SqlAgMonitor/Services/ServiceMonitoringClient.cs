@@ -18,7 +18,7 @@ namespace SqlAgMonitor.Services;
 /// when the app is configured in service-client mode. Receives snapshot and alert
 /// push events from the remote SqlAgMonitor Windows Service via SignalR.
 /// </summary>
-public sealed class ServiceMonitoringClient : IDisposable
+public sealed class ServiceMonitoringClient : IMonitoringCoordinator
 {
     private readonly IConfigurationService _configService;
     private readonly ILogger<ServiceMonitoringClient> _logger;
@@ -239,6 +239,62 @@ public sealed class ServiceMonitoringClient : IDisposable
         }
         return null;
     }
+
+    /// <summary>
+    /// No-op in service-client mode. Hub callbacks are wired during <see cref="ConnectAsync"/>.
+    /// </summary>
+    public void SubscribeToMonitors() { }
+
+    /// <summary>
+    /// In service-client mode, the service manages groups. This loads the initial state.
+    /// </summary>
+    public async Task LoadAndStartAsync()
+    {
+        await LoadCurrentSnapshotsAsync();
+    }
+
+    /// <summary>
+    /// Not applicable in service-client mode — the service manages SQL connections.
+    /// </summary>
+    public Task StartGroupAsync(string groupName, AvailabilityGroupType groupType)
+    {
+        _logger.LogDebug("StartGroupAsync ignored in service-client mode for {Group}", groupName);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Not applicable in service-client mode — the service manages SQL connections.
+    /// </summary>
+    public Task StopGroupAsync(string groupName, AvailabilityGroupType groupType)
+    {
+        _logger.LogDebug("StopGroupAsync ignored in service-client mode for {Group}", groupName);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// In service-client mode, returns the last cached snapshot for the group.
+    /// Real-time polling is handled server-side.
+    /// </summary>
+    public Task<MonitoredGroupSnapshot> PollOnceAsync(string groupName, AvailabilityGroupType groupType)
+    {
+        if (_latestSnapshots.TryGetValue(groupName, out var cached))
+            return Task.FromResult(cached);
+
+        return Task.FromResult(new MonitoredGroupSnapshot
+        {
+            Name = groupName,
+            GroupType = groupType,
+            Timestamp = DateTimeOffset.UtcNow,
+            IsConnected = false,
+            OverallHealth = SynchronizationHealth.Unknown,
+            ErrorMessage = "No snapshot available yet — waiting for service push."
+        });
+    }
+
+    /// <summary>
+    /// Disconnects the SignalR hub connection.
+    /// </summary>
+    public Task DisposeMonitorsAsync() => DisconnectAsync();
 
     public async Task DisconnectAsync()
     {

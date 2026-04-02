@@ -73,12 +73,6 @@ public partial class App : Application
             // Keep the app alive when the window is closed (minimized to tray)
             desktop.ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-            var agMonitor = Services.GetRequiredService<AgMonitorService>();
-            var dagMonitor = Services.GetRequiredService<DagMonitorService>();
-            var exportService = Services.GetRequiredService<IHtmlExportService>();
-            var alertEngine = Services.GetRequiredService<IAlertEngine>();
-            var alertDispatcher = Services.GetRequiredService<AlertDispatcher>();
-            var eventRecorder = Services.GetRequiredService<IEventRecorder>();
             var eventQuery = Services.GetRequiredService<IEventQueryService>();
             var snapshotQuery = Services.GetRequiredService<ISnapshotQueryService>();
             var emailService = Services.GetRequiredService<IEmailNotificationService>();
@@ -88,10 +82,34 @@ public partial class App : Application
             var loggerFactory = Services.GetRequiredService<ILoggerFactory>();
             var maintenanceScheduler = Services.GetRequiredService<MaintenanceScheduler>();
 
-            var coordinator = new MonitoringCoordinator(
-                agMonitor, dagMonitor, alertEngine, alertDispatcher,
-                eventRecorder, configService, exportService,
-                loggerFactory.CreateLogger<MonitoringCoordinator>());
+            IMonitoringCoordinator coordinator;
+
+            if (config.Service.Enabled)
+            {
+                // Service-client mode: connect to remote service via SignalR
+                var serviceClient = new ServiceMonitoringClient(
+                    configService, loggerFactory.CreateLogger<ServiceMonitoringClient>());
+                coordinator = serviceClient;
+
+                // Override query services with hub proxies
+                eventQuery = new HubEventQueryService(serviceClient);
+                snapshotQuery = new HubSnapshotQueryService(serviceClient);
+            }
+            else
+            {
+                // Standalone mode: direct SQL Server monitoring
+                var agMonitor = Services.GetRequiredService<AgMonitorService>();
+                var dagMonitor = Services.GetRequiredService<DagMonitorService>();
+                var exportService = Services.GetRequiredService<IHtmlExportService>();
+                var alertEngine = Services.GetRequiredService<IAlertEngine>();
+                var alertDispatcher = Services.GetRequiredService<AlertDispatcher>();
+                var eventRecorder = Services.GetRequiredService<IEventRecorder>();
+
+                coordinator = new MonitoringCoordinator(
+                    agMonitor, dagMonitor, alertEngine, alertDispatcher,
+                    eventRecorder, configService, exportService,
+                    loggerFactory.CreateLogger<MonitoringCoordinator>());
+            }
 
             desktop.MainWindow = new MainWindow
             {

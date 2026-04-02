@@ -28,7 +28,7 @@ namespace SqlAgMonitor.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
-    private readonly MonitoringCoordinator _coordinator;
+    private readonly IMonitoringCoordinator _coordinator;
     private readonly MaintenanceScheduler _maintenanceScheduler;
     private readonly IConfigurationService _configService;
     private readonly IHistoryMaintenanceService _historyMaintenance;
@@ -101,7 +101,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> OpenStatisticsCommand { get; }
 
     public MainWindowViewModel(
-        MonitoringCoordinator coordinator,
+        IMonitoringCoordinator coordinator,
         MaintenanceScheduler maintenanceScheduler,
         IConfigurationService configService,
         IHistoryMaintenanceService historyMaintenance,
