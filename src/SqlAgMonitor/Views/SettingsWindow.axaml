@@ -3,11 +3,11 @@
         xmlns:vm="using:SqlAgMonitor.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="650"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="750"
         x:Class="SqlAgMonitor.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings"
-        Width="600" Height="650"
+        Width="600" Height="750"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
 
