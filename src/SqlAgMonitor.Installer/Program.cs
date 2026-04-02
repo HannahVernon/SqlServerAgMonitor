@@ -1,5 +1,6 @@
 using System;
 using Avalonia;
+using Avalonia.ReactiveUI;
 
 namespace SqlAgMonitor.Installer;
 
@@ -21,5 +22,6 @@ internal sealed class Program
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
             .WithInterFont()
+            .UseReactiveUI()
             .LogToTrace();
 }
