@@ -24,7 +24,6 @@
         </Border>
 
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-            <Button x:Name="ViewCertBtn" Content="View Certificate…" />
             <Button x:Name="AcceptBtn" Content="Trust &amp; Continue" Classes="accent" />
             <Button x:Name="CancelBtn" Content="Cancel" />
         </StackPanel>
