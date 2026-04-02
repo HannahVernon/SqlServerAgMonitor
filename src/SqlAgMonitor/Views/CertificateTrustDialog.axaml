@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SqlAgMonitor.Views.CertificateTrustDialog"
+        Title="Untrusted Certificate"
+        Width="520" Height="340"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        SystemDecorations="Full">
+    <StackPanel Margin="24" Spacing="16">
+        <TextBlock Text="⚠ The server presented an untrusted certificate."
+                   FontSize="16" FontWeight="Bold" Foreground="#e8a825" TextWrapping="Wrap" />
+
+        <TextBlock Text="Review the details below. If you trust this certificate, click Trust &amp; Continue to pin it for future connections."
+                   TextWrapping="Wrap" Opacity="0.8" />
+
+        <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                BorderThickness="1" CornerRadius="4" Padding="12">
+            <StackPanel Spacing="6">
+                <TextBlock x:Name="SubjectText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock x:Name="IssuerText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock x:Name="ExpiryText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+                <TextBlock x:Name="ThumbprintText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button x:Name="ViewCertBtn" Content="View Certificate…" />
+            <Button x:Name="AcceptBtn" Content="Trust &amp; Continue" Classes="accent" />
+            <Button x:Name="CancelBtn" Content="Cancel" />
+        </StackPanel>
+    </StackPanel>
+</Window>

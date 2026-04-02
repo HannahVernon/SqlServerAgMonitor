@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Security;
 using System.Reactive;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
@@ -51,10 +56,12 @@ public class SettingsViewModel : ViewModelBase
     private string _serviceHost = "localhost";
     private int _servicePort = 58432;
     private string? _serviceUsername;
+    private string _servicePassword = string.Empty;
     private bool _serviceUseTls;
 
     // UI feedback
     private string? _testEmailStatus;
+    private string? _testConnectionStatus;
 
     public List<string> ThemeOptions { get; } = new() { "Light", "Dark", "High Contrast" };
     public List<string> SyslogProtocolOptions { get; } = new() { "UDP", "TCP" };
@@ -104,24 +111,28 @@ public class SettingsViewModel : ViewModelBase
     public string ServiceHost { get => _serviceHost; set => this.RaiseAndSetIfChanged(ref _serviceHost, value); }
     public int ServicePort { get => _servicePort; set => this.RaiseAndSetIfChanged(ref _servicePort, value); }
     public string? ServiceUsername { get => _serviceUsername; set => this.RaiseAndSetIfChanged(ref _serviceUsername, value); }
+    public string ServicePassword { get => _servicePassword; set => this.RaiseAndSetIfChanged(ref _servicePassword, value); }
     public bool ServiceUseTls { get => _serviceUseTls; set => this.RaiseAndSetIfChanged(ref _serviceUseTls, value); }
 
     public string? TestEmailStatus{ get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
+    public string? TestConnectionStatus { get => _testConnectionStatus; set => this.RaiseAndSetIfChanged(ref _testConnectionStatus, value); }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
     public ReactiveCommand<Unit, Unit> TestEmailCommand { get; }
+    public ReactiveCommand<Unit, Unit> TestConnectionCommand { get; }
 
     /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
-    public event Action<bool>? CloseRequested;
+    public Func<bool, Task>? CloseRequested;
 
     public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService)
     {
         _configService = configService;
         _emailService = emailService;
-        SaveCommand = ReactiveCommand.Create(OnSave);
-        CancelCommand = ReactiveCommand.Create(OnCancel);
+        SaveCommand = ReactiveCommand.CreateFromTask(OnSaveAsync);
+        CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
+        TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync);
     }
 
     private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
@@ -165,6 +176,7 @@ public class SettingsViewModel : ViewModelBase
         ServicePort = config.Service.Port;
         ServiceUsername = config.Service.Username;
         ServiceUseTls = config.Service.UseTls;
+        AcceptedCertThumbprint = config.Service.TrustedCertThumbprint;
     }
 
     public void ApplyTo(AppConfiguration config)
@@ -196,16 +208,20 @@ public class SettingsViewModel : ViewModelBase
         config.Service.Port = ServicePort;
         config.Service.Username = ServiceUsername;
         config.Service.UseTls = ServiceUseTls;
+        if (AcceptedCertThumbprint != null)
+            config.Service.TrustedCertThumbprint = AcceptedCertThumbprint;
     }
 
-    private void OnSave()
+    private async Task OnSaveAsync(CancellationToken cancellationToken)
     {
-        CloseRequested?.Invoke(true);
+        if (CloseRequested != null)
+            await CloseRequested(true);
     }
 
-    private void OnCancel()
+    private async Task OnCancelAsync(CancellationToken cancellationToken)
     {
-        CloseRequested?.Invoke(false);
+        if (CloseRequested != null)
+            await CloseRequested(false);
     }
 
     private async Task OnTestEmailAsync(CancellationToken cancellationToken)
@@ -224,6 +240,137 @@ public class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             TestEmailStatus = $"✗ {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Callback wired by the window to show a certificate trust dialog.
+    /// Receives the untrusted X509Certificate2, returns true if the user accepts it.
+    /// </summary>
+    public Func<X509Certificate2, Task<bool>>? ConfirmUntrustedCertificate { get; set; }
+
+    /// <summary>
+    /// If the user accepted an untrusted cert during Test Connection, its thumbprint is stored
+    /// here so it can be persisted to config on Save.
+    /// </summary>
+    public string? AcceptedCertThumbprint { get; private set; }
+
+    private async Task OnTestConnectionAsync(CancellationToken cancellationToken)
+    {
+        TestConnectionStatus = "Connecting...";
+
+        var scheme = ServiceUseTls ? "https" : "http";
+        var port = Math.Clamp(ServicePort, 1, 65535);
+        var baseUrl = $"{scheme}://{ServiceHost}:{port}";
+
+        try
+        {
+            // Phase 1: if TLS, probe for cert issues first
+            string? pinnedThumbprint = AcceptedCertThumbprint;
+
+            if (ServiceUseTls && pinnedThumbprint == null)
+            {
+                X509Certificate2? capturedCert = null;
+
+                using var probeHandler = new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    {
+                        if (errors == SslPolicyErrors.None)
+                            return true;
+                        if (cert != null)
+                            capturedCert = new X509Certificate2(cert);
+                        return false;
+                    }
+                };
+
+                using var probeClient = new HttpClient(probeHandler)
+                {
+                    BaseAddress = new Uri(baseUrl),
+                    Timeout = TimeSpan.FromSeconds(10)
+                };
+
+                try
+                {
+                    await probeClient.GetAsync("/api/auth/login", cancellationToken);
+                }
+                catch (HttpRequestException) when (capturedCert != null)
+                {
+                    if (ConfirmUntrustedCertificate != null)
+                    {
+                        var accepted = await ConfirmUntrustedCertificate(capturedCert);
+                        if (!accepted)
+                        {
+                            TestConnectionStatus = "✗ Certificate not trusted.";
+                            return;
+                        }
+                        pinnedThumbprint = capturedCert.Thumbprint;
+                        AcceptedCertThumbprint = pinnedThumbprint;
+                    }
+                    else
+                    {
+                        TestConnectionStatus = "✗ Server certificate is not trusted.";
+                        return;
+                    }
+                }
+                catch (HttpRequestException ex) when (capturedCert == null)
+                {
+                    TestConnectionStatus = $"✗ TLS handshake failed: {ex.InnerException?.Message ?? ex.Message}";
+                    return;
+                }
+            }
+
+            // Phase 2: attempt login
+            using var handler = new HttpClientHandler();
+            if (pinnedThumbprint != null)
+            {
+                var pinned = pinnedThumbprint;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                    cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+
+            if (string.IsNullOrWhiteSpace(ServiceUsername) || string.IsNullOrWhiteSpace(ServicePassword))
+            {
+                // No credentials — just check reachability
+                var healthResponse = await client.GetAsync("/api/auth/login", cancellationToken);
+                TestConnectionStatus = "✓ Service is reachable. Enter credentials to test authentication.";
+                return;
+            }
+
+            var payload = JsonSerializer.Serialize(new { username = ServiceUsername, password = ServicePassword });
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/auth/login", content, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                TestConnectionStatus = "✓ Connected and authenticated successfully.";
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                TestConnectionStatus = "✗ Authentication failed — check username and password.";
+            }
+            else
+            {
+                TestConnectionStatus = $"✗ Service returned {(int)response.StatusCode} {response.StatusCode}.";
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            TestConnectionStatus = "✗ Connection timed out.";
+        }
+        catch (HttpRequestException ex)
+        {
+            TestConnectionStatus = $"✗ {ex.InnerException?.Message ?? ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            TestConnectionStatus = $"✗ {ex.Message}";
         }
     }
 }

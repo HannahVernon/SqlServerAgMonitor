@@ -2,6 +2,7 @@ using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using SqlAgMonitor.Core;
+using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Service;
 using SqlAgMonitor.Service.Auth;
@@ -167,6 +168,102 @@ app.MapPost("/api/auth/setup", (LoginRequest request, UserStore users) =>
     return Results.Ok(new { message = $"User '{request.Username}' created." });
 });
 
+// Configuration export — returns sanitised subset (credential keys redacted)
+app.MapGet("/api/config/export", (IConfigurationService configService) =>
+{
+    var config = configService.Load();
+
+    var redactedGroups = config.MonitoredGroups.Select(g => new MonitoredGroupConfig
+    {
+        Name = g.Name,
+        GroupType = g.GroupType,
+        PollingIntervalSeconds = g.PollingIntervalSeconds,
+        Connections = g.Connections.Select(c => new ConnectionConfig
+        {
+            Server = c.Server,
+            AuthType = c.AuthType,
+            Username = c.Username,
+            CredentialKey = null,
+            Encrypt = c.Encrypt,
+            TrustServerCertificate = c.TrustServerCertificate
+        }).ToList(),
+        AlertOverrides = g.AlertOverrides,
+        MutedAlerts = g.MutedAlerts
+    }).ToList();
+
+    var redactedEmail = new EmailSettings
+    {
+        Enabled = config.Email.Enabled,
+        SmtpServer = config.Email.SmtpServer,
+        SmtpPort = config.Email.SmtpPort,
+        UseTls = config.Email.UseTls,
+        FromAddress = config.Email.FromAddress,
+        ToAddresses = config.Email.ToAddresses,
+        Username = config.Email.Username,
+        CredentialKey = null
+    };
+
+    return Results.Ok(new ConfigExportResponse(redactedGroups, config.Alerts, redactedEmail, config.Syslog));
+}).RequireAuthorization();
+
+// Configuration import — merges incoming sections into existing config
+app.MapPost("/api/config/import", (ConfigImportRequest request, IConfigurationService configService) =>
+{
+    var config = configService.Load();
+
+    int groupCount = 0;
+    bool alertsImported = false;
+    bool emailImported = false;
+    bool syslogImported = false;
+
+    if (request.MonitoredGroups is { Count: > 0 })
+    {
+        foreach (var incoming in request.MonitoredGroups)
+        {
+            var existing = config.MonitoredGroups
+                .FirstOrDefault(g => string.Equals(g.Name, incoming.Name, StringComparison.OrdinalIgnoreCase));
+
+            if (existing is not null)
+            {
+                existing.GroupType = incoming.GroupType;
+                existing.PollingIntervalSeconds = incoming.PollingIntervalSeconds;
+                existing.Connections = incoming.Connections;
+                existing.AlertOverrides = incoming.AlertOverrides;
+                existing.MutedAlerts = incoming.MutedAlerts;
+            }
+            else
+            {
+                config.MonitoredGroups.Add(incoming);
+            }
+
+            groupCount++;
+        }
+    }
+
+    if (request.Alerts is not null)
+    {
+        config.Alerts = request.Alerts;
+        alertsImported = true;
+    }
+
+    if (request.Email is not null)
+    {
+        config.Email = request.Email;
+        emailImported = true;
+    }
+
+    if (request.Syslog is not null)
+    {
+        config.Syslog = request.Syslog;
+        syslogImported = true;
+    }
+
+    configService.Save(config);
+
+    return Results.Ok(new ConfigImportResponse(
+        new ConfigImportResult(groupCount, alertsImported, emailImported, syslogImported)));
+}).RequireAuthorization();
+
 app.MapHub<MonitorHub>("/monitor").RequireAuthorization();
 
 app.Logger.LogInformation("SqlAgMonitor Service starting on port {Port}", servicePort);
@@ -174,3 +271,18 @@ app.Logger.LogInformation("SqlAgMonitor Service starting on port {Port}", servic
 app.Run();
 
 record LoginRequest(string Username, string Password);
+
+record ConfigExportResponse(
+    List<MonitoredGroupConfig> MonitoredGroups,
+    AlertSettings Alerts,
+    EmailSettings Email,
+    SyslogSettings Syslog);
+
+record ConfigImportRequest(
+    List<MonitoredGroupConfig>? MonitoredGroups,
+    AlertSettings? Alerts,
+    EmailSettings? Email,
+    SyslogSettings? Syslog);
+
+record ConfigImportResponse(ConfigImportResult Imported);
+record ConfigImportResult(int Groups, bool Alerts, bool Email, bool Syslog);
