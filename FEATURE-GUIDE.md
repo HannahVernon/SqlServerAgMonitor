@@ -298,9 +298,57 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 | Service Host | localhost | Hostname or IP address of the service |
 | Service Port | 58432 | Port the service listens on |
 | Username | — | Username for service authentication |
+| Password | — | Password for service authentication (stored securely via AesCredentialStore; never saved in plain text) |
 | Require TLS | Off | When enabled, uses HTTPS for the SignalR connection |
+| Test Connection | — | Button that probes the service, handles TLS certificate trust, and verifies authentication credentials |
 
-When service mode is enabled, the app does not make direct SQL Server connections. All monitoring data, alerts, and statistics come from the remote service. The service password is prompted on first connection and stored securely in the credential store.
+When service mode is enabled, the app does not make direct SQL Server connections. All monitoring data, alerts, and statistics come from the remote service.
+
+---
+
+## Service Client Connection
+
+When service mode is enabled (Settings → Service tab), the desktop app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly. This section describes the connection flow and related features.
+
+### Test Connection
+
+The **Test Connection** button in the Service tab performs a full connection probe:
+
+1. Attempts to reach the service at the configured host and port
+2. If TLS is enabled and the server presents an untrusted certificate, opens the **Certificate Trust Dialog**
+3. Authenticates with the provided username and password
+4. Reports success or a specific error message
+
+### Certificate Trust Dialog
+
+When the service presents a TLS certificate that is not trusted by the OS certificate store (e.g., self-signed or issued by an internal CA), a dialog appears showing:
+
+- Certificate subject and issuer
+- Validity period
+- SHA-256 thumbprint
+
+The user can choose to **trust and pin** the certificate thumbprint. Once pinned, the app accepts that specific certificate for all future connections without prompting again. Both `LoginAsync` and `ConnectAsync` in `ServiceMonitoringClient` use the pinned thumbprint, including the ongoing SignalR hub connection.
+
+### Auto-Login on Startup
+
+When service mode is enabled and credentials (username + password) are stored, the app automatically attempts to log in and establish the SignalR connection on startup. If the service's TLS certificate is untrusted and no thumbprint has been pinned, the Certificate Trust Dialog is shown before completing the connection.
+
+### Connection Status Indicator
+
+In service mode, the main window status bar displays a live connection indicator:
+
+- **● Connected** — SignalR connection is active and receiving data
+- **○ Disconnected** — SignalR connection is down or not yet established
+
+The indicator updates in real time as the SignalR connection state changes.
+
+### Config Migration
+
+When service mode is **newly enabled** and the app has locally configured monitored groups, a **Migration Dialog** offers to push the local configuration to the remote service. This is a one-time convenience to avoid re-entering groups, alert settings, email, and syslog configuration on the service.
+
+The migration uses `POST /api/config/import` to perform an **additive merge** — existing service configuration is preserved, and the local settings are added on top. The dialog warns that **SQL authentication passwords are not transferred** (they must be re-entered on the service side).
+
+The corresponding `GET /api/config/export` endpoint allows retrieving the service's current configuration with credentials redacted.
 
 ---
 

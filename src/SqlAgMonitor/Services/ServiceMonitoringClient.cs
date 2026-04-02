@@ -2,11 +2,15 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Security;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.ViewModels;
@@ -25,6 +29,7 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     private readonly Dictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
     private HubConnection? _hubConnection;
+    private string? _trustedCertThumbprint;
     private readonly CancellationTokenSource _reconnectCts = new();
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
@@ -44,7 +49,21 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// </summary>
     public event Action<bool>? ConnectionStateChanged;
 
+    /// <summary>
+    /// Raised on the UI thread when a reconnect detects an incompatible service version.
+    /// The string contains the error message to display.
+    /// </summary>
+    public event Action<string>? VersionMismatchDetected;
+
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
+
+    /// <summary>
+    /// Signals that an external connection attempt failed, updating UI state.
+    /// </summary>
+    public void NotifyConnectionFailed()
+    {
+        Dispatcher.UIThread.Post(() => ConnectionStateChanged?.Invoke(false));
+    }
 
     public ServiceMonitoringClient(
         IConfigurationService configService,
@@ -58,8 +77,9 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// Connects to the remote service and begins receiving push events.
     /// Call once at startup when service-client mode is enabled.
     /// </summary>
-    public async Task ConnectAsync(string jwtToken, CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(string jwtToken, string? trustedCertThumbprint = null, CancellationToken cancellationToken = default)
     {
+        _trustedCertThumbprint = trustedCertThumbprint;
         var config = _configService.Load();
         var serviceConfig = config.Service;
         var scheme = serviceConfig.UseTls ? "https" : "http";
@@ -71,6 +91,20 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
             .WithUrl(hubUrl, options =>
             {
                 options.AccessTokenProvider = () => Task.FromResult<string?>(jwtToken);
+
+                if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler clientHandler)
+                        {
+                            clientHandler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                                errors == SslPolicyErrors.None ||
+                                (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase));
+                        }
+                        return handler;
+                    };
+                }
             })
             .WithAutomaticReconnect(new RetryPolicy())
             .Build();
@@ -84,12 +118,33 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
             return Task.CompletedTask;
         };
 
-        _hubConnection.Reconnected += connectionId =>
+        _hubConnection.Reconnected += async connectionId =>
         {
-            _logger.LogInformation("SignalR reconnected (connection {Id})", connectionId);
+            _logger.LogInformation("SignalR reconnected (connection {Id}), checking service version", connectionId);
+
+            try
+            {
+                var currentConfig = _configService.Load();
+                var versionError = await CheckVersionAsync(currentConfig.Service, _trustedCertThumbprint);
+                if (versionError != null)
+                {
+                    _logger.LogError("Service version incompatible after reconnect: {Error}", versionError);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        ConnectionStateChanged?.Invoke(false);
+                        VersionMismatchDetected?.Invoke(versionError);
+                    });
+                    await _hubConnection.StopAsync();
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Version check failed on reconnect, continuing anyway");
+            }
+
             Dispatcher.UIThread.Post(() => ConnectionStateChanged?.Invoke(true));
             _ = LoadCurrentSnapshotsAsync();
-            return Task.CompletedTask;
         };
 
         _hubConnection.Closed += ex =>
@@ -113,15 +168,29 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// </summary>
     public static async Task<string?> LoginAsync(
         ServiceSettings serviceConfig, string username, string password,
+        string? trustedCertThumbprint = null,
         CancellationToken cancellationToken = default)
     {
         var scheme = serviceConfig.UseTls ? "https" : "http";
         var baseUrl = $"{scheme}://{serviceConfig.Host}:{Math.Clamp(serviceConfig.Port, 1, 65535)}";
 
-        using var client = new System.Net.Http.HttpClient { BaseAddress = new Uri(baseUrl) };
+        HttpClientHandler? handler = null;
+        if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+        {
+            handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    errors == SslPolicyErrors.None ||
+                    (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+            };
+        }
+
+        using var client = handler is not null
+            ? new HttpClient(handler, disposeHandler: true) { BaseAddress = new Uri(baseUrl) }
+            : new HttpClient { BaseAddress = new Uri(baseUrl) };
         var payload = new { username, password };
         var json = System.Text.Json.JsonSerializer.Serialize(payload);
-        using var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         var response = await client.PostAsync("/api/auth/login", content, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -132,6 +201,68 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
         return doc.RootElement.TryGetProperty("token", out var tokenProp)
             ? tokenProp.GetString()
             : null;
+    }
+
+    /// <summary>
+    /// Checks the remote service protocol version. Returns null if compatible,
+    /// or an error message string if the service is incompatible or unreachable.
+    /// </summary>
+    public static async Task<string?> CheckVersionAsync(
+        ServiceSettings serviceConfig,
+        string? trustedCertThumbprint = null,
+        CancellationToken cancellationToken = default)
+    {
+        var scheme = serviceConfig.UseTls ? "https" : "http";
+        var baseUrl = $"{scheme}://{serviceConfig.Host}:{Math.Clamp(serviceConfig.Port, 1, 65535)}";
+
+        HttpClientHandler? handler = null;
+        if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+        {
+            handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    errors == SslPolicyErrors.None ||
+                    (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+            };
+        }
+
+        using var client = handler is not null
+            ? new HttpClient(handler, disposeHandler: true) { BaseAddress = new Uri(baseUrl) }
+            : new HttpClient { BaseAddress = new Uri(baseUrl) };
+        client.Timeout = TimeSpan.FromSeconds(10);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.GetAsync("/api/version", cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            return $"Cannot reach service: {ex.InnerException?.Message ?? ex.Message}";
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return "The service does not support protocol versioning. Please update the service to the latest version.";
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return $"Version check failed — service returned {(int)response.StatusCode}.";
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var versionDoc = JsonDocument.Parse(json);
+        if (versionDoc.RootElement.TryGetProperty("protocolVersion", out var versionProp))
+        {
+            var remoteVersion = versionProp.GetInt32();
+            if (remoteVersion < ServiceProtocol.Current)
+            {
+                return $"The service is running protocol version {remoteVersion} but this client requires version {ServiceProtocol.Current}. Please update the service.";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

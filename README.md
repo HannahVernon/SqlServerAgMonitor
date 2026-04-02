@@ -2,7 +2,7 @@
 
 A cross-platform desktop application for real-time monitoring of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs). Built with Avalonia UI for Windows, macOS, and Linux.
 
-📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 🔮 [Service Plan](SERVICE-PLAN.md) · 🤝 [Contributing](CONTRIBUTING.md)
+📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 🔌 [Service Protocol](SERVICE-PROTOCOL.md) · 🔮 [Service Plan](SERVICE-PLAN.md) · 🤝 [Contributing](CONTRIBUTING.md)
 
 ## What It Monitors
 
@@ -85,7 +85,7 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **SQL Server 2014+ compatibility** — Automatically falls back to a legacy query when `secondary_lag_seconds` is unavailable (SQL error 207). The time-lag column shows 0 on SQL Server 2014; all other metrics remain fully functional.
 - **Statistics & Trends** — Historical trend charts (View → Statistics…) with time range presets from 24 hours to 1 year plus custom date pickers. Three-tier data retention (raw snapshots → hourly → daily summaries) with automatic rollup and pruning. Summary grid, four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference), and one-click Excel export.
 - **Keyboard shortcuts** — F5 to refresh the active tab, standard menu accelerators.
-- **Windows Service mode** — Run monitoring as a headless Windows Service (`SqlAgMonitor.Service`) with real-time SignalR API. The desktop app connects remotely for live data, alerts, statistics, and Excel export. JWT bearer authentication with bcrypt-hashed local user store. Automatic reconnect with exponential backoff. Graphical installer (`SqlAgMonitor.Installer`) handles deployment, service registration, and initial admin setup with Add/Remove Programs compliance.
+- **Windows Service mode** — Run monitoring as a headless Windows Service (`SqlAgMonitor.Service`) with real-time SignalR API. The desktop app connects remotely for live data, alerts, statistics, and Excel export. JWT bearer authentication with bcrypt-hashed local user store. Automatic reconnect with exponential backoff. Protocol versioning (`GET /api/version`) ensures client/service compatibility — see [SERVICE-PROTOCOL.md](SERVICE-PROTOCOL.md). Graphical installer (`SqlAgMonitor.Installer`) handles deployment, service registration, and initial admin setup with Add/Remove Programs compliance.
 
 ## Technology Stack
 

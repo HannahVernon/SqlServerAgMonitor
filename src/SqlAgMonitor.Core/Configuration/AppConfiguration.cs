@@ -120,6 +120,9 @@ public class ServiceSettings
     public string? CredentialKey { get; set; }
     /// <summary>When true, require TLS for the SignalR connection.</summary>
     public bool UseTls { get; set; }
+    /// <summary>Pinned certificate thumbprint for self-signed/untrusted TLS certs.
+    /// Set when the user accepts an untrusted cert — subsequent connections skip the trust prompt.</summary>
+    public string? TrustedCertThumbprint { get; set; }
 }
 
 public class SnapshotRetentionSettings
