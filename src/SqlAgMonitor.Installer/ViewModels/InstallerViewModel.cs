@@ -413,17 +413,57 @@ public class InstallerViewModel : ReactiveObject
         if (!File.Exists(exePath))
             throw new FileNotFoundException($"Service executable not found at {exePath}");
 
-        // Remove existing service registration if present (exit code 1060 = not found, which is fine)
-        var deleteExitCode = await RunProcessAsync("sc.exe", $"delete {ServiceName}");
-        Log($"sc.exe delete '{ServiceName}' exited with code {deleteExitCode}");
-        if (deleteExitCode == 0)
+        var expectedBinPath = $"\"{exePath}\"";
+        var existingConfig = await QueryServiceConfigAsync();
+
+        if (existingConfig != null)
         {
-            // Brief pause to let SCM fully release the service entry
-            await Task.Delay(2000);
+            Log($"Existing service found: BinPath={existingConfig.BinPath}, Account={existingConfig.ServiceAccount}, StartType={existingConfig.StartType}");
+
+            var differences = new List<string>();
+
+            if (!string.Equals(existingConfig.BinPath.Trim('"'), exePath, StringComparison.OrdinalIgnoreCase))
+                differences.Add($"  Binary path: \"{existingConfig.BinPath}\" → \"{exePath}\"");
+
+            if (!string.Equals(existingConfig.ServiceAccount, ServiceAccount, StringComparison.OrdinalIgnoreCase))
+                differences.Add($"  Service account: \"{existingConfig.ServiceAccount}\" → \"{ServiceAccount}\"");
+
+            if (existingConfig.StartType != "AUTO_START" && existingConfig.StartType != "DELAYED")
+                differences.Add($"  Start type: {existingConfig.StartType} → DELAYED AUTO_START");
+
+            if (differences.Count == 0)
+            {
+                Log("Existing service config matches — skipping recreate.");
+                return;
+            }
+
+            var message = $"The service '{ServiceName}' already exists with a different configuration:\n\n"
+                + string.Join("\n", differences)
+                + "\n\nReconfigure the service to match the installer settings?\n"
+                + "Choose 'No' to keep the existing configuration.";
+
+            Log($"Service config differences detected:\n{string.Join("\n", differences)}");
+
+            if (ConfirmServiceReconfigure != null)
+            {
+                var reconfigure = await ConfirmServiceReconfigure(message);
+                if (!reconfigure)
+                {
+                    Log("User chose to keep existing service configuration.");
+                    _completedActions.Add($"Kept existing service '{ServiceName}' configuration (user choice)");
+                    return;
+                }
+            }
+
+            // User approved reconfiguration — delete and recreate
+            Log($"Deleting service '{ServiceName}' for reconfiguration...");
+            var deleteExitCode = await RunProcessAsync("sc.exe", $"delete {ServiceName}");
+            Log($"sc.exe delete exited with code {deleteExitCode}");
+            if (deleteExitCode == 0)
+                await Task.Delay(2000);
         }
 
-        var binPath = $"\"{exePath}\"";
-        var args = $"create {ServiceName} binPath= {binPath} DisplayName= \"{DisplayName}\" start= delayed-auto obj= \"{ServiceAccount}\"";
+        var args = $"create {ServiceName} binPath= {expectedBinPath} DisplayName= \"{DisplayName}\" start= delayed-auto obj= \"{ServiceAccount}\"";
 
         if (!UseLocalService && !string.IsNullOrEmpty(ServicePassword))
             args += $" password= \"{ServicePassword}\"";
@@ -441,6 +481,53 @@ public class InstallerViewModel : ReactiveObject
         await RunProcessAsync("sc.exe",
             $"failure {ServiceName} reset= 86400 actions= restart/60000/restart/120000//");
     }
+
+    private async Task<ServiceConfig?> QueryServiceConfigAsync()
+    {
+        try
+        {
+            using var process = Process.Start(new ProcessStartInfo
+            {
+                FileName = "sc.exe",
+                Arguments = $"qc {ServiceName}",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            });
+
+            if (process == null) return null;
+
+            var stdout = await process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+
+            if (process.ExitCode != 0) return null;
+
+            // Parse sc.exe qc output — lines like "BINARY_PATH_NAME : ...", "START_TYPE : ...", "SERVICE_START_NAME : ..."
+            string? binPath = null, startType = null, account = null;
+            foreach (var line in stdout.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("BINARY_PATH_NAME", StringComparison.OrdinalIgnoreCase))
+                    binPath = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
+                else if (trimmed.StartsWith("START_TYPE", StringComparison.OrdinalIgnoreCase))
+                    startType = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim().Split(' ')[0];
+                else if (trimmed.StartsWith("SERVICE_START_NAME", StringComparison.OrdinalIgnoreCase))
+                    account = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
+            }
+
+            if (binPath == null) return null;
+
+            return new ServiceConfig(binPath, startType ?? "UNKNOWN", account ?? "UNKNOWN");
+        }
+        catch (Exception ex)
+        {
+            Log($"Failed to query service config: {ex.Message}");
+            return null;
+        }
+    }
+
+    private record ServiceConfig(string BinPath, string StartType, string ServiceAccount);
 
     private async Task StartServiceAsync()
     {
@@ -463,6 +550,12 @@ public class InstallerViewModel : ReactiveObject
     /// Receives a description of what has been done. Returns true to confirm exit.
     /// </summary>
     public Func<string, Task<bool>>? ConfirmCancelInstallation { get; set; }
+
+    /// <summary>
+    /// Callback invoked when an existing service has different configuration than what the
+    /// installer would set. Receives a description of the differences. Returns true to reconfigure.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmServiceReconfigure { get; set; }
 
     private async Task CreateAdminUserAsync()
     {

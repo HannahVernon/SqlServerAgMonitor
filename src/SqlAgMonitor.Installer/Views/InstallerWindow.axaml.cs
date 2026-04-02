@@ -22,6 +22,7 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
             vm.CloseRequested += () => Close();
             vm.ConfirmUntrustedCertificate = PromptUserForCertificateTrust;
             vm.ConfirmCancelInstallation = PromptUserForCancelConfirmation;
+            vm.ConfirmServiceReconfigure = PromptUserForServiceReconfigure;
         }
     }
 
@@ -40,6 +41,21 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
         return await Dispatcher.UIThread.InvokeAsync(async () =>
         {
             var dialog = new CancelConfirmDialog(message);
+            await dialog.ShowDialog(this);
+            return dialog.Confirmed;
+        });
+    }
+
+    private async Task<bool> PromptUserForServiceReconfigure(string message)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var dialog = new CancelConfirmDialog(
+                "Service Configuration",
+                "⚙ Existing Service Detected",
+                message,
+                "Yes, Reconfigure",
+                "No, Keep Existing");
             await dialog.ShowDialog(this);
             return dialog.Confirmed;
         });

@@ -15,7 +15,7 @@
         </StackPanel>
 
         <StackPanel Spacing="12">
-            <TextBlock Text="⚠ Cancel Installation?" 
+            <TextBlock x:Name="HeadingText" Text="⚠ Cancel Installation?" 
                        FontSize="16" FontWeight="SemiBold" Foreground="#FFFFAA00" />
 
             <ScrollViewer MaxHeight="220">
