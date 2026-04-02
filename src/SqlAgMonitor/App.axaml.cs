@@ -176,7 +176,8 @@ public partial class App : Application
         var username = svc.Username;
         if (string.IsNullOrWhiteSpace(username))
         {
-            logger.LogWarning("Service mode enabled but no username configured — skipping auto-login");
+            serviceClient.NotifyConnectionFailed();
+            await ShowServiceErrorAsync("Service mode is enabled but no username is configured.\n\nOpen Settings → Service to enter your credentials.");
             return;
         }
 
@@ -188,7 +189,8 @@ public partial class App : Application
 
         if (string.IsNullOrEmpty(password))
         {
-            logger.LogWarning("Service mode enabled but no stored password — open Settings to configure");
+            serviceClient.NotifyConnectionFailed();
+            await ShowServiceErrorAsync("Service mode is enabled but no password is stored.\n\nOpen Settings → Service to enter your credentials.");
             return;
         }
 
@@ -207,6 +209,8 @@ public partial class App : Application
             if (versionError != null)
             {
                 logger.LogError("Service version check failed: {Error}", versionError);
+                serviceClient.NotifyConnectionFailed();
+                await ShowServiceErrorAsync(versionError);
                 return;
             }
 
@@ -217,16 +221,70 @@ public partial class App : Application
             if (token == null)
             {
                 logger.LogError("Auto-login failed — service returned unauthorized");
+                serviceClient.NotifyConnectionFailed();
+                await ShowServiceErrorAsync("Authentication failed — the service rejected the stored credentials.\n\nOpen Settings → Service to update your username and password.");
                 return;
             }
 
             await serviceClient.ConnectAsync(token, thumbprint);
             logger.LogInformation("Auto-login succeeded — connected to service");
         }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "Auto-login failed");
+            serviceClient.NotifyConnectionFailed();
+            await ShowServiceErrorAsync($"Could not connect to the service at {svc.Host}:{svc.Port}.\n\n{ex.InnerException?.Message ?? ex.Message}");
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Auto-login failed");
+            serviceClient.NotifyConnectionFailed();
+            await ShowServiceErrorAsync($"Service connection failed.\n\n{ex.Message}");
         }
+    }
+
+    private static async Task ShowServiceErrorAsync(string message)
+    {
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var mainWindow = (Current?.ApplicationLifetime
+                as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+            if (mainWindow == null) return;
+
+            var dialog = new Window
+            {
+                Title = "Service Connection Error",
+                Width = 480,
+                Height = 220,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false,
+                Content = new StackPanel
+                {
+                    Margin = new Avalonia.Thickness(24),
+                    Spacing = 16,
+                    Children =
+                    {
+                        new TextBlock
+                        {
+                            Text = message,
+                            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
+                            FontSize = 13
+                        },
+                        new Button
+                        {
+                            Content = "OK",
+                            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
+                            MinWidth = 80
+                        }
+                    }
+                }
+            };
+
+            var okButton = ((StackPanel)dialog.Content).Children[1] as Button;
+            okButton!.Click += (_, _) => dialog.Close();
+
+            await dialog.ShowDialog(mainWindow);
+        });
     }
 
     /// <summary>

@@ -57,6 +57,14 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
 
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
+    /// <summary>
+    /// Signals that an external connection attempt failed, updating UI state.
+    /// </summary>
+    public void NotifyConnectionFailed()
+    {
+        Dispatcher.UIThread.Post(() => ConnectionStateChanged?.Invoke(false));
+    }
+
     public ServiceMonitoringClient(
         IConfigurationService configService,
         ILogger<ServiceMonitoringClient> logger)
