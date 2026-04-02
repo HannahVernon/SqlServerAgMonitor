@@ -55,6 +55,8 @@ public class InstallerViewModel : ReactiveObject
     private CertificateEntry? _selectedCertificate;
     private string _certificatePath = string.Empty;
     private string _certificateWarning = string.Empty;
+    private bool _isSelfSignedCert;
+    private bool _trustSelfSignedCert;
 
     // Step 5: Admin credentials
     private string _adminUsername = "admin";
@@ -191,6 +193,8 @@ public class InstallerViewModel : ReactiveObject
     }
     public string CertificatePath { get => _certificatePath; set => this.RaiseAndSetIfChanged(ref _certificatePath, value); }
     public string CertificateWarning { get => _certificateWarning; set => this.RaiseAndSetIfChanged(ref _certificateWarning, value); }
+    public bool IsSelfSignedCert { get => _isSelfSignedCert; set => this.RaiseAndSetIfChanged(ref _isSelfSignedCert, value); }
+    public bool TrustSelfSignedCert { get => _trustSelfSignedCert; set => this.RaiseAndSetIfChanged(ref _trustSelfSignedCert, value); }
 
     /// <summary>Selected certificate thumbprint — from store selection or empty if using .pfx file.</summary>
     public string SelectedThumbprint => SelectedCertificate?.Thumbprint ?? string.Empty;
@@ -746,6 +750,14 @@ public class InstallerViewModel : ReactiveObject
 
         if (UseTls)
         {
+            // If Hannah already trusted the self-signed cert at selection time, skip the probe
+            if (TrustSelfSignedCert && SelectedCertificate != null)
+            {
+                Log("Self-signed certificate pre-trusted — skipping TLS probe dialog.");
+                acceptedThumbprint = SelectedCertificate.Thumbprint;
+            }
+            else
+            {
             // Phase 1: try with standard validation — capture cert on failure
             X509Certificate2? capturedCert = null;
 
@@ -805,6 +817,7 @@ public class InstallerViewModel : ReactiveObject
                     + "  • Or grant the service account access via Certificates MMC snap-in:\n"
                     + "    Right-click certificate → All Tasks → Manage Private Keys", ex);
             }
+            } // end else (not pre-trusted)
         }
 
         // Phase 2: actual admin user creation (with pinned thumbprint if needed)
@@ -957,6 +970,8 @@ public class InstallerViewModel : ReactiveObject
     private void ValidateSelectedCertificateKey()
     {
         CertificateWarning = string.Empty;
+        IsSelfSignedCert = false;
+        TrustSelfSignedCert = false;
 
         if (_selectedCertificate == null) return;
 
@@ -971,6 +986,13 @@ public class InstallerViewModel : ReactiveObject
             if (certs.Count == 0) return;
 
             var cert = certs[0];
+
+            // Detect self-signed: issuer matches subject
+            IsSelfSignedCert = string.Equals(
+                cert.Issuer, cert.Subject, StringComparison.OrdinalIgnoreCase);
+            if (IsSelfSignedCert)
+                Log($"Certificate {_selectedCertificate.Thumbprint} is self-signed.");
+
             string? providerName = null;
 
             try

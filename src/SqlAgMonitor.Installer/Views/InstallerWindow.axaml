@@ -136,6 +136,11 @@
                                        IsVisible="{Binding CertificateWarning, 
                                            Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
+                            <CheckBox Content="Trust this self-signed certificate for the installer connection"
+                                      IsChecked="{Binding TrustSelfSignedCert}"
+                                      IsVisible="{Binding IsSelfSignedCert}"
+                                      Margin="24,4,0,0" />
+
                             <RadioButton Content="Use a .pfx certificate file" 
                                          IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
                             
