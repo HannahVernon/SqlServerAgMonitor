@@ -193,8 +193,25 @@ public class InstallerViewModel : ReactiveObject
     }
     public string CertificatePath { get => _certificatePath; set => this.RaiseAndSetIfChanged(ref _certificatePath, value); }
     public string CertificateWarning { get => _certificateWarning; set => this.RaiseAndSetIfChanged(ref _certificateWarning, value); }
-    public bool IsSelfSignedCert { get => _isSelfSignedCert; set => this.RaiseAndSetIfChanged(ref _isSelfSignedCert, value); }
-    public bool TrustSelfSignedCert { get => _trustSelfSignedCert; set => this.RaiseAndSetIfChanged(ref _trustSelfSignedCert, value); }
+    public bool IsSelfSignedCert
+    {
+        get => _isSelfSignedCert;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isSelfSignedCert, value);
+            this.RaisePropertyChanged(nameof(SelfSignedNotTrusted));
+        }
+    }
+    public bool TrustSelfSignedCert
+    {
+        get => _trustSelfSignedCert;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _trustSelfSignedCert, value);
+            this.RaisePropertyChanged(nameof(SelfSignedNotTrusted));
+        }
+    }
+    public bool SelfSignedNotTrusted => IsSelfSignedCert && !TrustSelfSignedCert;
 
     /// <summary>Selected certificate thumbprint — from store selection or empty if using .pfx file.</summary>
     public string SelectedThumbprint => SelectedCertificate?.Thumbprint ?? string.Empty;

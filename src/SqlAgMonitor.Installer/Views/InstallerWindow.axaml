@@ -141,6 +141,11 @@
                                       IsVisible="{Binding IsSelfSignedCert}"
                                       Margin="24,4,0,0" />
 
+                            <TextBlock Text="⚠ The installer will not be able to create the admin user account without trusting this certificate. You can still install, but you will need to create the admin user manually."
+                                       TextWrapping="Wrap" Foreground="#FFFFAA00" FontSize="12"
+                                       Margin="24,2,0,0"
+                                       IsVisible="{Binding SelfSignedNotTrusted}" />
+
                             <RadioButton Content="Use a .pfx certificate file" 
                                          IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
                             
