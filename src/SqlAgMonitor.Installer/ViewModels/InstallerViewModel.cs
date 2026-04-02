@@ -7,7 +7,10 @@ using System.Net.Http;
 using System.Reactive;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text;
 using System.Text.Json;
@@ -251,6 +254,12 @@ public class InstallerViewModel : ReactiveObject
             WriteAppSettings();
             _completedActions.Add("Wrote appsettings.json configuration");
             Log("Wrote appsettings.json");
+
+            if (UseTls && UseStoreCertificate && SelectedCertificate != null)
+            {
+                await SetProgress("Configuring certificate permissions...", 30);
+                await GrantCertificatePrivateKeyAccessAsync();
+            }
 
             await SetProgress("Creating Windows Service...", 40);
             await CreateServiceAsync();
@@ -586,6 +595,151 @@ public class InstallerViewModel : ReactiveObject
     /// </summary>
     public Func<string, Task<bool>>? ConfirmServiceReconfigure { get; set; }
 
+    /// <summary>
+    /// Callback invoked to ask Hannah's permission before modifying the certificate's private
+    /// key security to grant the service account read access.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmCertificateKeyPermission { get; set; }
+
+    private async Task GrantCertificatePrivateKeyAccessAsync()
+    {
+        if (SelectedCertificate == null) return;
+
+        var thumbprint = SelectedCertificate.Thumbprint;
+        Log($"Checking private key access for certificate {thumbprint}");
+
+        using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+        store.Open(OpenFlags.ReadOnly);
+        var certs = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
+        store.Close();
+
+        if (certs.Count == 0)
+        {
+            Log("Certificate not found in store — skipping key permission grant.");
+            return;
+        }
+
+        var cert = certs[0];
+        string? keyFilePath = null;
+        string? providerName = null;
+
+        try
+        {
+            using var rsa = cert.GetRSAPrivateKey();
+            if (rsa is RSACng rsaCng)
+            {
+                providerName = rsaCng.Key.Provider?.Provider;
+                var uniqueName = rsaCng.Key.UniqueName;
+                if (!string.IsNullOrEmpty(uniqueName))
+                {
+                    // CNG Software Key Storage Provider → %ProgramData%\Microsoft\Crypto\Keys\
+                    var keysPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                        "Microsoft", "Crypto", "Keys", uniqueName);
+                    if (File.Exists(keysPath))
+                        keyFilePath = keysPath;
+                }
+            }
+            else if (rsa is RSACryptoServiceProvider rsaCsp)
+            {
+                providerName = rsaCsp.CspKeyContainerInfo.ProviderName;
+                var uniqueName = rsaCsp.CspKeyContainerInfo.UniqueKeyContainerName;
+                if (!string.IsNullOrEmpty(uniqueName))
+                {
+                    var machineKeysPath = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                        "Microsoft", "Crypto", "RSA", "MachineKeys", uniqueName);
+                    if (File.Exists(machineKeysPath))
+                        keyFilePath = machineKeysPath;
+                }
+            }
+        }
+        catch (CryptographicException ex)
+        {
+            Log($"Cannot access private key (provider may be TPM-based): {ex.Message}");
+        }
+
+        // Also try ECDsa keys
+        if (keyFilePath == null)
+        {
+            try
+            {
+                using var ecdsa = cert.GetECDsaPrivateKey();
+                if (ecdsa is ECDsaCng ecdsaCng)
+                {
+                    providerName = ecdsaCng.Key.Provider?.Provider;
+                    var uniqueName = ecdsaCng.Key.UniqueName;
+                    if (!string.IsNullOrEmpty(uniqueName))
+                    {
+                        var keysPath = Path.Combine(
+                            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+                            "Microsoft", "Crypto", "Keys", uniqueName);
+                        if (File.Exists(keysPath))
+                            keyFilePath = keysPath;
+                    }
+                }
+            }
+            catch (CryptographicException)
+            {
+                /* not an ECDsa cert, or key inaccessible */
+            }
+        }
+
+        if (keyFilePath == null)
+        {
+            var reason = providerName != null && providerName.Contains("Platform", StringComparison.OrdinalIgnoreCase)
+                ? $"The selected certificate uses a TPM-backed key ({providerName}) whose private key "
+                  + "cannot be shared via file ACLs."
+                : "The private key file for the selected certificate could not be located.";
+
+            Log($"Cannot grant key access: {reason}");
+
+            throw new InvalidOperationException(
+                $"{reason}\n\n"
+                + $"The service account '{ServiceAccount}' may not be able to perform TLS handshakes.\n\n"
+                + "To fix this, either:\n"
+                + "  • Select a certificate with a software-based key (not TPM-backed)\n"
+                + "  • Change the service account to LocalSystem (which can access TPM keys)\n"
+                + "  • Manually grant the service account access to the private key using the\n"
+                + "    Certificates MMC snap-in → Right-click certificate → All Tasks → Manage Private Keys");
+        }
+
+        Log($"Private key file: {keyFilePath} (provider: {providerName})");
+
+        // Ask permission before modifying the key's security
+        var message = $"The service account '{ServiceAccount}' needs read access to the TLS certificate's "
+            + "private key to perform HTTPS connections.\n\n"
+            + $"Certificate: {SelectedCertificate.DisplayText}\n"
+            + $"Key file: {keyFilePath}\n\n"
+            + "Grant the service account read access to this private key?";
+
+        if (ConfirmCertificateKeyPermission != null)
+        {
+            var approved = await ConfirmCertificateKeyPermission(message);
+            if (!approved)
+            {
+                Log("User declined to grant private key access.");
+                throw new InvalidOperationException(
+                    "Private key access was not granted. The service will not be able to serve HTTPS.\n\n"
+                    + "You can manually grant access later using the Certificates MMC snap-in:\n"
+                    + "  Right-click certificate → All Tasks → Manage Private Keys\n"
+                    + $"  Grant '{ServiceAccount}' read access.");
+            }
+        }
+
+        // Grant read access to the service account
+        var fileInfo = new FileInfo(keyFilePath);
+        var acl = fileInfo.GetAccessControl();
+
+        var serviceIdentity = new NTAccount(ServiceAccount);
+        acl.AddAccessRule(new FileSystemAccessRule(
+            serviceIdentity, FileSystemRights.Read, AccessControlType.Allow));
+        fileInfo.SetAccessControl(acl);
+
+        Log($"Granted '{ServiceAccount}' read access to private key file: {keyFilePath}");
+        _completedActions.Add($"Granted '{ServiceAccount}' read access to TLS certificate private key");
+    }
+
     private async Task CreateAdminUserAsync()
     {
         var scheme = UseTls ? "https" : "http";
@@ -639,6 +793,20 @@ public class InstallerViewModel : ReactiveObject
                 {
                     throw;
                 }
+            }
+            catch (HttpRequestException ex) when (capturedCert == null)
+            {
+                Log($"TLS probe failed without receiving a server certificate: {ex.Message}");
+                throw new InvalidOperationException(
+                    "The service is running but the TLS handshake failed before any certificate "
+                    + "was received. This usually means the service account cannot access the "
+                    + "certificate's private key.\n\n"
+                    + $"Service account: {ServiceAccount}\n"
+                    + $"Certificate: {SelectedCertificate?.DisplayText ?? "(unknown)"}\n\n"
+                    + "To fix this:\n"
+                    + "  • Re-run the installer with a certificate that has a software-based private key\n"
+                    + "  • Or grant the service account access via Certificates MMC snap-in:\n"
+                    + "    Right-click certificate → All Tasks → Manage Private Keys", ex);
             }
         }
 

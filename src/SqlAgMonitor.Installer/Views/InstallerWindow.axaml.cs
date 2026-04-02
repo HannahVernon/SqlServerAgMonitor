@@ -23,6 +23,7 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
             vm.ConfirmUntrustedCertificate = PromptUserForCertificateTrust;
             vm.ConfirmCancelInstallation = PromptUserForCancelConfirmation;
             vm.ConfirmServiceReconfigure = PromptUserForServiceReconfigure;
+            vm.ConfirmCertificateKeyPermission = PromptUserForCertKeyPermission;
         }
     }
 
@@ -56,6 +57,21 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
                 message,
                 "Yes, Reconfigure",
                 "No, Keep Existing");
+            await dialog.ShowDialog(this);
+            return dialog.Confirmed;
+        });
+    }
+
+    private async Task<bool> PromptUserForCertKeyPermission(string message)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var dialog = new CancelConfirmDialog(
+                "Certificate Private Key Access",
+                "🔑 Private Key Permission Required",
+                message,
+                "Yes, Grant Access",
+                "No, Skip");
             await dialog.ShowDialog(this);
             return dialog.Confirmed;
         });
