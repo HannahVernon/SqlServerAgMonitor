@@ -1,19 +1,20 @@
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using Microsoft.AspNetCore.SignalR;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.Core.Services.Alerting;
 using SqlAgMonitor.Core.Services.Export;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
+using SqlAgMonitor.Service.Hubs;
 
 namespace SqlAgMonitor.Service;
 
 /// <summary>
 /// Headless monitoring coordinator that subscribes to AG/DAG snapshot observables,
-/// feeds them through the alert engine, and records events to DuckDB.
-/// This is the service-side equivalent of MonitoringCoordinator in the desktop app,
-/// without any UI thread dependency.
+/// feeds them through the alert engine, records events to DuckDB, and pushes
+/// real-time updates to connected SignalR clients.
 /// </summary>
 public sealed class MonitoringWorker : BackgroundService
 {
@@ -25,6 +26,7 @@ public sealed class MonitoringWorker : BackgroundService
     private readonly IEventRecorder _eventRecorder;
     private readonly IConfigurationService _configService;
     private readonly IHtmlExportService _exportService;
+    private readonly IHubContext<MonitorHub> _hubContext;
     private readonly CompositeDisposable _subscriptions = new();
     private readonly Dictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new();
     private readonly object _snapshotLock = new();
@@ -37,7 +39,8 @@ public sealed class MonitoringWorker : BackgroundService
         AlertDispatcher alertDispatcher,
         IEventRecorder eventRecorder,
         IConfigurationService configService,
-        IHtmlExportService exportService)
+        IHtmlExportService exportService,
+        IHubContext<MonitorHub> hubContext)
     {
         _logger = logger;
         _agMonitor = agMonitor;
@@ -47,6 +50,7 @@ public sealed class MonitoringWorker : BackgroundService
         _eventRecorder = eventRecorder;
         _configService = configService;
         _exportService = exportService;
+        _hubContext = hubContext;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,6 +97,9 @@ public sealed class MonitoringWorker : BackgroundService
                     _alertDispatcher.Dispatch(alert);
                     _logger.LogInformation("Alert fired: {Type} for {Group}",
                         alert.AlertType, alert.GroupName);
+
+                    // Push to all connected SignalR clients
+                    _ = _hubContext.Clients.All.SendAsync("OnAlertFired", alert);
                 },
                 ex => _logger.LogError(ex, "Alert observable error"));
         _subscriptions.Add(alertSub);
@@ -135,6 +142,9 @@ public sealed class MonitoringWorker : BackgroundService
 
         _alertEngine.EvaluateSnapshot(snapshot, previous);
         _ = _eventRecorder.RecordSnapshotAsync(snapshot);
+
+        // Push to all connected SignalR clients
+        _ = _hubContext.Clients.All.SendAsync("OnSnapshotReceived", snapshot.Name, snapshot);
     }
 
     private void StartScheduledExport()

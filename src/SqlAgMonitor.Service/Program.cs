@@ -27,8 +27,9 @@ builder.Services.AddSignalR(options =>
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
 });
 
-// Headless monitoring coordinator
-builder.Services.AddHostedService<MonitoringWorker>();
+// Headless monitoring coordinator — registered as singleton so the hub can access it
+builder.Services.AddSingleton<MonitoringWorker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<MonitoringWorker>());
 
 // File logging alongside console
 var logDirectory = Path.Combine(
