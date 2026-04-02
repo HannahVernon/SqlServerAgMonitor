@@ -103,7 +103,14 @@
                         <DataGridTextColumn Header="Log Diff Avg" Binding="{Binding LogBlockDiffAvg, StringFormat=\{0:N0\}}" Width="100" />
                         <DataGridTextColumn Header="Sync State" Binding="{Binding SyncState}" Width="100" />
                         <DataGridTextColumn Header="Role" Binding="{Binding Role}" Width="80" />
-                        <DataGridTextColumn Header="Last Seen" Binding="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='MM/dd HH:mm'}" Width="100" />
+                        <DataGridTemplateColumn Header="Last Seen" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='MM/dd HH:mm'}"
+                                               VerticalAlignment="Center" Margin="4,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
 
