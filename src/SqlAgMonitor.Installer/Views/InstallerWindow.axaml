@@ -3,11 +3,11 @@
         xmlns:vm="using:SqlAgMonitor.Installer.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="520"
+        mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="620"
         x:Class="SqlAgMonitor.Installer.Views.InstallerWindow"
         x:DataType="vm:InstallerViewModel"
         Title="SQL Server AG Monitor — Service Installer"
-        Width="620" Height="520"
+        Width="740" Height="620"
         WindowStartupLocation="CenterScreen"
         CanResize="False"
         Icon="avares://SqlAgMonitor.Installer/Assets/app-icon.png">
