@@ -69,4 +69,7 @@ public class DuckDbEventHistoryService : IEventHistoryService
 
     public Task<SnapshotFilterOptions> GetSnapshotFiltersAsync(string? groupName = null, string? replicaName = null, CancellationToken cancellationToken = default)
         => _snapshotStore.GetSnapshotFiltersAsync(groupName, replicaName, cancellationToken);
+
+    public Task<SnapshotTier> ResolveTierAsync(DateTimeOffset since, DateTimeOffset until, CancellationToken cancellationToken = default)
+        => _snapshotStore.ResolveTierAsync(since, until, cancellationToken);
 }

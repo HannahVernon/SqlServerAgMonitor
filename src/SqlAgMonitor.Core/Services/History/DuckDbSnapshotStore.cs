@@ -114,6 +114,59 @@ internal sealed class DuckDbSnapshotStore
         }
     }
 
+    public async Task<SnapshotTier> ResolveTierAsync(
+        DateTimeOffset since, DateTimeOffset until,
+        CancellationToken cancellationToken = default)
+    {
+        if (!_db.IsInitialized) return SnapshotTier.Raw;
+
+        var range = until - since;
+        SnapshotTier preferred;
+        if (range.TotalHours <= 48)
+            preferred = SnapshotTier.Raw;
+        else if (range.TotalDays <= 90)
+            preferred = SnapshotTier.Hourly;
+        else
+            preferred = SnapshotTier.Daily;
+
+        try
+        {
+            return await _db.ExecuteAsync(conn =>
+            {
+                var tier = preferred;
+                while (true)
+                {
+                    var (table, timeCol) = tier switch
+                    {
+                        SnapshotTier.Raw => ("snapshots", "timestamp"),
+                        SnapshotTier.Hourly => ("snapshot_hourly", "bucket"),
+                        _ => ("snapshot_daily", "bucket")
+                    };
+
+                    using var cmd = conn.CreateCommand();
+                    cmd.CommandText = $"SELECT COUNT(1) FROM {table} WHERE {timeCol} >= $since AND {timeCol} < $until";
+                    cmd.Parameters.Add(new DuckDBParameter("since", since.UtcDateTime));
+                    cmd.Parameters.Add(new DuckDBParameter("until", until.UtcDateTime));
+
+                    var count = Convert.ToInt64(cmd.ExecuteScalar());
+                    if (count > 0 || tier == SnapshotTier.Raw)
+                        return tier;
+
+                    _logger.LogInformation(
+                        "No data in {Tier} tier for range {Since} to {Until}; falling back.",
+                        tier, since, until);
+
+                    tier = tier == SnapshotTier.Daily ? SnapshotTier.Hourly : SnapshotTier.Raw;
+                }
+            }, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to resolve snapshot tier; defaulting to raw.");
+            return SnapshotTier.Raw;
+        }
+    }
+
     public async Task<IReadOnlyList<SnapshotDataPoint>> GetSnapshotDataAsync(
         DateTimeOffset since, DateTimeOffset until,
         string? groupName = null, string? replicaName = null, string? databaseName = null,
@@ -122,27 +175,16 @@ internal sealed class DuckDbSnapshotStore
         if (!_db.IsInitialized) return Array.Empty<SnapshotDataPoint>();
         try
         {
+            var tier = await ResolveTierAsync(since, until, cancellationToken);
+
             return await _db.ExecuteAsync(conn =>
             {
-                // Auto-select snapshot tier based on query range
-                var range = until - since;
-                SnapshotTier tier;
-                string tableName;
-                if (range.TotalHours <= 48)
+                string tableName = tier switch
                 {
-                    tier = SnapshotTier.Raw;
-                    tableName = "snapshots";
-                }
-                else if (range.TotalDays <= 90)
-                {
-                    tier = SnapshotTier.Hourly;
-                    tableName = "snapshot_hourly";
-                }
-                else
-                {
-                    tier = SnapshotTier.Daily;
-                    tableName = "snapshot_daily";
-                }
+                    SnapshotTier.Raw => "snapshots",
+                    SnapshotTier.Hourly => "snapshot_hourly",
+                    _ => "snapshot_daily"
+                };
 
                 using var cmd = conn.CreateCommand();
                 var filters = new List<string>();
