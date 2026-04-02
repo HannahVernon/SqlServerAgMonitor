@@ -66,6 +66,8 @@
                 <!-- Refresh -->
                 <Button Content="🔄 Refresh Now" Command="{Binding LoadCommand}" Margin="0 0 8 0" />
                 <CheckBox Content="Auto-refresh" IsChecked="{Binding AutoRefresh}"
+                          IsEnabled="{Binding IsAutoRefreshEnabled}"
+                          ToolTip.Tip="Auto-refresh is available for time ranges under 8 hours to avoid repeatedly loading large data sets."
                           VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 16 0" />
 
 
