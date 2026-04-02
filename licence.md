@@ -56,6 +56,7 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [Microsoft.Extensions.DependencyInjection.Abstractions](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Logging](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Logging.Abstractions](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [Microsoft.Extensions.Hosting.WindowsServices](https://github.com/dotnet/runtime) | 9.0.6 | © Microsoft Corporation |
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 
 ### Apache License 2.0
