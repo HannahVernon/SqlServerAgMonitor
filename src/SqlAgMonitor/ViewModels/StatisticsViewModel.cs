@@ -51,6 +51,14 @@ public class StatisticsViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _selectedTimeRange, value);
             IsCustomRange = value == "Custom";
+            this.RaisePropertyChanged(nameof(IsAutoRefreshEnabled));
+
+            // Auto-refresh is only practical for short time ranges.
+            // Disable it for ranges >= 8 hours to avoid repeatedly loading
+            // large data sets.
+            if (!_initializing && !IsAutoRefreshAllowed(value))
+                AutoRefresh = false;
+
             if (!IsCustomRange && !_initializing)
                 _ = LoadDataAsync();
         }
@@ -83,6 +91,11 @@ public class StatisticsViewModel : ViewModelBase
             ConfigureAutoRefresh(value);
         }
     }
+
+    public bool IsAutoRefreshEnabled => IsAutoRefreshAllowed(_selectedTimeRange);
+
+    private static bool IsAutoRefreshAllowed(string timeRange)
+        => timeRange is "15 minutes" or "1 hour" or "4 hours";
 
     public string? SelectedGroup
     {
