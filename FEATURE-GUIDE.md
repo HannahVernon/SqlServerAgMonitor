@@ -349,6 +349,21 @@ The SqlAgMonitor Windows Service runs headless monitoring and exposes a SignalR 
 
 ### Deployment
 
+#### Graphical Installer (recommended)
+
+Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks through:
+
+1. **Install path** — where to publish the service (default: `C:\Program Files\SqlAgMonitor`)
+2. **Service account** — LOCAL SERVICE (default) or a domain account for Windows-authenticated SQL connections
+3. **Port** — service listening port (default: 58432)
+4. **TLS** — optional HTTPS with certificate
+5. **Admin credentials** — initial username and password for the service API
+6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, and registers in Add/Remove Programs
+
+To uninstall, use Windows Settings → Apps → SQL Server AG Monitor Service, or run `SqlAgMonitor.Installer.exe /uninstall`.
+
+#### PowerShell Scripts (advanced)
+
 1. **Publish:** `.\scripts\Publish-Service.ps1` — builds a self-contained single-file executable
 2. **Install:** `.\scripts\Install-Service.ps1` — registers as a Windows Service with delayed auto-start
 3. **Initial setup:** `POST http://host:58432/api/auth/setup` with `{"username":"admin","password":"YourPassword"}` to create the first user account
@@ -360,4 +375,4 @@ The service uses JWT bearer tokens. Clients authenticate via `POST /api/auth/log
 
 ### Uninstall
 
-`.\scripts\Uninstall-Service.ps1` — stops and removes the Windows Service. Published files are left in place for manual cleanup.
+Use Windows Settings → Apps → SQL Server AG Monitor Service for GUI uninstall, or run `SqlAgMonitor.Installer.exe /uninstall` for silent removal. Alternatively, `.\scripts\Uninstall-Service.ps1` stops and removes the Windows Service (published files are left in place for manual cleanup).
