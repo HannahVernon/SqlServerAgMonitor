@@ -290,6 +290,66 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 - **Maximum number of records** — only the most recent N records are kept (default: 0 = unlimited)
 - Pruning runs automatically 10 seconds after startup and then every 24 hours
 
+### Service Tab
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Enable Service Client Mode | Off | When enabled, the app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly |
+| Service Host | localhost | Hostname or IP address of the service |
+| Service Port | 58432 | Port the service listens on |
+| Username | — | Username for service authentication |
+| Password | — | Password for service authentication (stored securely via AesCredentialStore; never saved in plain text) |
+| Require TLS | Off | When enabled, uses HTTPS for the SignalR connection |
+| Test Connection | — | Button that probes the service, handles TLS certificate trust, and verifies authentication credentials |
+
+When service mode is enabled, the app does not make direct SQL Server connections. All monitoring data, alerts, and statistics come from the remote service.
+
+---
+
+## Service Client Connection
+
+When service mode is enabled (Settings → Service tab), the desktop app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly. This section describes the connection flow and related features.
+
+### Test Connection
+
+The **Test Connection** button in the Service tab performs a full connection probe:
+
+1. Attempts to reach the service at the configured host and port
+2. If TLS is enabled and the server presents an untrusted certificate, opens the **Certificate Trust Dialog**
+3. Authenticates with the provided username and password
+4. Reports success or a specific error message
+
+### Certificate Trust Dialog
+
+When the service presents a TLS certificate that is not trusted by the OS certificate store (e.g., self-signed or issued by an internal CA), a dialog appears showing:
+
+- Certificate subject and issuer
+- Validity period
+- SHA-256 thumbprint
+
+The user can choose to **trust and pin** the certificate thumbprint. Once pinned, the app accepts that specific certificate for all future connections without prompting again. Both `LoginAsync` and `ConnectAsync` in `ServiceMonitoringClient` use the pinned thumbprint, including the ongoing SignalR hub connection.
+
+### Auto-Login on Startup
+
+When service mode is enabled and credentials (username + password) are stored, the app automatically attempts to log in and establish the SignalR connection on startup. If the service's TLS certificate is untrusted and no thumbprint has been pinned, the Certificate Trust Dialog is shown before completing the connection.
+
+### Connection Status Indicator
+
+In service mode, the main window status bar displays a live connection indicator:
+
+- **● Connected** — SignalR connection is active and receiving data
+- **○ Disconnected** — SignalR connection is down or not yet established
+
+The indicator updates in real time as the SignalR connection state changes.
+
+### Config Migration
+
+When service mode is **newly enabled** and the app has locally configured monitored groups, a **Migration Dialog** offers to push the local configuration to the remote service. This is a one-time convenience to avoid re-entering groups, alert settings, email, and syslog configuration on the service.
+
+The migration uses `POST /api/config/import` to perform an **additive merge** — existing service configuration is preserved, and the local settings are added on top. The dialog warns that **SQL authentication passwords are not transferred** (they must be re-entered on the service side).
+
+The corresponding `GET /api/config/export` endpoint allows retrieving the service's current configuration with credentials redacted.
+
 ---
 
 ## Credential Security
@@ -328,3 +388,39 @@ Three themes available from the View menu:
 - **Dark** (default) — Dark backgrounds optimized for low-light monitoring
 - **Light** — Light backgrounds for bright environments
 - **High Contrast** — Maximum contrast for accessibility
+
+---
+
+## Windows Service Mode
+
+The SqlAgMonitor Windows Service runs headless monitoring and exposes a SignalR API for remote clients.
+
+### Deployment
+
+#### Graphical Installer (recommended)
+
+Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks through:
+
+1. **Install path** — where to publish the service (default: `C:\Program Files\SqlAgMonitor`)
+2. **Service account** — LOCAL SERVICE (default) or a domain account for Windows-authenticated SQL connections
+3. **Port** — service listening port (default: 58432)
+4. **TLS** — optional HTTPS with certificate
+5. **Admin credentials** — initial username and password for the service API
+6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, and registers in Add/Remove Programs
+
+To uninstall, use Windows Settings → Apps → SQL Server AG Monitor Service, or run `SqlAgMonitor.Installer.exe /uninstall`.
+
+#### PowerShell Scripts (advanced)
+
+1. **Publish:** `.\scripts\Publish-Service.ps1` — builds a self-contained single-file executable
+2. **Install:** `.\scripts\Install-Service.ps1` — registers as a Windows Service with delayed auto-start
+3. **Initial setup:** `POST http://host:58432/api/auth/setup` with `{"username":"admin","password":"YourPassword"}` to create the first user account
+4. **Start:** `Start-Service SqlAgMonitorService`
+
+### Authentication
+
+The service uses JWT bearer tokens. Clients authenticate via `POST /api/auth/login` and include the token in subsequent SignalR connections. Passwords are hashed with bcrypt (work factor 12). The JWT signing key is auto-generated per deployment and stored in `%APPDATA%\SqlAgMonitor\service\jwt-signing-key.bin`.
+
+### Uninstall
+
+Use Windows Settings → Apps → SQL Server AG Monitor Service for GUI uninstall, or run `SqlAgMonitor.Installer.exe /uninstall` for silent removal. Alternatively, `.\scripts\Uninstall-Service.ps1` stops and removes the Windows Service (published files are left in place for manual cleanup).

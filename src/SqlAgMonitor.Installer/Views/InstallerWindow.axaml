@@ -1,0 +1,263 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:SqlAgMonitor.Installer.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="720" d:DesignHeight="620"
+        x:Class="SqlAgMonitor.Installer.Views.InstallerWindow"
+        x:DataType="vm:InstallerViewModel"
+        Title="SQL Server AG Monitor — Service Installer"
+        Width="740" Height="620"
+        WindowStartupLocation="CenterScreen"
+        CanResize="False"
+        Icon="avares://SqlAgMonitor.Installer/Assets/app-icon.png">
+
+    <Design.DataContext>
+        <vm:InstallerViewModel/>
+    </Design.DataContext>
+
+    <DockPanel Margin="24">
+        <!-- Title -->
+        <TextBlock DockPanel.Dock="Top" Text="SqlAgMonitor Service Installer" 
+                   FontSize="22" FontWeight="Bold" Margin="0,0,0,16" />
+
+        <!-- Bottom buttons -->
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" 
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button Content="◀ Back" Command="{Binding BackCommand}" MinWidth="80"
+                    IsVisible="{Binding !IsComplete}" />
+            <Button Content="Next ▶" Command="{Binding NextCommand}" MinWidth="80"
+                    IsVisible="{Binding !IsComplete}" />
+            <Button Content="Install" Command="{Binding InstallCommand}" MinWidth="100"
+                    Classes="accent" IsVisible="{Binding !IsComplete}" />
+            <Button Content="{Binding CloseButtonText}" Command="{Binding CloseCommand}" MinWidth="80" />
+        </StackPanel>
+
+        <!-- Wizard content area -->
+        <ScrollViewer>
+            <Panel>
+                <!-- Step 0: Welcome -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep0}">
+                    <TextBlock Text="Welcome" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                        This wizard will install the SQL Server AG Monitor Service as a Windows Service on this machine.
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                        The service runs in the background, monitors your SQL Server Availability Groups and Distributed
+                        Availability Groups, records health snapshots to a local DuckDB database, and exposes a SignalR
+                        API so the SqlAgMonitor desktop app can connect remotely.
+                    </TextBlock>
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                            CornerRadius="6" Padding="16" Margin="0,8,0,0">
+                        <StackPanel Spacing="6">
+                            <TextBlock>
+                                <Run Text="Version: " FontWeight="SemiBold" /><Run Text="{Binding AppVersion}" />
+                            </TextBlock>
+                            <TextBlock TextWrapping="Wrap">
+                                <Run Text="What will be installed:" FontWeight="SemiBold" />
+                            </TextBlock>
+                            <TextBlock Text="  • SqlAgMonitor.Service.exe (self-contained .NET 9 binary)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Windows Service registration (delayed auto-start)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Automatic recovery policy (restart on failure)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Add/Remove Programs entry for clean uninstall" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Click Next to configure the installation, or Close to cancel."
+                               FontSize="12" Opacity="0.6" Margin="0,8,0,0" />
+                </StackPanel>
+
+                <!-- Step 1: Install Path -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep1}">
+                    <TextBlock Text="Step 1 of 6 — Install Location" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Choose where to install the service files. The directory will be created if it doesn't exist." 
+                               TextWrapping="Wrap" Opacity="0.7" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Install Path" />
+                        <TextBox Text="{Binding InstallPath}" Watermark="C:\Program Files\SqlAgMonitor" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 2: Service Account -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep2}">
+                    <TextBlock Text="Step 2 of 6 — Service Account" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="The service runs under this Windows account. Use LOCAL SERVICE for local monitoring, or a domain account for Windows-authenticated SQL connections." 
+                               TextWrapping="Wrap" Opacity="0.7" />
+                    <CheckBox Content="Use LOCAL SERVICE (recommended)" IsChecked="{Binding UseLocalService}" />
+                    <StackPanel Spacing="4" IsEnabled="{Binding !UseLocalService}">
+                        <TextBlock Text="Service Account" />
+                        <TextBox Text="{Binding ServiceAccount}" Watermark="DOMAIN\svc_agmonitor" />
+                    </StackPanel>
+                    <StackPanel Spacing="4" IsEnabled="{Binding !UseLocalService}">
+                        <TextBlock Text="Account Password" />
+                        <TextBox Text="{Binding ServicePassword}" PasswordChar="●" Watermark="Account password" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 3: Port -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep3}">
+                    <TextBlock Text="Step 3 of 6 — Service Port" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="The port the service will listen on for SignalR connections from desktop clients." 
+                               TextWrapping="Wrap" Opacity="0.7" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Port" />
+                        <NumericUpDown x:CompileBindings="False" Value="{Binding Port}" 
+                                       Minimum="1024" Maximum="65535" Increment="1" 
+                                       Width="150" HorizontalAlignment="Left" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 4: TLS -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep4}">
+                    <TextBlock Text="Step 4 of 6 — TLS / HTTPS" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Enable TLS to encrypt connections between the desktop app and the service." 
+                               TextWrapping="Wrap" Opacity="0.7" />
+                    <CheckBox Content="Enable TLS (HTTPS)" IsChecked="{Binding UseTls}" />
+
+                    <StackPanel Spacing="12" IsEnabled="{Binding UseTls}">
+                        <!-- Certificate source selection -->
+                        <StackPanel Spacing="6">
+                            <RadioButton Content="Select from Windows Certificate Store (LocalMachine\My)" 
+                                         IsChecked="{Binding UseStoreCertificate}" GroupName="CertSource" />
+                            
+                            <ComboBox ItemsSource="{Binding StoreCertificates}"
+                                      SelectedItem="{Binding SelectedCertificate}"
+                                      IsEnabled="{Binding UseStoreCertificate}"
+                                      HorizontalAlignment="Stretch" Margin="24,0,0,0"
+                                      PlaceholderText="Choose a certificate..." />
+
+                            <Button Content="View Details…" 
+                                    Command="{Binding ViewCertificateCommand}"
+                                    Margin="24,0,0,0" Padding="12,4"
+                                    IsEnabled="{Binding UseStoreCertificate}" />
+
+                            <TextBlock Text="{Binding CertificateWarning}" 
+                                       TextWrapping="Wrap" Foreground="#FFFFAA00" FontWeight="SemiBold"
+                                       Margin="24,4,0,0"
+                                       IsVisible="{Binding CertificateWarning, 
+                                           Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                            <CheckBox Content="Trust this self-signed certificate for the installer connection"
+                                      IsChecked="{Binding TrustSelfSignedCert}"
+                                      IsVisible="{Binding IsSelfSignedCert}"
+                                      Margin="24,4,0,0" />
+
+                            <TextBlock Text="⚠ The installer will not be able to create the admin user account without trusting this certificate. You can still install, but you will need to create the admin user manually."
+                                       TextWrapping="Wrap" Foreground="#FFFFAA00" FontSize="12"
+                                       Margin="24,2,0,0"
+                                       IsVisible="{Binding SelfSignedNotTrusted}" />
+
+                            <RadioButton Content="Use a .pfx certificate file" 
+                                         IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
+                            
+                            <TextBox Text="{Binding CertificatePath}" 
+                                     Watermark="C:\Certs\service.pfx"
+                                     IsEnabled="{Binding !UseStoreCertificate}"
+                                     Margin="24,0,0,0" />
+                        </StackPanel>
+
+                        <TextBlock Text="The certificate must have a private key. Store certificates are recommended — no password or file path required."
+                                   FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <TextBlock Text="If you skip TLS, the service will use plain HTTP. You can configure TLS later by editing appsettings.json."
+                               FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                               IsVisible="{Binding !UseTls}" />
+                </StackPanel>
+
+                <!-- Step 5: Admin Credentials -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep5}">
+                    <TextBlock Text="Step 5 of 6 — Admin Credentials" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Create the initial admin account for the service." 
+                               TextWrapping="Wrap" Opacity="0.7" />
+                    <Border Background="#33005599" CornerRadius="4" Padding="10" Margin="0,2,0,0">
+                        <TextBlock TextWrapping="Wrap" FontSize="12"
+                                   Text="ℹ These credentials are what the SQL AG Monitor desktop app will use to authenticate when connecting to this service. Make a note of them — you'll enter them in the desktop app's Settings → Service tab." />
+                    </Border>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Username" />
+                        <TextBox Text="{Binding AdminUsername}" Watermark="admin" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Password (minimum 8 characters)" />
+                        <TextBox Text="{Binding AdminPassword}" PasswordChar="●" Watermark="Password" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Confirm Password" />
+                        <TextBox Text="{Binding AdminPasswordConfirm}" PasswordChar="●" Watermark="Confirm password" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 6: Ready to Install -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep6}">
+                    <TextBlock Text="Step 6 of 6 — Ready to Install" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Review your settings and click Install to begin." 
+                               TextWrapping="Wrap" Opacity="0.7"
+                               IsVisible="{Binding !IsInstalling}" />
+
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                            CornerRadius="6" Padding="16" IsVisible="{Binding !IsInstalling}">
+                        <StackPanel Spacing="6">
+                            <TextBlock>
+                                <Run Text="Install Path: " FontWeight="SemiBold" /><Run Text="{Binding InstallPath}" />
+                            </TextBlock>
+                            <TextBlock>
+                                <Run Text="Service Account: " FontWeight="SemiBold" /><Run Text="{Binding ServiceAccount}" />
+                            </TextBlock>
+                            <TextBlock>
+                                <Run Text="Port: " FontWeight="SemiBold" /><Run Text="{Binding Port}" />
+                            </TextBlock>
+                            <TextBlock>
+                                <Run Text="TLS: " FontWeight="SemiBold" /><Run Text="{Binding UseTls}" />
+                            </TextBlock>
+                            <TextBlock IsVisible="{Binding UseTls}">
+                                <Run Text="Certificate: " FontWeight="SemiBold" /><Run Text="{Binding SelectedCertificate.Subject, FallbackValue=''}" />
+                                <Run Text="{Binding CertificatePath}" />
+                            </TextBlock>
+                            <TextBlock>
+                                <Run Text="Admin User: " FontWeight="SemiBold" /><Run Text="{Binding AdminUsername}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Progress -->
+                    <StackPanel Spacing="8" IsVisible="{Binding IsInstalling}">
+                        <TextBlock Text="{Binding ProgressText}" FontSize="14" />
+                        <ProgressBar Value="{Binding ProgressValue}" Maximum="100" Height="20" />
+                    </StackPanel>
+
+                    <!-- Error -->
+                    <Border Background="#40FF4444" CornerRadius="6" Padding="12"
+                            IsVisible="{Binding HasFailed}">
+                        <TextBlock Text="{Binding ErrorMessage}" Foreground="#FFFF6666" TextWrapping="Wrap" />
+                    </Border>
+                </StackPanel>
+
+                <!-- Step 7: Complete -->
+                <StackPanel Spacing="16" IsVisible="{Binding IsStep7}">
+                    <TextBlock Text="✓ Installation Complete" FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                        The SqlAgMonitor Service has been installed and started successfully.
+                    </TextBlock>
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                            CornerRadius="6" Padding="16">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Next Steps:" FontWeight="SemiBold" />
+                            <TextBlock TextWrapping="Wrap" Text="1. Open the SqlAgMonitor desktop app" />
+                            <TextBlock TextWrapping="Wrap" Text="2. Go to Settings → Service tab" />
+                            <TextBlock TextWrapping="Wrap" Text="3. Enable Service Client Mode" />
+                            <TextBlock TextWrapping="Wrap">
+                                <Run Text="4. Enter host: " /><Run Text="localhost" FontWeight="SemiBold" />
+                                <Run Text=" port: " /><Run Text="{Binding Port}" FontWeight="SemiBold" />
+                            </TextBlock>
+                            <TextBlock TextWrapping="Wrap">
+                                <Run Text="5. Connect with username: " /><Run Text="{Binding AdminUsername}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="The service is registered in Add/Remove Programs and can be uninstalled from Windows Settings."
+                               FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
+                </StackPanel>
+            </Panel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

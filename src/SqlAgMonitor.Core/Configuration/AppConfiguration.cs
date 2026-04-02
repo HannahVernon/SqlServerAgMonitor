@@ -14,6 +14,7 @@ public class AppConfiguration
     public AlertSettings Alerts { get; set; } = new();
     public ExportSettings Export { get; set; } = new();
     public HistorySettings History { get; set; } = new();
+    public ServiceSettings Service { get; set; } = new();
     public List<MonitoredGroupConfig> MonitoredGroups { get; set; } = new();
 }
 
@@ -102,6 +103,26 @@ public class HistorySettings
     public int? MaxRecords { get; set; }
     public bool AutoPruneEnabled { get; set; } = true;
     public SnapshotRetentionSettings SnapshotRetention { get; set; } = new();
+}
+
+public class ServiceSettings
+{
+    /// <summary>When true, the desktop app connects to a remote SqlAgMonitor Windows Service
+    /// via SignalR instead of monitoring SQL Server directly.</summary>
+    public bool Enabled { get; set; }
+    /// <summary>Hostname or IP of the SqlAgMonitor Service. Default: localhost.</summary>
+    public string Host { get; set; } = "localhost";
+    /// <summary>Port the SqlAgMonitor Service listens on. Clamped to 1–65535 at runtime.</summary>
+    public int Port { get; set; } = 58432;
+    /// <summary>Username for authenticating to the service API.</summary>
+    public string? Username { get; set; }
+    /// <summary>Reference key into credential store for the service password. Never plain text.</summary>
+    public string? CredentialKey { get; set; }
+    /// <summary>When true, require TLS for the SignalR connection.</summary>
+    public bool UseTls { get; set; }
+    /// <summary>Pinned certificate thumbprint for self-signed/untrusted TLS certs.
+    /// Set when the user accepts an untrusted cert — subsequent connections skip the trust prompt.</summary>
+    public string? TrustedCertThumbprint { get; set; }
 }
 
 public class SnapshotRetentionSettings
