@@ -21,6 +21,7 @@ All reports will be reviewed promptly and handled with discretion.
 ### Prerequisites
 
 - [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (pinned via `global.json`)
+- **For service development:** ASP.NET Core runtime (included in .NET 9 SDK)
 - A SQL Server instance with at least one Availability Group (for integration testing)
 - Windows, macOS, or Linux
 
@@ -45,7 +46,10 @@ dotnet run --project src/SqlAgMonitor
 |---|---|
 | `src/SqlAgMonitor/` | Avalonia UI desktop app (views, view models, services) |
 | `src/SqlAgMonitor.Core/` | Core library (monitoring, alerting, DuckDB history, configuration) |
+| `src/SqlAgMonitor.Service/` | Windows Service + SignalR API |
 | `tests/` | Unit and integration tests |
+
+The solution contains three projects: `SqlAgMonitor` (desktop app), `SqlAgMonitor.Core` (shared logic), and `SqlAgMonitor.Service` (Windows Service). All build with `dotnet build`.
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Detailed architecture overview |
 | [FEATURE-GUIDE.md](FEATURE-GUIDE.md) | Feature documentation |
 | [SERVICE-PLAN.md](SERVICE-PLAN.md) | Planned Windows Service + SignalR API |
