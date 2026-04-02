@@ -658,7 +658,7 @@ public class StatisticsViewModel : ViewModelBase
         _autoRefreshSubscription?.Dispose();
         _autoRefreshSubscription = null;
 
-        if (!enabled) return;
+        if (!enabled || _autoRefreshPaused) return;
 
         var intervalSeconds = _configService.Load().GlobalPollingIntervalSeconds;
 
@@ -667,6 +667,29 @@ public class StatisticsViewModel : ViewModelBase
             .Where(_ => !_isLoading)
             .SelectMany(_ => Observable.FromAsync(LoadDataAsync))
             .Subscribe();
+    }
+
+    private bool _autoRefreshPaused;
+
+    /// <summary>
+    /// Temporarily suspends auto-refresh while the window is minimized
+    /// to avoid SkiaSharp rendering on an invisible surface.
+    /// </summary>
+    public void PauseAutoRefresh()
+    {
+        _autoRefreshPaused = true;
+        _autoRefreshSubscription?.Dispose();
+        _autoRefreshSubscription = null;
+    }
+
+    /// <summary>
+    /// Resumes auto-refresh when the window becomes visible again.
+    /// </summary>
+    public void ResumeAutoRefresh()
+    {
+        _autoRefreshPaused = false;
+        if (_autoRefresh)
+            ConfigureAutoRefresh(true);
     }
 
     public StatisticsState SaveState() => new()

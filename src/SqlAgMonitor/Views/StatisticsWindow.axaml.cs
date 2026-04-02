@@ -26,6 +26,18 @@ public partial class StatisticsWindow : Window
         _layoutService = App.Services.GetRequiredService<ILayoutStateService>();
         Opened += OnWindowOpened;
         Closed += OnWindowClosed;
+
+        // Pause chart auto-refresh when the window is minimized or hidden
+        // to reduce the chance of hitting the SkiaSharp font handle crash
+        // in the LiveCharts composition-thread render loop.
+        this.GetObservable(WindowStateProperty).Subscribe(state =>
+        {
+            if (DataContext is not StatisticsViewModel vm) return;
+            if (state == WindowState.Minimized)
+                vm.PauseAutoRefresh();
+            else
+                vm.ResumeAutoRefresh();
+        });
     }
 
     private async void OnWindowOpened(object? sender, EventArgs e)
