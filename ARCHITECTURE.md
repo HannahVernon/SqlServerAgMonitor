@@ -84,10 +84,13 @@ In addition to the SignalR hub, the service exposes REST endpoints:
 
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
+| GET | `/api/version` | Protocol version check (unauthenticated — clients must call before login) |
 | POST | `/api/auth/login` | Authenticate and receive a JWT token |
 | POST | `/api/auth/setup` | Create the initial admin account (first-run only) |
 | GET | `/api/config/export` | Export the service's current configuration (credentials redacted) |
 | POST | `/api/config/import` | Import configuration (additive merge — adds groups, alerts, email, syslog settings without removing existing ones) |
+
+The protocol version is defined in `SqlAgMonitor.Core/ServiceProtocol.cs` and must be incremented for any breaking API change. See [SERVICE-PROTOCOL.md](SERVICE-PROTOCOL.md) for the full client integration reference and [CONTRIBUTING.md](CONTRIBUTING.md) for the versioning policy.
 
 ### TLS Certificate Pinning
 

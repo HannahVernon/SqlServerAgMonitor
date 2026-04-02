@@ -107,6 +107,26 @@ These patterns were learned through hard-won debugging — please follow them:
 - `main` — stable releases only
 - Feature branches are deleted after merge
 
+### Service Protocol Versioning
+
+The service and desktop client negotiate compatibility via `GET /api/version`, which returns a `protocolVersion` integer. The shared constant lives in `SqlAgMonitor.Core/ServiceProtocol.cs`.
+
+**You must increment `ServiceProtocol.Current` when making any of these changes:**
+
+- Adding, removing, or renaming a REST endpoint
+- Changing the request or response shape of an existing endpoint
+- Adding, removing, or renaming a SignalR hub method or push event
+- Changing the parameter types or return types of a hub method
+- Any change that would cause an older client to fail against the new service (or vice versa)
+
+**You do NOT need to bump the version for:**
+
+- Adding optional fields to an existing response (additive, non-breaking)
+- Bug fixes that don't change the API contract
+- Internal refactoring
+
+The client checks the protocol version at three points: before initial login, during Test Connection in Settings, and after every SignalR reconnect. A mismatch shows a clear upgrade prompt to the user. See [SERVICE-PROTOCOL.md](SERVICE-PROTOCOL.md) for the full API reference.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](licence.md) that covers this project.
