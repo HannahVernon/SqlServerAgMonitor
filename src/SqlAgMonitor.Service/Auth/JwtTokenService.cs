@@ -79,6 +79,7 @@ public sealed class JwtTokenService
             keyBytes = new byte[64]; // 512-bit key
             RandomNumberGenerator.Fill(keyBytes);
             File.WriteAllBytes(keyPath, keyBytes);
+            FileAccessHelper.RestrictToCurrentUser(keyPath, _logger);
             _logger.LogInformation("Generated new JWT signing key at {Path}", keyPath);
         }
 

@@ -127,6 +127,7 @@ public sealed class UserStore
         {
             var json = JsonSerializer.Serialize(_users.Values.ToList(), JsonOptions);
             File.WriteAllText(_storePath, json);
+            FileAccessHelper.RestrictToCurrentUser(_storePath, _logger);
         }
         catch (Exception ex)
         {
