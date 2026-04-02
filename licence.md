@@ -57,6 +57,8 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [Microsoft.Extensions.Logging](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Logging.Abstractions](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [Microsoft.Extensions.Hosting.WindowsServices](https://github.com/dotnet/runtime) | 9.0.6 | © Microsoft Corporation |
+| [Microsoft.AspNetCore.Authentication.JwtBearer](https://github.com/dotnet/aspnetcore) | 9.0.6 | © Microsoft Corporation |
+| [BCrypt.Net-Next](https://github.com/BcryptNet/bcrypt.net) | 4.0.3 | © Chris McKee, Ryan D. Emerl, Damien Miller |
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 
 ### Apache License 2.0
