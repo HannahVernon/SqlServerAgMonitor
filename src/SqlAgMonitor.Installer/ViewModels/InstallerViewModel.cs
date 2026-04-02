@@ -413,12 +413,22 @@ public class InstallerViewModel : ReactiveObject
         if (!File.Exists(exePath))
             throw new FileNotFoundException($"Service executable not found at {exePath}");
 
+        // Remove existing service registration if present (exit code 1060 = not found, which is fine)
+        var deleteExitCode = await RunProcessAsync("sc.exe", $"delete {ServiceName}");
+        Log($"sc.exe delete '{ServiceName}' exited with code {deleteExitCode}");
+        if (deleteExitCode == 0)
+        {
+            // Brief pause to let SCM fully release the service entry
+            await Task.Delay(2000);
+        }
+
         var binPath = $"\"{exePath}\"";
         var args = $"create {ServiceName} binPath= {binPath} DisplayName= \"{DisplayName}\" start= delayed-auto obj= \"{ServiceAccount}\"";
 
         if (!UseLocalService && !string.IsNullOrEmpty(ServicePassword))
             args += $" password= \"{ServicePassword}\"";
 
+        Log($"Running: sc.exe {args}");
         var exitCode = await RunProcessAsync("sc.exe", args);
         if (exitCode != 0)
             throw new InvalidOperationException($"sc.exe create failed with exit code {exitCode}.");
