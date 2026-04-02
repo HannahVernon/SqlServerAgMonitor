@@ -274,13 +274,13 @@ public class InstallerViewModel : ReactiveObject
 
         var payload = new { username = AdminUsername, password = AdminPassword };
         var json = JsonSerializer.Serialize(payload);
-        using var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         // Retry a few times — service may still be starting
         for (int attempt = 1; attempt <= 5; attempt++)
         {
             try
             {
+                using var content = new StringContent(json, Encoding.UTF8, "application/json");
                 var response = await client.PostAsync("/api/auth/setup", content);
                 if (response.IsSuccessStatusCode)
                     return;

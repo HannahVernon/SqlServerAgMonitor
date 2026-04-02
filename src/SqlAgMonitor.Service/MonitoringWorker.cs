@@ -99,7 +99,8 @@ public sealed class MonitoringWorker : BackgroundService
                         alert.AlertType, alert.GroupName);
 
                     // Push to all connected SignalR clients
-                    _ = _hubContext.Clients.All.SendAsync("OnAlertFired", alert);
+                    _ = SafeSendAsync(() =>
+                        _hubContext.Clients.All.SendAsync("OnAlertFired", alert));
                 },
                 ex => _logger.LogError(ex, "Alert observable error"));
         _subscriptions.Add(alertSub);
@@ -141,10 +142,11 @@ public sealed class MonitoringWorker : BackgroundService
         }
 
         _alertEngine.EvaluateSnapshot(snapshot, previous);
-        _ = _eventRecorder.RecordSnapshotAsync(snapshot);
+        _ = SafeSendAsync(() => _eventRecorder.RecordSnapshotAsync(snapshot));
 
         // Push to all connected SignalR clients
-        _ = _hubContext.Clients.All.SendAsync("OnSnapshotReceived", snapshot.Name, snapshot);
+        _ = SafeSendAsync(() =>
+            _hubContext.Clients.All.SendAsync("OnSnapshotReceived", snapshot.Name, snapshot));
     }
 
     private void StartScheduledExport()
@@ -180,5 +182,17 @@ public sealed class MonitoringWorker : BackgroundService
         catch (Exception ex) { _logger.LogWarning(ex, "Error disposing DAG monitor"); }
 
         await base.StopAsync(cancellationToken);
+    }
+
+    private async Task SafeSendAsync(Func<Task> action)
+    {
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Fire-and-forget async operation failed");
+        }
     }
 }
