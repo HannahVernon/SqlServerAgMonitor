@@ -28,6 +28,7 @@ public class InstallerViewModel : ReactiveObject
     private bool _isInstalling;
     private bool _isComplete;
     private bool _hasFailed;
+    private readonly List<string> _completedActions = new();
 
     // Step 1: Install path
     private string _installPath = @"C:\Program Files\SqlAgMonitor";
@@ -76,7 +77,7 @@ public class InstallerViewModel : ReactiveObject
         NextCommand = ReactiveCommand.Create(OnNext, canGoNext);
         BackCommand = ReactiveCommand.Create(OnBack, canGoBack);
         InstallCommand = ReactiveCommand.CreateFromTask(OnInstallAsync, canInstall);
-        CloseCommand = ReactiveCommand.Create(OnClose);
+        CloseCommand = ReactiveCommand.CreateFromTask(OnCloseAsync);
 
         var canViewCert = this.WhenAnyValue(x => x.SelectedCertificate)
             .Select(cert => cert != null);
@@ -121,7 +122,15 @@ public class InstallerViewModel : ReactiveObject
     public bool IsStep7 => CurrentStep == 7;
 
     public bool IsInstalling { get => _isInstalling; set => this.RaiseAndSetIfChanged(ref _isInstalling, value); }
-    public bool IsComplete { get => _isComplete; set => this.RaiseAndSetIfChanged(ref _isComplete, value); }
+    public bool IsComplete
+    {
+        get => _isComplete;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isComplete, value);
+            this.RaisePropertyChanged(nameof(CloseButtonText));
+        }
+    }
     public bool HasFailed { get => _hasFailed; set => this.RaiseAndSetIfChanged(ref _hasFailed, value); }
 
     public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
@@ -177,6 +186,8 @@ public class InstallerViewModel : ReactiveObject
     public string AdminPassword { get => _adminPassword; set => this.RaiseAndSetIfChanged(ref _adminPassword, value); }
     public string AdminPasswordConfirm { get => _adminPasswordConfirm; set => this.RaiseAndSetIfChanged(ref _adminPasswordConfirm, value); }
 
+    public string CloseButtonText => IsComplete ? "Close" : "Cancel";
+
     // Progress
     public string ProgressText { get => _progressText; set => this.RaiseAndSetIfChanged(ref _progressText, value); }
     public double ProgressValue { get => _progressValue; set => this.RaiseAndSetIfChanged(ref _progressValue, value); }
@@ -184,39 +195,66 @@ public class InstallerViewModel : ReactiveObject
 
     private void OnNext() => CurrentStep++;
     private void OnBack() => CurrentStep--;
-    private void OnClose() => CloseRequested?.Invoke();
+
+    private async Task OnCloseAsync()
+    {
+        if (IsComplete || _completedActions.Count == 0)
+        {
+            CloseRequested?.Invoke();
+            return;
+        }
+
+        var summary = string.Join("\n", _completedActions.Select(a => $"  • {a}"));
+        var message = _completedActions.Count > 0
+            ? $"The following actions have already been completed:\n\n{summary}\n\n" +
+              "If you cancel now, you may need to manually clean up:\n" +
+              $"  • Delete the installed files at: {InstallPath}\n" +
+              $"  • Remove the Windows Service: sc.exe delete {ServiceName}\n" +
+              $"  • Remove the registry entry from Add/Remove Programs\n\n" +
+              "Are you sure you want to cancel?"
+            : "No installation steps have been performed yet.\n\nAre you sure you want to cancel?";
+
+        if (ConfirmCancelInstallation != null)
+        {
+            var confirmed = await ConfirmCancelInstallation(message);
+            if (!confirmed) return;
+        }
+
+        CloseRequested?.Invoke();
+    }
 
     private async Task OnInstallAsync()
     {
         IsInstalling = true;
         HasFailed = false;
         ErrorMessage = string.Empty;
+        _completedActions.Clear();
 
         try
         {
-            // Step 1: Publish service
             await SetProgress("Publishing service files...", 0);
             await PublishServiceAsync();
+            _completedActions.Add($"Published service files to {InstallPath}");
 
-            // Step 2: Write appsettings override
             await SetProgress("Writing configuration...", 20);
             WriteAppSettings();
+            _completedActions.Add("Wrote appsettings.json configuration");
 
-            // Step 3: Create Windows Service
             await SetProgress("Creating Windows Service...", 40);
             await CreateServiceAsync();
+            _completedActions.Add($"Created Windows Service '{ServiceName}'");
 
-            // Step 4: Start service
             await SetProgress("Starting service...", 60);
             await StartServiceAsync();
+            _completedActions.Add("Started the Windows Service");
 
-            // Step 5: Create initial admin user
             await SetProgress("Creating admin user...", 80);
             await CreateAdminUserAsync();
+            _completedActions.Add($"Created admin user '{AdminUsername}'");
 
-            // Step 6: Write Add/Remove Programs registry
             await SetProgress("Registering in Add/Remove Programs...", 90);
             WriteUninstallRegistry();
+            _completedActions.Add("Registered in Add/Remove Programs");
 
             await SetProgress("Installation complete!", 100);
             IsComplete = true;
@@ -350,12 +388,84 @@ public class InstallerViewModel : ReactiveObject
         await Task.Delay(3000);
     }
 
+    /// <summary>
+    /// Callback invoked when TLS validation fails. The window wires this up to show
+    /// the certificate to the user and ask for confirmation. Returns true to accept.
+    /// </summary>
+    public Func<X509Certificate2, Task<bool>>? ConfirmUntrustedCertificate { get; set; }
+
+    /// <summary>
+    /// Callback invoked when the user clicks Cancel during or after a partial install.
+    /// Receives a description of what has been done. Returns true to confirm exit.
+    /// </summary>
+    public Func<string, Task<bool>>? ConfirmCancelInstallation { get; set; }
+
     private async Task CreateAdminUserAsync()
     {
         var scheme = UseTls ? "https" : "http";
         var baseUrl = $"{scheme}://localhost:{Port}";
 
-        using var client = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromSeconds(15) };
+        string? acceptedThumbprint = null;
+
+        if (UseTls)
+        {
+            // Phase 1: try with standard validation — capture cert on failure
+            X509Certificate2? capturedCert = null;
+
+            using var probeHandler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                {
+                    if (errors == System.Net.Security.SslPolicyErrors.None)
+                        return true;
+
+                    if (cert != null)
+                        capturedCert = new X509Certificate2(cert);
+                    return false;
+                }
+            };
+
+            using var probeClient = new HttpClient(probeHandler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+
+            try
+            {
+                await probeClient.GetAsync("/api/auth/setup");
+                // If we get here, cert was trusted — proceed normally
+            }
+            catch (HttpRequestException) when (capturedCert != null)
+            {
+                // Cert was not trusted — ask the user
+                if (ConfirmUntrustedCertificate != null)
+                {
+                    var accepted = await ConfirmUntrustedCertificate(capturedCert);
+                    if (!accepted)
+                        throw new InvalidOperationException(
+                            "Certificate was not trusted. Admin user was not created. " +
+                            "You can create one manually after configuring a trusted certificate.");
+
+                    acceptedThumbprint = capturedCert.Thumbprint;
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
+
+        // Phase 2: actual admin user creation (with pinned thumbprint if needed)
+        using var handler = new HttpClientHandler();
+        if (acceptedThumbprint != null)
+        {
+            var pinned = acceptedThumbprint;
+            handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+        }
+
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromSeconds(15) };
 
         var payload = new { username = AdminUsername, password = AdminPassword };
         var json = JsonSerializer.Serialize(payload);

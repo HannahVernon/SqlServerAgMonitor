@@ -30,7 +30,7 @@
                     IsVisible="{Binding !IsComplete}" />
             <Button Content="Install" Command="{Binding InstallCommand}" MinWidth="100"
                     Classes="accent" IsVisible="{Binding !IsComplete}" />
-            <Button Content="Close" Command="{Binding CloseCommand}" MinWidth="80" />
+            <Button Content="{Binding CloseButtonText}" Command="{Binding CloseCommand}" MinWidth="80" />
         </StackPanel>
 
         <!-- Wizard content area -->

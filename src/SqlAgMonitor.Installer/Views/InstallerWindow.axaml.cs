@@ -1,4 +1,7 @@
+using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using Avalonia.ReactiveUI;
+using Avalonia.Threading;
 using SqlAgMonitor.Installer.ViewModels;
 
 namespace SqlAgMonitor.Installer.Views;
@@ -17,6 +20,28 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
         if (DataContext is InstallerViewModel vm)
         {
             vm.CloseRequested += () => Close();
+            vm.ConfirmUntrustedCertificate = PromptUserForCertificateTrust;
+            vm.ConfirmCancelInstallation = PromptUserForCancelConfirmation;
         }
+    }
+
+    private async Task<bool> PromptUserForCertificateTrust(X509Certificate2 certificate)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var dialog = new CertificateConfirmDialog(certificate);
+            await dialog.ShowDialog(this);
+            return dialog.Accepted;
+        });
+    }
+
+    private async Task<bool> PromptUserForCancelConfirmation(string message)
+    {
+        return await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            var dialog = new CancelConfirmDialog(message);
+            await dialog.ShowDialog(this);
+            return dialog.Confirmed;
+        });
     }
 }
