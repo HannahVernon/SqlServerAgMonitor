@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.Notifications;
+using SqlAgMonitor.Services;
 
 namespace SqlAgMonitor.ViewModels;
 
@@ -53,6 +54,7 @@ public class SettingsViewModel : ViewModelBase
 
     // Service
     private bool _serviceEnabled;
+    private bool _serviceWasPreviouslyEnabled;
     private string _serviceHost = "localhost";
     private int _servicePort = 58432;
     private string? _serviceUsername;
@@ -172,6 +174,7 @@ public class SettingsViewModel : ViewModelBase
         MaxRetentionDays = config.History.MaxRetentionDays ?? 0;
         MaxRecords = config.History.MaxRecords ?? 0;
         ServiceEnabled = config.Service.Enabled;
+        _serviceWasPreviouslyEnabled = config.Service.Enabled;
         ServiceHost = config.Service.Host;
         ServicePort = config.Service.Port;
         ServiceUsername = config.Service.Username;
@@ -248,6 +251,17 @@ public class SettingsViewModel : ViewModelBase
     /// Receives the untrusted X509Certificate2, returns true if the user accepts it.
     /// </summary>
     public Func<X509Certificate2, Task<bool>>? ConfirmUntrustedCertificate { get; set; }
+
+    /// <summary>
+    /// Callback wired by the window to offer config migration to the service.
+    /// Receives the list of group names to migrate, returns true if the user confirms.
+    /// </summary>
+    public Func<List<string>, Task<bool>>? ConfirmMigration { get; set; }
+
+    /// <summary>
+    /// True when service mode was newly enabled (wasn't previously enabled) and local groups exist.
+    /// </summary>
+    public bool ShouldOfferMigration => ServiceEnabled && !_serviceWasPreviouslyEnabled;
 
     /// <summary>
     /// If the user accepted an untrusted cert during Test Connection, its thumbprint is stored
@@ -371,6 +385,95 @@ public class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             TestConnectionStatus = $"✗ {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Pushes local config (groups, alerts, email, syslog) to the remote service.
+    /// Returns a human-readable result message.
+    /// </summary>
+    public async Task<string> MigrateConfigToServiceAsync()
+    {
+        var config = _configService.Load();
+        var svc = config.Service;
+        var scheme = svc.UseTls ? "https" : "http";
+        var port = Math.Clamp(svc.Port, 1, 65535);
+        var baseUrl = $"{scheme}://{svc.Host}:{port}";
+
+        try
+        {
+            var thumbprint = AcceptedCertThumbprint ?? svc.TrustedCertThumbprint;
+
+            // Step 1: Login to get JWT
+            var token = await ServiceMonitoringClient.LoginAsync(svc, ServiceUsername ?? "", ServicePassword, thumbprint);
+            if (token == null)
+                return "Migration failed — could not authenticate with the service.";
+
+            // Step 2: Push config via import API
+            using var handler = new HttpClientHandler();
+            if (thumbprint != null)
+            {
+                var pinned = thumbprint;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                    cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var importPayload = new
+            {
+                monitoredGroups = config.MonitoredGroups,
+                alerts = config.Alerts,
+                email = config.Email,
+                syslog = config.Syslog
+            };
+
+            var json = JsonSerializer.Serialize(importPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/config/import", content);
+
+            if (!response.IsSuccessStatusCode)
+                return $"Migration failed — service returned {(int)response.StatusCode} {response.StatusCode}.";
+
+            var resultJson = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(resultJson);
+
+            var imported = doc.RootElement.GetProperty("imported");
+            var groups = imported.GetProperty("groups").GetInt32();
+            var alerts = imported.GetProperty("alerts").GetBoolean();
+            var email = imported.GetProperty("email").GetBoolean();
+            var syslog = imported.GetProperty("syslog").GetBoolean();
+
+            var parts = new List<string>();
+            if (groups > 0) parts.Add($"{groups} group(s)");
+            if (alerts) parts.Add("alert settings");
+            if (email) parts.Add("email settings");
+            if (syslog) parts.Add("syslog settings");
+
+            var sqlAuthGroups = config.MonitoredGroups
+                .Where(g => g.Connections.Any(c =>
+                    string.Equals(c.AuthType, "sql", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.CredentialKey)))
+                .Select(g => g.Name)
+                .ToList();
+
+            var result = $"✓ Migrated: {string.Join(", ", parts)}.";
+
+            if (sqlAuthGroups.Count > 0)
+            {
+                result += $"\n\n⚠ The following groups use SQL Server authentication and their passwords were NOT transferred: {string.Join(", ", sqlAuthGroups)}. You will need to re-enter these passwords on the service side.";
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return $"Migration failed — {ex.Message}";
         }
     }
 }

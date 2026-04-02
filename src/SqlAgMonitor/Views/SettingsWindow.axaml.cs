@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Avalonia.ReactiveUI;
@@ -21,7 +23,7 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
             {
                 vm.ConfirmUntrustedCertificate = OnConfirmUntrustedCertificateAsync;
 
-                vm.CloseRequested += async saved =>
+                vm.CloseRequested = async saved =>
                 {
                     if (saved)
                     {
@@ -42,6 +44,12 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
 
                         var themeService = App.Services.GetRequiredService<IThemeService>();
                         themeService.SetTheme(config.Theme);
+
+                        /* Offer config migration if service mode was just enabled */
+                        if (vm.ShouldOfferMigration && config.MonitoredGroups.Count > 0)
+                        {
+                            await OfferMigrationAsync(vm, config);
+                        }
                     }
 
                     Close();
@@ -55,5 +63,19 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
         var dialog = new CertificateTrustDialog(certificate);
         await dialog.ShowDialog(this);
         return dialog.Accepted;
+    }
+
+    private async Task OfferMigrationAsync(SettingsViewModel vm, AppConfiguration config)
+    {
+        var groupNames = config.MonitoredGroups.Select(g => g.Name).ToList();
+
+        var sqlAuthGroupNames = config.MonitoredGroups
+            .Where(g => g.Connections.Any(c =>
+                string.Equals(c.AuthType, "sql", System.StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.CredentialKey)))
+            .Select(g => g.Name)
+            .ToList();
+
+        var dialog = new MigrationDialog(groupNames, sqlAuthGroupNames, vm.MigrateConfigToServiceAsync);
+        await dialog.ShowDialog(this);
     }
 }
