@@ -46,6 +46,13 @@ public class SettingsViewModel : ViewModelBase
     private int _maxRetentionDays = 90;
     private int _maxRecords;
 
+    // Service
+    private bool _serviceEnabled;
+    private string _serviceHost = "localhost";
+    private int _servicePort = 58432;
+    private string? _serviceUsername;
+    private bool _serviceUseTls;
+
     // UI feedback
     private string? _testEmailStatus;
 
@@ -92,7 +99,14 @@ public class SettingsViewModel : ViewModelBase
     public int MaxRetentionDays { get => _maxRetentionDays; set => this.RaiseAndSetIfChanged(ref _maxRetentionDays, value); }
     public int MaxRecords { get => _maxRecords; set => this.RaiseAndSetIfChanged(ref _maxRecords, value); }
 
-    public string? TestEmailStatus { get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
+    // Service settings
+    public bool ServiceEnabled { get => _serviceEnabled; set => this.RaiseAndSetIfChanged(ref _serviceEnabled, value); }
+    public string ServiceHost { get => _serviceHost; set => this.RaiseAndSetIfChanged(ref _serviceHost, value); }
+    public int ServicePort { get => _servicePort; set => this.RaiseAndSetIfChanged(ref _servicePort, value); }
+    public string? ServiceUsername { get => _serviceUsername; set => this.RaiseAndSetIfChanged(ref _serviceUsername, value); }
+    public bool ServiceUseTls { get => _serviceUseTls; set => this.RaiseAndSetIfChanged(ref _serviceUseTls, value); }
+
+    public string? TestEmailStatus{ get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
@@ -146,6 +160,11 @@ public class SettingsViewModel : ViewModelBase
         AutoPruneEnabled = config.History.AutoPruneEnabled;
         MaxRetentionDays = config.History.MaxRetentionDays ?? 0;
         MaxRecords = config.History.MaxRecords ?? 0;
+        ServiceEnabled = config.Service.Enabled;
+        ServiceHost = config.Service.Host;
+        ServicePort = config.Service.Port;
+        ServiceUsername = config.Service.Username;
+        ServiceUseTls = config.Service.UseTls;
     }
 
     public void ApplyTo(AppConfiguration config)
@@ -172,6 +191,11 @@ public class SettingsViewModel : ViewModelBase
         config.History.AutoPruneEnabled = AutoPruneEnabled;
         config.History.MaxRetentionDays = MaxRetentionDays > 0 ? MaxRetentionDays : null;
         config.History.MaxRecords = MaxRecords > 0 ? MaxRecords : null;
+        config.Service.Enabled = ServiceEnabled;
+        config.Service.Host = ServiceHost;
+        config.Service.Port = ServicePort;
+        config.Service.Username = ServiceUsername;
+        config.Service.UseTls = ServiceUseTls;
     }
 
     private void OnSave()
