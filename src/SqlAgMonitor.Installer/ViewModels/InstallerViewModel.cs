@@ -453,7 +453,11 @@ public class InstallerViewModel : ReactiveObject
             if (!string.Equals(existingConfig.ServiceAccount, ServiceAccount, StringComparison.OrdinalIgnoreCase))
                 differences.Add($"  Service account: \"{existingConfig.ServiceAccount}\" → \"{ServiceAccount}\"");
 
-            if (existingConfig.StartType != "AUTO_START" && existingConfig.StartType != "DELAYED")
+            var isDelayedAuto = existingConfig.StartType != null
+                && existingConfig.StartType.Contains("AUTO_START", StringComparison.OrdinalIgnoreCase)
+                && existingConfig.StartType.Contains("DELAYED", StringComparison.OrdinalIgnoreCase);
+
+            if (!isDelayedAuto)
                 differences.Add($"  Start type: {existingConfig.StartType} → DELAYED AUTO_START");
 
             if (differences.Count == 0)
@@ -536,7 +540,7 @@ public class InstallerViewModel : ReactiveObject
                 if (trimmed.StartsWith("BINARY_PATH_NAME", StringComparison.OrdinalIgnoreCase))
                     binPath = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
                 else if (trimmed.StartsWith("START_TYPE", StringComparison.OrdinalIgnoreCase))
-                    startType = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim().Split(' ')[0];
+                    startType = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
                 else if (trimmed.StartsWith("SERVICE_START_NAME", StringComparison.OrdinalIgnoreCase))
                     account = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
             }
