@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Security;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
@@ -58,7 +60,7 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// Connects to the remote service and begins receiving push events.
     /// Call once at startup when service-client mode is enabled.
     /// </summary>
-    public async Task ConnectAsync(string jwtToken, CancellationToken cancellationToken = default)
+    public async Task ConnectAsync(string jwtToken, string? trustedCertThumbprint = null, CancellationToken cancellationToken = default)
     {
         var config = _configService.Load();
         var serviceConfig = config.Service;
@@ -71,6 +73,20 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
             .WithUrl(hubUrl, options =>
             {
                 options.AccessTokenProvider = () => Task.FromResult<string?>(jwtToken);
+
+                if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+                {
+                    options.HttpMessageHandlerFactory = handler =>
+                    {
+                        if (handler is HttpClientHandler clientHandler)
+                        {
+                            clientHandler.ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                                errors == SslPolicyErrors.None ||
+                                (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase));
+                        }
+                        return handler;
+                    };
+                }
             })
             .WithAutomaticReconnect(new RetryPolicy())
             .Build();
@@ -113,15 +129,29 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// </summary>
     public static async Task<string?> LoginAsync(
         ServiceSettings serviceConfig, string username, string password,
+        string? trustedCertThumbprint = null,
         CancellationToken cancellationToken = default)
     {
         var scheme = serviceConfig.UseTls ? "https" : "http";
         var baseUrl = $"{scheme}://{serviceConfig.Host}:{Math.Clamp(serviceConfig.Port, 1, 65535)}";
 
-        using var client = new System.Net.Http.HttpClient { BaseAddress = new Uri(baseUrl) };
+        HttpClientHandler? handler = null;
+        if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+        {
+            handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    errors == SslPolicyErrors.None ||
+                    (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+            };
+        }
+
+        using var client = handler is not null
+            ? new HttpClient(handler, disposeHandler: true) { BaseAddress = new Uri(baseUrl) }
+            : new HttpClient { BaseAddress = new Uri(baseUrl) };
         var payload = new { username, password };
         var json = System.Text.Json.JsonSerializer.Serialize(payload);
-        using var content = new System.Net.Http.StringContent(json, System.Text.Encoding.UTF8, "application/json");
+        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
 
         var response = await client.PostAsync("/api/auth/login", content, cancellationToken);
         if (!response.IsSuccessStatusCode)

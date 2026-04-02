@@ -22,6 +22,7 @@ using SqlAgMonitor.Core.Services.Credentials;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Core.Services.Notifications;
+using SqlAgMonitor.Services;
 using SqlAgMonitor.Views;
 
 namespace SqlAgMonitor.ViewModels;
@@ -48,6 +49,9 @@ public class MainWindowViewModel : ViewModelBase
     private bool _isAllPaused;
     private string _lastPolledText = string.Empty;
     private AlertHistoryViewModel? _alertHistoryVm;
+    private bool _isServiceMode;
+    private bool _isServiceConnected;
+    private string _serviceConnectionText = string.Empty;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs => _coordinator.MonitorTabs;
     public ObservableCollection<object> AllTabs { get; } = new();
@@ -86,6 +90,24 @@ public class MainWindowViewModel : ViewModelBase
     {
         get => _lastPolledText;
         set => this.RaiseAndSetIfChanged(ref _lastPolledText, value);
+    }
+
+    public bool IsServiceMode
+    {
+        get => _isServiceMode;
+        set => this.RaiseAndSetIfChanged(ref _isServiceMode, value);
+    }
+
+    public bool IsServiceConnected
+    {
+        get => _isServiceConnected;
+        set => this.RaiseAndSetIfChanged(ref _isServiceConnected, value);
+    }
+
+    public string ServiceConnectionText
+    {
+        get => _serviceConnectionText;
+        set => this.RaiseAndSetIfChanged(ref _serviceConnectionText, value);
     }
 
     public ReactiveCommand<Unit, Unit> AddGroupCommand { get; }
@@ -201,6 +223,17 @@ public class MainWindowViewModel : ViewModelBase
             StatusText = $"[{alert.Severity}] {alert.AlertType}: {alert.Message}";
             _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
         };
+
+        if (_coordinator is ServiceMonitoringClient serviceClient)
+        {
+            IsServiceMode = true;
+            ServiceConnectionText = "Connecting…";
+            serviceClient.ConnectionStateChanged += connected =>
+            {
+                IsServiceConnected = connected;
+                ServiceConnectionText = connected ? "● Connected" : "○ Disconnected";
+            };
+        }
 
         _coordinator.SubscribeToMonitors();
         _ = InitializeAsync();

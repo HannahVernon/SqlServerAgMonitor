@@ -1,10 +1,14 @@
 using System;
+using System.Net.Http;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core;
@@ -94,6 +98,10 @@ public partial class App : Application
                 // Override query services with hub proxies
                 eventQuery = new HubEventQueryService(serviceClient);
                 snapshotQuery = new HubSnapshotQueryService(serviceClient);
+
+                // Auto-login in the background after the window is shown
+                _ = AutoLoginAsync(config, serviceClient, credentialStore,
+                    loggerFactory.CreateLogger<App>());
             }
             else
             {
@@ -155,6 +163,128 @@ public partial class App : Application
                 window.WindowState = WindowState.Normal;
                 window.Activate();
             }
+        }
+    }
+
+    private static async Task AutoLoginAsync(
+        AppConfiguration config,
+        ServiceMonitoringClient serviceClient,
+        ICredentialStore credentialStore,
+        ILogger logger)
+    {
+        var svc = config.Service;
+        var username = svc.Username;
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            logger.LogWarning("Service mode enabled but no username configured — skipping auto-login");
+            return;
+        }
+
+        string? password = null;
+        if (!string.IsNullOrEmpty(svc.CredentialKey))
+        {
+            password = await credentialStore.GetPasswordAsync(svc.CredentialKey);
+        }
+
+        if (string.IsNullOrEmpty(password))
+        {
+            logger.LogWarning("Service mode enabled but no stored password — open Settings to configure");
+            return;
+        }
+
+        try
+        {
+            var thumbprint = svc.TrustedCertThumbprint;
+
+            // If TLS with no pinned cert, probe to see if the system trusts it
+            if (svc.UseTls && string.IsNullOrEmpty(thumbprint))
+            {
+                thumbprint = await ProbeCertificateAsync(svc, logger);
+            }
+
+            logger.LogInformation("Auto-login to service as {User}@{Host}:{Port}",
+                username, svc.Host, svc.Port);
+
+            var token = await ServiceMonitoringClient.LoginAsync(svc, username, password, thumbprint);
+            if (token == null)
+            {
+                logger.LogError("Auto-login failed — service returned unauthorized");
+                return;
+            }
+
+            await serviceClient.ConnectAsync(token, thumbprint);
+            logger.LogInformation("Auto-login succeeded — connected to service");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Auto-login failed");
+        }
+    }
+
+    /// <summary>
+    /// Probes the service TLS endpoint. If the cert is untrusted, shows a trust dialog
+    /// on the UI thread and returns the pinned thumbprint if the user accepts.
+    /// </summary>
+    private static async Task<string?> ProbeCertificateAsync(ServiceSettings svc, ILogger logger)
+    {
+        X509Certificate2? capturedCert = null;
+        var baseUrl = $"https://{svc.Host}:{Math.Clamp(svc.Port, 1, 65535)}";
+
+        using var probeHandler = new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+            {
+                if (errors == SslPolicyErrors.None)
+                    return true;
+                if (cert != null)
+                    capturedCert = new X509Certificate2(cert);
+                return false;
+            }
+        };
+
+        using var probeClient = new HttpClient(probeHandler)
+        {
+            BaseAddress = new Uri(baseUrl),
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        try
+        {
+            await probeClient.GetAsync("/api/auth/login");
+            return null; // cert is trusted by system
+        }
+        catch (HttpRequestException) when (capturedCert != null)
+        {
+            logger.LogInformation("Service certificate is not trusted by system, prompting user");
+
+            string? thumbprint = null;
+
+            await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                var mainWindow = (Current?.ApplicationLifetime
+                    as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
+                if (mainWindow == null) return;
+
+                var dialog = new CertificateTrustDialog(capturedCert);
+                await dialog.ShowDialog(mainWindow);
+                if (dialog.Accepted)
+                {
+                    thumbprint = capturedCert.Thumbprint;
+
+                    // Persist the pinned thumbprint
+                    var configService = Services.GetRequiredService<IConfigurationService>();
+                    var cfg = configService.Load();
+                    cfg.Service.TrustedCertThumbprint = thumbprint;
+                    configService.Save(cfg);
+                }
+            });
+
+            return thumbprint;
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "TLS probe failed");
+            return null;
         }
     }
 }
