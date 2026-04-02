@@ -699,7 +699,6 @@ public class InstallerViewModel : ReactiveObject
                 + $"The service account '{ServiceAccount}' may not be able to perform TLS handshakes.\n\n"
                 + "To fix this, either:\n"
                 + "  • Select a certificate with a software-based key (not TPM-backed)\n"
-                + "  • Change the service account to LocalSystem (which can access TPM keys)\n"
                 + "  • Manually grant the service account access to the private key using the\n"
                 + "    Certificates MMC snap-in → Right-click certificate → All Tasks → Manage Private Keys");
         }
