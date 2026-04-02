@@ -39,7 +39,14 @@
                           Loaded="AlertHistoryGrid_Loaded"
                           x:CompileBindings="False">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='yyyy-MM-dd HH:mm:ss'}" Width="150" />
+                        <DataGridTemplateColumn Header="Time" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Timestamp, Converter={StaticResource UtcToLocal}, ConverterParameter='yyyy-MM-dd HH:mm:ss'}"
+                                               VerticalAlignment="Center" Margin="4,0" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Severity" Binding="{Binding Severity}" Width="80" />
                         <DataGridTextColumn Header="Type" Binding="{Binding AlertType}" Width="140" />
                         <DataGridTextColumn Header="Group" Binding="{Binding GroupName}" Width="130" />
