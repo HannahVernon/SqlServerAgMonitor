@@ -62,6 +62,15 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [BCrypt.Net-Next](https://github.com/BcryptNet/bcrypt.net) | 4.0.3 | © Chris McKee, Ryan D. Emerl, Damien Miller |
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 
+### BSD 3-Clause License
+
+The following packages are licensed under the
+[BSD 3-Clause License](https://opensource.org/licenses/BSD-3-Clause):
+
+| Package | Version | Copyright |
+|---------|---------|-----------|
+| [NSubstitute](https://github.com/nsubstitute/NSubstitute) | 5.3.0 | © NSubstitute contributors |
+
 ### Apache License 2.0
 
 The following packages are licensed under the
