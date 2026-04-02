@@ -35,4 +35,24 @@ public sealed class HubSnapshotQueryService : ISnapshotQueryService
     {
         return _client.GetSnapshotFiltersAsync(groupName, replicaName, cancellationToken);
     }
+
+    /// <summary>
+    /// Hub clients don't resolve tiers locally — the server handles fallback
+    /// in its own GetSnapshotDataAsync. Return the preferred tier for the range
+    /// so the UI has a label to display.
+    /// </summary>
+    public Task<SnapshotTier> ResolveTierAsync(
+        DateTimeOffset since, DateTimeOffset until,
+        CancellationToken cancellationToken = default)
+    {
+        var range = until - since;
+        SnapshotTier tier;
+        if (range.TotalHours <= 48)
+            tier = SnapshotTier.Raw;
+        else if (range.TotalDays <= 90)
+            tier = SnapshotTier.Hourly;
+        else
+            tier = SnapshotTier.Daily;
+        return Task.FromResult(tier);
+    }
 }
