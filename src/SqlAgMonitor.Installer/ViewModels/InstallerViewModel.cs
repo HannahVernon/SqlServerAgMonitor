@@ -8,6 +8,7 @@ using System.Reactive;
 using System.Reactive.Linq;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
+using System.ServiceProcess;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -18,6 +19,10 @@ namespace SqlAgMonitor.Installer.ViewModels;
 
 public class InstallerViewModel : ReactiveObject
 {
+    private static readonly string LogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "SqlAgMonitor", "installer.log");
+
     private const string ServiceName = "SqlAgMonitorService";
     private const string DisplayName = "SQL Server AG Monitor Service";
     private const string Publisher = "SqlAgMonitor";
@@ -230,6 +235,9 @@ public class InstallerViewModel : ReactiveObject
         ErrorMessage = string.Empty;
         _completedActions.Clear();
 
+        Log("=== Installation started ===");
+        Log($"InstallPath={InstallPath}, Port={Port}, UseTls={UseTls}, ServiceAccount={ServiceAccount}");
+
         try
         {
             await SetProgress("Publishing service files...", 0);
@@ -239,32 +247,39 @@ public class InstallerViewModel : ReactiveObject
             await SetProgress("Writing configuration...", 20);
             WriteAppSettings();
             _completedActions.Add("Wrote appsettings.json configuration");
+            Log("Wrote appsettings.json");
 
             await SetProgress("Creating Windows Service...", 40);
             await CreateServiceAsync();
             _completedActions.Add($"Created Windows Service '{ServiceName}'");
+            Log($"Created service '{ServiceName}'");
 
             await SetProgress("Starting service...", 60);
             await StartServiceAsync();
             _completedActions.Add("Started the Windows Service");
+            Log("Service started");
 
             await SetProgress("Creating admin user...", 80);
             await CreateAdminUserAsync();
             _completedActions.Add($"Created admin user '{AdminUsername}'");
+            Log($"Created admin user '{AdminUsername}'");
 
             await SetProgress("Registering in Add/Remove Programs...", 90);
             WriteUninstallRegistry();
             _completedActions.Add("Registered in Add/Remove Programs");
+            Log("Wrote uninstall registry entry");
 
             await SetProgress("Installation complete!", 100);
             IsComplete = true;
             CurrentStep = 7;
+            Log("=== Installation completed successfully ===");
         }
         catch (Exception ex)
         {
             HasFailed = true;
             ErrorMessage = ex.Message;
             ProgressText = "Installation failed.";
+            Log($"Installation FAILED: {ex}");
         }
         finally
         {
@@ -281,6 +296,8 @@ public class InstallerViewModel : ReactiveObject
 
     private async Task PublishServiceAsync()
     {
+        await StopExistingServiceAsync();
+
         var repoRoot = FindRepoRoot();
         var projectPath = Path.Combine(repoRoot, "src", "SqlAgMonitor.Service", "SqlAgMonitor.Service.csproj");
 
@@ -297,15 +314,52 @@ public class InstallerViewModel : ReactiveObject
             RedirectStandardError = true
         };
 
+        Log($"Running: dotnet {psi.Arguments}");
+
         using var process = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start dotnet publish.");
 
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
         await process.WaitForExitAsync();
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        Log($"dotnet publish exited with code {process.ExitCode}");
+        if (!string.IsNullOrWhiteSpace(stdout)) Log($"stdout:\n{stdout}");
+        if (!string.IsNullOrWhiteSpace(stderr)) Log($"stderr:\n{stderr}");
 
         if (process.ExitCode != 0)
         {
-            var stderr = await process.StandardError.ReadToEndAsync();
-            throw new InvalidOperationException($"dotnet publish failed (exit code {process.ExitCode}): {stderr}");
+            var combined = string.Join("\n",
+                new[] { stdout, stderr }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            throw new InvalidOperationException(
+                $"dotnet publish failed (exit code {process.ExitCode}). See log at {LogPath}\n{combined}");
+        }
+    }
+
+    private async Task StopExistingServiceAsync()
+    {
+        try
+        {
+            using var sc = new ServiceController(ServiceName);
+            if (sc.Status == ServiceControllerStatus.Stopped)
+            {
+                Log($"Service '{ServiceName}' exists but is already stopped.");
+                return;
+            }
+
+            Log($"Stopping existing service '{ServiceName}' (status: {sc.Status})...");
+            await SetProgress("Stopping existing service...", 0);
+
+            sc.Stop();
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            _completedActions.Add($"Stopped existing service '{ServiceName}' for upgrade");
+            Log($"Service '{ServiceName}' stopped.");
+        }
+        catch (InvalidOperationException)
+        {
+            Log($"Service '{ServiceName}' does not exist — fresh install.");
         }
     }
 
@@ -667,6 +721,23 @@ public class InstallerViewModel : ReactiveObject
             };
 
             CryptUIDlgViewCertificateW(ref viewInfo, out _);
+        }
+    }
+
+    private static void Log(string message)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(LogPath)!;
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] {message}{Environment.NewLine}";
+            File.AppendAllText(LogPath, line);
+        }
+        catch
+        {
+            /* logging is best-effort */
         }
     }
 }
