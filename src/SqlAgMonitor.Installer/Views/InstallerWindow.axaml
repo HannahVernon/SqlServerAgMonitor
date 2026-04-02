@@ -3,13 +3,14 @@
         xmlns:vm="using:SqlAgMonitor.Installer.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="500"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="520"
         x:Class="SqlAgMonitor.Installer.Views.InstallerWindow"
         x:DataType="vm:InstallerViewModel"
         Title="SQL Server AG Monitor — Service Installer"
         Width="620" Height="520"
         WindowStartupLocation="CenterScreen"
-        CanResize="False">
+        CanResize="False"
+        Icon="avares://SqlAgMonitor.Installer/Assets/app-icon.png">
 
     <Design.DataContext>
         <vm:InstallerViewModel/>
@@ -35,8 +36,38 @@
         <!-- Wizard content area -->
         <ScrollViewer>
             <Panel>
-                <!-- Step 0: Install Path -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=0}">
+                <!-- Step 0: Welcome -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep0}">
+                    <TextBlock Text="Welcome" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                        This wizard will install the SQL Server AG Monitor Service as a Windows Service on this machine.
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                        The service runs in the background, monitors your SQL Server Availability Groups and Distributed
+                        Availability Groups, records health snapshots to a local DuckDB database, and exposes a SignalR
+                        API so the SqlAgMonitor desktop app can connect remotely.
+                    </TextBlock>
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                            CornerRadius="6" Padding="16" Margin="0,8,0,0">
+                        <StackPanel Spacing="6">
+                            <TextBlock>
+                                <Run Text="Version: " FontWeight="SemiBold" /><Run Text="{Binding AppVersion}" />
+                            </TextBlock>
+                            <TextBlock TextWrapping="Wrap">
+                                <Run Text="What will be installed:" FontWeight="SemiBold" />
+                            </TextBlock>
+                            <TextBlock Text="  • SqlAgMonitor.Service.exe (self-contained .NET 9 binary)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Windows Service registration (delayed auto-start)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Automatic recovery policy (restart on failure)" Margin="8,0,0,0" />
+                            <TextBlock Text="  • Add/Remove Programs entry for clean uninstall" Margin="8,0,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Click Next to configure the installation, or Close to cancel."
+                               FontSize="12" Opacity="0.6" Margin="0,8,0,0" />
+                </StackPanel>
+
+                <!-- Step 1: Install Path -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep1}">
                     <TextBlock Text="Step 1 of 6 — Install Location" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Choose where to install the service files. The directory will be created if it doesn't exist." 
                                TextWrapping="Wrap" Opacity="0.7" />
@@ -46,8 +77,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Step 1: Service Account -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=1}">
+                <!-- Step 2: Service Account -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep2}">
                     <TextBlock Text="Step 2 of 6 — Service Account" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="The service runs under this Windows account. Use LOCAL SERVICE for local monitoring, or a domain account for Windows-authenticated SQL connections." 
                                TextWrapping="Wrap" Opacity="0.7" />
@@ -62,8 +93,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Step 2: Port -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=2}">
+                <!-- Step 3: Port -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep3}">
                     <TextBlock Text="Step 3 of 6 — Service Port" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="The port the service will listen on for SignalR connections from desktop clients." 
                                TextWrapping="Wrap" Opacity="0.7" />
@@ -75,8 +106,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Step 3: TLS -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=3}">
+                <!-- Step 4: TLS -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep4}">
                     <TextBlock Text="Step 4 of 6 — TLS / HTTPS" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Enable TLS to encrypt connections between the desktop app and the service. Requires a valid certificate." 
                                TextWrapping="Wrap" Opacity="0.7" />
@@ -89,8 +120,8 @@
                                FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
                 </StackPanel>
 
-                <!-- Step 4: Admin Credentials -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=4}">
+                <!-- Step 5: Admin Credentials -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep5}">
                     <TextBlock Text="Step 5 of 6 — Admin Credentials" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Create the initial admin account for the service. You'll use these credentials to connect from the desktop app." 
                                TextWrapping="Wrap" Opacity="0.7" />
@@ -108,8 +139,8 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Step 5: Ready to Install -->
-                <StackPanel Spacing="12" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=5}">
+                <!-- Step 6: Ready to Install -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep6}">
                     <TextBlock Text="Step 6 of 6 — Ready to Install" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Review your settings and click Install to begin." 
                                TextWrapping="Wrap" Opacity="0.7"
@@ -149,8 +180,8 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Step 6: Complete -->
-                <StackPanel Spacing="16" IsVisible="{Binding CurrentStep, Converter={x:Static ObjectConverters.Equal}, ConverterParameter=6}">
+                <!-- Step 7: Complete -->
+                <StackPanel Spacing="16" IsVisible="{Binding IsStep7}">
                     <TextBlock Text="✓ Installation Complete" FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50" />
                     <TextBlock TextWrapping="Wrap" LineHeight="22">
                         The SqlAgMonitor Service has been installed and started successfully.

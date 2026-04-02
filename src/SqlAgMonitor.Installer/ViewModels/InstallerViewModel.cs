@@ -53,7 +53,7 @@ public class InstallerViewModel : ReactiveObject
     {
         var canGoNext = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
-            (step, installing) => step < 5 && !installing);
+            (step, installing) => step < 6 && !installing);
 
         var canGoBack = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
@@ -63,7 +63,7 @@ public class InstallerViewModel : ReactiveObject
             x => x.CurrentStep, x => x.IsInstalling,
             x => x.AdminPassword, x => x.AdminPasswordConfirm,
             (step, installing, pw, confirm) =>
-                step == 5 && !installing &&
+                step == 6 && !installing &&
                 !string.IsNullOrWhiteSpace(pw) && pw.Length >= 8 && pw == confirm);
 
         NextCommand = ReactiveCommand.Create(OnNext, canGoNext);
@@ -81,10 +81,38 @@ public class InstallerViewModel : ReactiveObject
     public event Action? CloseRequested;
 
     // Wizard navigation
-    public int CurrentStep { get => _currentStep; set => this.RaiseAndSetIfChanged(ref _currentStep, value); }
+    public int CurrentStep
+    {
+        get => _currentStep;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _currentStep, value);
+            this.RaisePropertyChanged(nameof(IsStep0));
+            this.RaisePropertyChanged(nameof(IsStep1));
+            this.RaisePropertyChanged(nameof(IsStep2));
+            this.RaisePropertyChanged(nameof(IsStep3));
+            this.RaisePropertyChanged(nameof(IsStep4));
+            this.RaisePropertyChanged(nameof(IsStep5));
+            this.RaisePropertyChanged(nameof(IsStep6));
+            this.RaisePropertyChanged(nameof(IsStep7));
+        }
+    }
+
+    // Step visibility — avoids ObjectConverters.Equal int/string mismatch
+    public bool IsStep0 => CurrentStep == 0;
+    public bool IsStep1 => CurrentStep == 1;
+    public bool IsStep2 => CurrentStep == 2;
+    public bool IsStep3 => CurrentStep == 3;
+    public bool IsStep4 => CurrentStep == 4;
+    public bool IsStep5 => CurrentStep == 5;
+    public bool IsStep6 => CurrentStep == 6;
+    public bool IsStep7 => CurrentStep == 7;
+
     public bool IsInstalling { get => _isInstalling; set => this.RaiseAndSetIfChanged(ref _isInstalling, value); }
     public bool IsComplete { get => _isComplete; set => this.RaiseAndSetIfChanged(ref _isComplete, value); }
     public bool HasFailed { get => _hasFailed; set => this.RaiseAndSetIfChanged(ref _hasFailed, value); }
+
+    public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
     // Step 1
     public string InstallPath { get => _installPath; set => this.RaiseAndSetIfChanged(ref _installPath, value); }
@@ -157,7 +185,7 @@ public class InstallerViewModel : ReactiveObject
 
             await SetProgress("Installation complete!", 100);
             IsComplete = true;
-            CurrentStep = 6;
+            CurrentStep = 7;
         }
         catch (Exception ex)
         {
