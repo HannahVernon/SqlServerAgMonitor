@@ -85,7 +85,7 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **SQL Server 2014+ compatibility** — Automatically falls back to a legacy query when `secondary_lag_seconds` is unavailable (SQL error 207). The time-lag column shows 0 on SQL Server 2014; all other metrics remain fully functional.
 - **Statistics & Trends** — Historical trend charts (View → Statistics…) with time range presets from 24 hours to 1 year plus custom date pickers. Three-tier data retention (raw snapshots → hourly → daily summaries) with automatic rollup and pruning. Summary grid, four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference), and one-click Excel export.
 - **Keyboard shortcuts** — F5 to refresh the active tab, standard menu accelerators.
-- **Windows Service mode** — Run monitoring as a headless Windows Service (`SqlAgMonitor.Service`) with real-time SignalR API. The desktop app connects remotely for live data, alerts, statistics, and Excel export. JWT bearer authentication with bcrypt-hashed local user store. Automatic reconnect with exponential backoff. Install via `scripts/Install-Service.ps1`.
+- **Windows Service mode** — Run monitoring as a headless Windows Service (`SqlAgMonitor.Service`) with real-time SignalR API. The desktop app connects remotely for live data, alerts, statistics, and Excel export. JWT bearer authentication with bcrypt-hashed local user store. Automatic reconnect with exponential backoff. Graphical installer (`SqlAgMonitor.Installer`) handles deployment, service registration, and initial admin setup with Add/Remove Programs compliance.
 
 ## Technology Stack
 
@@ -135,6 +135,7 @@ SqlAgMonitor.sln
 ├── src/SqlAgMonitor.Service/      # Windows Service + SignalR API
 │   ├── Hubs/                      # MonitorHub (real-time push + queries)
 │   └── Auth/                      # JWT token service, local user store
+├── src/SqlAgMonitor.Installer/    # Graphical service installer (Windows only)
 ├── scripts/                       # Service publish/install/uninstall scripts
 └── tests/SqlAgMonitor.Tests/      # Unit tests
 ```

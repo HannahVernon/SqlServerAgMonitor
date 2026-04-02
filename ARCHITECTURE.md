@@ -127,6 +127,15 @@ SqlAgMonitor.sln
 │   │   └── UserStore.cs                # File-based JSON user store with bcrypt hashing
 │   └── appsettings.json                # Port, auth config, logging levels
 │
+├── src/SqlAgMonitor.Installer/          # Graphical service installer (.NET 9, Windows only)
+│   ├── Program.cs                       # Entry point, elevation check, /uninstall flag
+│   ├── UninstallHandler.cs              # Silent uninstall for Add/Remove Programs
+│   ├── ViewModels/
+│   │   └── InstallerViewModel.cs        # 6-step wizard state machine + install pipeline
+│   ├── Views/
+│   │   └── InstallerWindow.axaml(.cs)   # Multi-step wizard UI
+│   └── app.manifest                     # requireAdministrator elevation
+│
 ├── src/SqlAgMonitor.Core/               # Business logic (classlib, .NET 9)
 │   ├── Configuration/
 │   │   ├── AppConfiguration.cs           # All config models
