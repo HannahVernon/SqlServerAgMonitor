@@ -78,6 +78,21 @@ When `Service.Enabled = true` in settings, the app connects to a remote `SqlAgMo
 
 Both modes share the same ViewModels — `IMonitoringCoordinator` abstracts the data source. `HubSnapshotQueryService` and `HubEventQueryService` implement the same `ISnapshotQueryService` / `IEventQueryService` interfaces, delegating to SignalR hub methods instead of local DuckDB.
 
+### Service REST Endpoints
+
+In addition to the SignalR hub, the service exposes REST endpoints:
+
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| POST | `/api/auth/login` | Authenticate and receive a JWT token |
+| POST | `/api/auth/setup` | Create the initial admin account (first-run only) |
+| GET | `/api/config/export` | Export the service's current configuration (credentials redacted) |
+| POST | `/api/config/import` | Import configuration (additive merge — adds groups, alerts, email, syslog settings without removing existing ones) |
+
+### TLS Certificate Pinning
+
+When TLS is enabled, the `ServiceMonitoringClient` validates the server certificate chain. If the certificate is untrusted (e.g., self-signed), `LoginAsync` and `ConnectAsync` accept a `trustedCertThumbprint` parameter. The client compares the server certificate's SHA-256 thumbprint against the pinned value and allows the connection if they match. The SignalR hub connection also uses the pinned thumbprint for ongoing communication.
+
 ## Solution Structure
 
 ```
@@ -109,7 +124,9 @@ SqlAgMonitor.sln
 │   │   ├── MainWindow.axaml(.cs)         # Main window, tab control, dynamic DataGrid
 │   │   ├── StatisticsWindow.axaml(.cs)   # Statistics & trends (View → Statistics…)
 │   │   ├── AddGroupWindow.axaml(.cs)     # AG/DAG discovery wizard
-│   │   └── SettingsWindow.axaml(.cs)     # Settings dialog
+│   │   ├── SettingsWindow.axaml(.cs)     # Settings dialog
+│   │   ├── CertificateTrustDialog.axaml(.cs) # TLS cert trust/pin dialog for untrusted service certs
+│   │   └── MigrationDialog.axaml(.cs)    # Config migration dialog (local → service push)
 │   ├── Helpers/
 │   │   └── DataGridAutoFitHelper.cs      # Double-click column separator to auto-fit
 │   ├── App.axaml(.cs)                    # DI bootstrap, tray icon, theme
