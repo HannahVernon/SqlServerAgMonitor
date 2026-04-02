@@ -290,6 +290,18 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 - **Maximum number of records** — only the most recent N records are kept (default: 0 = unlimited)
 - Pruning runs automatically 10 seconds after startup and then every 24 hours
 
+### Service Tab
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Enable Service Client Mode | Off | When enabled, the app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly |
+| Service Host | localhost | Hostname or IP address of the service |
+| Service Port | 58432 | Port the service listens on |
+| Username | — | Username for service authentication |
+| Require TLS | Off | When enabled, uses HTTPS for the SignalR connection |
+
+When service mode is enabled, the app does not make direct SQL Server connections. All monitoring data, alerts, and statistics come from the remote service. The service password is prompted on first connection and stored securely in the credential store.
+
 ---
 
 ## Credential Security
@@ -328,3 +340,24 @@ Three themes available from the View menu:
 - **Dark** (default) — Dark backgrounds optimized for low-light monitoring
 - **Light** — Light backgrounds for bright environments
 - **High Contrast** — Maximum contrast for accessibility
+
+---
+
+## Windows Service Mode
+
+The SqlAgMonitor Windows Service runs headless monitoring and exposes a SignalR API for remote clients.
+
+### Deployment
+
+1. **Publish:** `.\scripts\Publish-Service.ps1` — builds a self-contained single-file executable
+2. **Install:** `.\scripts\Install-Service.ps1` — registers as a Windows Service with delayed auto-start
+3. **Initial setup:** `POST http://host:58432/api/auth/setup` with `{"username":"admin","password":"YourPassword"}` to create the first user account
+4. **Start:** `Start-Service SqlAgMonitorService`
+
+### Authentication
+
+The service uses JWT bearer tokens. Clients authenticate via `POST /api/auth/login` and include the token in subsequent SignalR connections. Passwords are hashed with bcrypt (work factor 12). The JWT signing key is auto-generated per deployment and stored in `%APPDATA%\SqlAgMonitor\service\jwt-signing-key.bin`.
+
+### Uninstall
+
+`.\scripts\Uninstall-Service.ps1` — stops and removes the Windows Service. Published files are left in place for manual cleanup.

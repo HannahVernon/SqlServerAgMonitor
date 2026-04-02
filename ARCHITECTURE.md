@@ -50,6 +50,34 @@ SQL Server AG Monitor is a .NET 9 desktop application built on Avalonia UI and R
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+## Dual-Mode Architecture
+
+The desktop app supports two operating modes:
+
+### Standalone Mode (default)
+Direct SQL Server connections via `MonitoringCoordinator` → `AgMonitorService` / `DagMonitorService`. DuckDB stores event history locally. This is the original architecture shown in the diagram above.
+
+### Service-Client Mode
+When `Service.Enabled = true` in settings, the app connects to a remote `SqlAgMonitor.Service` instance via SignalR:
+
+```
+┌──────────────────────┐          SignalR           ┌──────────────────────────┐
+│  Desktop App          │ ◄═══════════════════════► │  SqlAgMonitor.Service     │
+│                       │   OnSnapshotReceived       │                          │
+│  ServiceMonitoring    │   OnAlertFired             │  MonitoringWorker        │
+│  Client               │                           │  (IHostedService)        │
+│       │               │   GetSnapshotHistory       │       │                  │
+│       ├─► MonitorTabs │   GetAlertHistory          │       ├─► AgMonitor      │
+│       ├─► Alerts      │   GetSnapshotFilters       │       ├─► DagMonitor     │
+│       └─► Statistics  │   ExportToExcel            │       ├─► AlertEngine    │
+│                       │                           │       └─► DuckDB         │
+│  HubSnapshotQuery ◄───┤                           │                          │
+│  HubEventQuery    ◄───┤   JWT Auth                 │  Kestrel (port 58432)   │
+└──────────────────────┘                            └──────────────────────────┘
+```
+
+Both modes share the same ViewModels — `IMonitoringCoordinator` abstracts the data source. `HubSnapshotQueryService` and `HubEventQueryService` implement the same `ISnapshotQueryService` / `IEventQueryService` interfaces, delegating to SignalR hub methods instead of local DuckDB.
+
 ## Solution Structure
 
 ```
@@ -63,10 +91,15 @@ SqlAgMonitor.sln
 │   ├── Services/
 │   │   ├── FileLoggerProvider.cs         # Daily rotating file logger
 │   │   ├── LayoutStateService.cs         # Window/grid layout persistence
-│   │   └── ThemeService.cs              # Light/dark/high-contrast themes
+│   │   ├── ThemeService.cs              # Light/dark/high-contrast themes
+│   │   ├── ServiceMonitoringClient.cs   # SignalR client for service-client mode
+│   │   ├── HubSnapshotQueryService.cs   # ISnapshotQueryService adapter → hub methods
+│   │   └── HubEventQueryService.cs      # IEventQueryService adapter → hub methods
 │   ├── ViewModels/
 │   │   ├── MainWindowViewModel.cs        # Root VM: tabs, polling, alert wiring
 │   │   ├── MonitorTabViewModel.cs        # Per-group: snapshot → pivot rows
+│   │   ├── IMonitoringCoordinator.cs    # Interface: standalone or service-client mode
+│   │   ├── MonitoringCoordinator.cs     # Direct SQL monitoring (standalone)
 │   │   ├── AlertHistoryViewModel.cs      # Alert history tab (event grid)
 │   │   ├── StatisticsViewModel.cs        # Statistics window (charts, export)
 │   │   ├── AddGroupViewModel.cs          # Discovery wizard
@@ -82,6 +115,17 @@ SqlAgMonitor.sln
 │   ├── App.axaml(.cs)                    # DI bootstrap, tray icon, theme
 │   ├── Program.cs                        # Entry point, logging setup
 │   └── ViewLocator.cs                    # Convention: *ViewModel → *View
+│
+├── src/SqlAgMonitor.Service/            # Windows Service + SignalR API (.NET 9)
+│   ├── Program.cs                       # Kestrel, SignalR, JWT auth, UseWindowsService()
+│   ├── MonitoringWorker.cs              # IHostedService — headless coordinator + hub push
+│   ├── Hubs/
+│   │   ├── MonitorHub.cs               # SignalR hub (6 query methods + push callbacks)
+│   │   └── ExcelExporter.cs            # ClosedXML xlsx generation for hub export
+│   ├── Auth/
+│   │   ├── JwtTokenService.cs          # 512-bit signing key, auto-generated, persisted to AppData
+│   │   └── UserStore.cs                # File-based JSON user store with bcrypt hashing
+│   └── appsettings.json                # Port, auth config, logging levels
 │
 ├── src/SqlAgMonitor.Core/               # Business logic (classlib, .NET 9)
 │   ├── Configuration/
@@ -138,6 +182,10 @@ SqlAgMonitor.sln
 | LiveChartsCore.SkiaSharpView.Avalonia | — | Trend charts in Statistics window |
 | ClosedXML | — | Excel export (.xlsx) from Statistics window |
 | System.Security.Cryptography.ProtectedData | 10.0.5 | Windows DPAPI |
+| Microsoft.AspNetCore.SignalR.Client | 9.0.6 | SignalR client for service-client mode |
+| Microsoft.AspNetCore.Authentication.JwtBearer | 9.0.6 | JWT authentication for service API |
+| BCrypt.Net-Next | 4.0.3 | Password hashing for service user store |
+| Microsoft.Extensions.Hosting.WindowsServices | 9.0.6 | Windows Service host integration |
 
 ## Data Flow
 
