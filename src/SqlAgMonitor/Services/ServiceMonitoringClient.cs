@@ -4,11 +4,13 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Security;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Threading;
 using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
 using SqlAgMonitor.ViewModels;
@@ -162,6 +164,68 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
         return doc.RootElement.TryGetProperty("token", out var tokenProp)
             ? tokenProp.GetString()
             : null;
+    }
+
+    /// <summary>
+    /// Checks the remote service protocol version. Returns null if compatible,
+    /// or an error message string if the service is incompatible or unreachable.
+    /// </summary>
+    public static async Task<string?> CheckVersionAsync(
+        ServiceSettings serviceConfig,
+        string? trustedCertThumbprint = null,
+        CancellationToken cancellationToken = default)
+    {
+        var scheme = serviceConfig.UseTls ? "https" : "http";
+        var baseUrl = $"{scheme}://{serviceConfig.Host}:{Math.Clamp(serviceConfig.Port, 1, 65535)}";
+
+        HttpClientHandler? handler = null;
+        if (trustedCertThumbprint is not null && serviceConfig.UseTls)
+        {
+            handler = new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    errors == SslPolicyErrors.None ||
+                    (cert != null && string.Equals(cert.GetCertHashString(), trustedCertThumbprint, StringComparison.OrdinalIgnoreCase))
+            };
+        }
+
+        using var client = handler is not null
+            ? new HttpClient(handler, disposeHandler: true) { BaseAddress = new Uri(baseUrl) }
+            : new HttpClient { BaseAddress = new Uri(baseUrl) };
+        client.Timeout = TimeSpan.FromSeconds(10);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.GetAsync("/api/version", cancellationToken);
+        }
+        catch (HttpRequestException ex)
+        {
+            return $"Cannot reach service: {ex.InnerException?.Message ?? ex.Message}";
+        }
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            return "The service does not support protocol versioning. Please update the service to the latest version.";
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return $"Version check failed — service returned {(int)response.StatusCode}.";
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var versionDoc = JsonDocument.Parse(json);
+        if (versionDoc.RootElement.TryGetProperty("protocolVersion", out var versionProp))
+        {
+            var remoteVersion = versionProp.GetInt32();
+            if (remoteVersion < ServiceProtocol.Current)
+            {
+                return $"The service is running protocol version {remoteVersion} but this client requires version {ServiceProtocol.Current}. Please update the service.";
+            }
+        }
+
+        return null;
     }
 
     /// <summary>

@@ -334,7 +334,22 @@ public class SettingsViewModel : ViewModelBase
                 }
             }
 
-            // Phase 2: attempt login
+            // Phase 2: check protocol version
+            var svcSettings = new ServiceSettings
+            {
+                Host = ServiceHost,
+                Port = port,
+                UseTls = ServiceUseTls
+            };
+            var versionError = await ServiceMonitoringClient.CheckVersionAsync(
+                svcSettings, pinnedThumbprint, cancellationToken);
+            if (versionError != null)
+            {
+                TestConnectionStatus = $"✗ {versionError}";
+                return;
+            }
+
+            // Phase 3: attempt login
             using var handler = new HttpClientHandler();
             if (pinnedThumbprint != null)
             {

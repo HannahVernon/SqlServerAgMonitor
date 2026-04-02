@@ -152,6 +152,13 @@ app.MapPost("/api/auth/login", (LoginRequest request, JwtTokenService jwt, UserS
     return Results.Ok(new { token });
 });
 
+// Protocol version — unauthenticated so clients can check compatibility before login
+app.MapGet("/api/version", () => Results.Ok(new
+{
+    protocolVersion = ServiceProtocol.Current,
+    serviceName = "SqlAgMonitor.Service"
+}));
+
 // Setup endpoint — create initial admin user (only works when no users exist)
 app.MapPost("/api/auth/setup", (LoginRequest request, UserStore users) =>
 {

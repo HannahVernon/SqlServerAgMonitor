@@ -202,6 +202,14 @@ public partial class App : Application
                 thumbprint = await ProbeCertificateAsync(svc, logger);
             }
 
+            // Check protocol version before attempting login
+            var versionError = await ServiceMonitoringClient.CheckVersionAsync(svc, thumbprint);
+            if (versionError != null)
+            {
+                logger.LogError("Service version check failed: {Error}", versionError);
+                return;
+            }
+
             logger.LogInformation("Auto-login to service as {User}@{Host}:{Port}",
                 username, svc.Host, svc.Port);
 
