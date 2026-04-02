@@ -109,15 +109,38 @@
                 <!-- Step 4: TLS -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep4}">
                     <TextBlock Text="Step 4 of 6 — TLS / HTTPS" FontWeight="SemiBold" FontSize="15" />
-                    <TextBlock Text="Enable TLS to encrypt connections between the desktop app and the service. Requires a valid certificate." 
+                    <TextBlock Text="Enable TLS to encrypt connections between the desktop app and the service." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <CheckBox Content="Enable TLS (HTTPS)" IsChecked="{Binding UseTls}" />
-                    <StackPanel Spacing="4" IsEnabled="{Binding UseTls}">
-                        <TextBlock Text="Certificate Path (.pfx)" />
-                        <TextBox Text="{Binding CertificatePath}" Watermark="C:\Certs\service.pfx" />
+
+                    <StackPanel Spacing="12" IsEnabled="{Binding UseTls}">
+                        <!-- Certificate source selection -->
+                        <StackPanel Spacing="6">
+                            <RadioButton Content="Select from Windows Certificate Store (LocalMachine\My)" 
+                                         IsChecked="{Binding UseStoreCertificate}" GroupName="CertSource" />
+                            
+                            <ComboBox ItemsSource="{Binding StoreCertificates}"
+                                      SelectedItem="{Binding SelectedCertificate}"
+                                      IsEnabled="{Binding UseStoreCertificate}"
+                                      HorizontalAlignment="Stretch" Margin="24,0,0,0"
+                                      PlaceholderText="Choose a certificate..." />
+
+                            <RadioButton Content="Use a .pfx certificate file" 
+                                         IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
+                            
+                            <TextBox Text="{Binding CertificatePath}" 
+                                     Watermark="C:\Certs\service.pfx"
+                                     IsEnabled="{Binding !UseStoreCertificate}"
+                                     Margin="24,0,0,0" />
+                        </StackPanel>
+
+                        <TextBlock Text="The certificate must have a private key. Store certificates are recommended — no password or file path required."
+                                   FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
                     </StackPanel>
+
                     <TextBlock Text="If you skip TLS, the service will use plain HTTP. You can configure TLS later by editing appsettings.json."
-                               FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
+                               FontSize="11" Opacity="0.5" TextWrapping="Wrap"
+                               IsVisible="{Binding !UseTls}" />
                 </StackPanel>
 
                 <!-- Step 5: Admin Credentials -->
@@ -160,6 +183,10 @@
                             </TextBlock>
                             <TextBlock>
                                 <Run Text="TLS: " FontWeight="SemiBold" /><Run Text="{Binding UseTls}" />
+                            </TextBlock>
+                            <TextBlock IsVisible="{Binding UseTls}">
+                                <Run Text="Certificate: " FontWeight="SemiBold" /><Run Text="{Binding SelectedCertificate.Subject, FallbackValue=''}" />
+                                <Run Text="{Binding CertificatePath}" />
                             </TextBlock>
                             <TextBlock>
                                 <Run Text="Admin User: " FontWeight="SemiBold" /><Run Text="{Binding AdminUsername}" />

@@ -1,8 +1,11 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.Http;
 using System.Reactive;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -37,6 +40,8 @@ public class InstallerViewModel : ReactiveObject
 
     // Step 4: TLS
     private bool _useTls;
+    private bool _useStoreCertificate = true;
+    private CertificateEntry? _selectedCertificate;
     private string _certificatePath = string.Empty;
 
     // Step 5: Admin credentials
@@ -134,8 +139,31 @@ public class InstallerViewModel : ReactiveObject
     public int Port { get => _port; set => this.RaiseAndSetIfChanged(ref _port, Math.Clamp(value, 1024, 65535)); }
 
     // Step 4
-    public bool UseTls { get => _useTls; set => this.RaiseAndSetIfChanged(ref _useTls, value); }
+    public bool UseTls
+    {
+        get => _useTls;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _useTls, value);
+            if (value && StoreCertificates.Count == 0)
+                LoadStoreCertificates();
+        }
+    }
+    public bool UseStoreCertificate
+    {
+        get => _useStoreCertificate;
+        set => this.RaiseAndSetIfChanged(ref _useStoreCertificate, value);
+    }
+    public ObservableCollection<CertificateEntry> StoreCertificates { get; } = new();
+    public CertificateEntry? SelectedCertificate
+    {
+        get => _selectedCertificate;
+        set => this.RaiseAndSetIfChanged(ref _selectedCertificate, value);
+    }
     public string CertificatePath { get => _certificatePath; set => this.RaiseAndSetIfChanged(ref _certificatePath, value); }
+
+    /// <summary>Selected certificate thumbprint — from store selection or empty if using .pfx file.</summary>
+    public string SelectedThumbprint => SelectedCertificate?.Thumbprint ?? string.Empty;
 
     // Step 5
     public string AdminUsername { get => _adminUsername; set => this.RaiseAndSetIfChanged(ref _adminUsername, value); }
@@ -238,17 +266,39 @@ public class InstallerViewModel : ReactiveObject
 
     private void WriteAppSettings()
     {
-        var settings = new
+        var serviceConfig = new Dictionary<string, object>
         {
-            Service = new
+            ["Port"] = Port
+        };
+
+        if (UseTls)
+        {
+            var tlsConfig = new Dictionary<string, object>();
+
+            if (UseStoreCertificate && SelectedCertificate != null)
             {
-                Port = Port
-            },
-            Logging = new
+                tlsConfig["Source"] = "Store";
+                tlsConfig["Thumbprint"] = SelectedCertificate.Thumbprint;
+                tlsConfig["StoreName"] = "My";
+                tlsConfig["StoreLocation"] = "LocalMachine";
+            }
+            else if (!string.IsNullOrWhiteSpace(CertificatePath))
             {
-                LogLevel = new
+                tlsConfig["Source"] = "File";
+                tlsConfig["Path"] = CertificatePath;
+            }
+
+            serviceConfig["Tls"] = tlsConfig;
+        }
+
+        var settings = new Dictionary<string, object>
+        {
+            ["Service"] = serviceConfig,
+            ["Logging"] = new Dictionary<string, object>
+            {
+                ["LogLevel"] = new Dictionary<string, object>
                 {
-                    Default = "Information"
+                    ["Default"] = "Information"
                 }
             }
         };
@@ -391,4 +441,40 @@ public class InstallerViewModel : ReactiveObject
 
         throw new DirectoryNotFoundException("Could not find repository root (SqlAgMonitor.sln). Run the installer from within the repository.");
     }
+
+    private void LoadStoreCertificates()
+    {
+        StoreCertificates.Clear();
+        try
+        {
+            using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+
+            var now = DateTime.Now;
+            foreach (var cert in store.Certificates
+                .OfType<X509Certificate2>()
+                .Where(c => c.NotAfter > now && c.HasPrivateKey)
+                .OrderBy(c => c.GetNameInfo(X509NameType.SimpleName, false)))
+            {
+                var subject = cert.GetNameInfo(X509NameType.SimpleName, false);
+                var expiry = cert.NotAfter.ToString("yyyy-MM-dd");
+                var thumbprint = cert.Thumbprint;
+
+                StoreCertificates.Add(new CertificateEntry(
+                    subject, thumbprint, expiry,
+                    $"{subject}  (expires {expiry}, {thumbprint[..8]}…)"));
+            }
+
+            store.Close();
+        }
+        catch
+        {
+            // May fail if not running elevated or store is empty — that's OK
+        }
+    }
+}
+
+public record CertificateEntry(string Subject, string Thumbprint, string Expiry, string DisplayText)
+{
+    public override string ToString() => DisplayText;
 }

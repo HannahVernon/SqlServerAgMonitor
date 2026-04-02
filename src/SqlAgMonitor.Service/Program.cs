@@ -1,4 +1,6 @@
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Server.Kestrel.Https;
 using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Service;
@@ -13,9 +15,51 @@ builder.Host.UseWindowsService();
 // Configure Kestrel on the service port (default 58432)
 var servicePort = builder.Configuration.GetValue("Service:Port", 58432);
 servicePort = Math.Clamp(servicePort, 1024, 65535);
+var tlsSource = builder.Configuration.GetValue<string>("Service:Tls:Source");
+
 builder.WebHost.ConfigureKestrel(options =>
 {
-    options.ListenAnyIP(servicePort);
+    if (!string.IsNullOrEmpty(tlsSource))
+    {
+        options.ListenAnyIP(servicePort, listenOptions =>
+        {
+            if (string.Equals(tlsSource, "Store", StringComparison.OrdinalIgnoreCase))
+            {
+                var thumbprint = builder.Configuration.GetValue<string>("Service:Tls:Thumbprint") ?? string.Empty;
+                var storeName = builder.Configuration.GetValue("Service:Tls:StoreName", "My");
+                var storeLocation = builder.Configuration.GetValue("Service:Tls:StoreLocation", "LocalMachine");
+
+                var storeLocationEnum = Enum.TryParse<StoreLocation>(storeLocation, true, out var loc)
+                    ? loc : StoreLocation.LocalMachine;
+                var storeNameEnum = Enum.TryParse<StoreName>(storeName, true, out var sn)
+                    ? sn : StoreName.My;
+
+                using var store = new X509Store(storeNameEnum, storeLocationEnum);
+                store.Open(OpenFlags.ReadOnly);
+                var certs = store.Certificates.Find(X509FindType.FindByThumbprint, thumbprint, validOnly: false);
+                store.Close();
+
+                if (certs.Count > 0)
+                {
+                    listenOptions.UseHttps(certs[0]);
+                }
+                else
+                {
+                    throw new InvalidOperationException(
+                        $"Certificate with thumbprint '{thumbprint}' not found in {storeLocationEnum}/{storeNameEnum}.");
+                }
+            }
+            else if (string.Equals(tlsSource, "File", StringComparison.OrdinalIgnoreCase))
+            {
+                var certPath = builder.Configuration.GetValue<string>("Service:Tls:Path") ?? string.Empty;
+                listenOptions.UseHttps(certPath);
+            }
+        });
+    }
+    else
+    {
+        options.ListenAnyIP(servicePort);
+    }
 });
 
 // Register Core services (monitoring, alerting, DuckDB, notifications, etc.)
