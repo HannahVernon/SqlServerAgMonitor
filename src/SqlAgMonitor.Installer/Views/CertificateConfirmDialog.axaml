@@ -1,0 +1,45 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="SqlAgMonitor.Installer.Views.CertificateConfirmDialog"
+        Title="Untrusted Certificate"
+        Width="500" Height="380"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Icon="avares://SqlAgMonitor.Installer/Assets/app-icon.png">
+
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" 
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button Content="View Certificate…" x:Name="ViewCertButton" MinWidth="130" />
+            <Button Content="Trust &amp; Continue" x:Name="AcceptButton" MinWidth="130" Classes="accent" />
+            <Button Content="Cancel" x:Name="RejectButton" MinWidth="80" />
+        </StackPanel>
+
+        <StackPanel Spacing="12">
+            <TextBlock Text="⚠ The service certificate could not be verified" 
+                       FontSize="16" FontWeight="SemiBold" Foreground="#FFFFAA00" />
+
+            <TextBlock TextWrapping="Wrap" LineHeight="20">
+                The SSL/TLS certificate presented by the service is not trusted by
+                this machine's certificate store. This may be because it is self-signed
+                or issued by a certificate authority that is not in the Trusted Root store.
+            </TextBlock>
+
+            <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                    CornerRadius="6" Padding="16">
+                <StackPanel Spacing="4">
+                    <TextBlock x:Name="SubjectText" TextWrapping="Wrap" />
+                    <TextBlock x:Name="IssuerText" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ExpiryText" />
+                    <TextBlock x:Name="ThumbprintText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock TextWrapping="Wrap" FontSize="12" Opacity="0.6" LineHeight="18">
+                If you trust this certificate, click "Trust &amp; Continue" to proceed with
+                the admin user creation. Click "View Certificate…" to inspect the full
+                certificate details before deciding.
+            </TextBlock>
+        </StackPanel>
+    </DockPanel>
+</Window>

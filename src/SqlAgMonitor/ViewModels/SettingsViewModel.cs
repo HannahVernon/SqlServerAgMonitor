@@ -1,12 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Security;
 using System.Reactive;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.Notifications;
+using SqlAgMonitor.Services;
 
 namespace SqlAgMonitor.ViewModels;
 
@@ -46,8 +52,18 @@ public class SettingsViewModel : ViewModelBase
     private int _maxRetentionDays = 90;
     private int _maxRecords;
 
+    // Service
+    private bool _serviceEnabled;
+    private bool _serviceWasPreviouslyEnabled;
+    private string _serviceHost = "localhost";
+    private int _servicePort = 58432;
+    private string? _serviceUsername;
+    private string _servicePassword = string.Empty;
+    private bool _serviceUseTls;
+
     // UI feedback
     private string? _testEmailStatus;
+    private string? _testConnectionStatus;
 
     public List<string> ThemeOptions { get; } = new() { "Light", "Dark", "High Contrast" };
     public List<string> SyslogProtocolOptions { get; } = new() { "UDP", "TCP" };
@@ -92,22 +108,33 @@ public class SettingsViewModel : ViewModelBase
     public int MaxRetentionDays { get => _maxRetentionDays; set => this.RaiseAndSetIfChanged(ref _maxRetentionDays, value); }
     public int MaxRecords { get => _maxRecords; set => this.RaiseAndSetIfChanged(ref _maxRecords, value); }
 
-    public string? TestEmailStatus { get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
+    // Service settings
+    public bool ServiceEnabled { get => _serviceEnabled; set => this.RaiseAndSetIfChanged(ref _serviceEnabled, value); }
+    public string ServiceHost { get => _serviceHost; set => this.RaiseAndSetIfChanged(ref _serviceHost, value); }
+    public int ServicePort { get => _servicePort; set => this.RaiseAndSetIfChanged(ref _servicePort, value); }
+    public string? ServiceUsername { get => _serviceUsername; set => this.RaiseAndSetIfChanged(ref _serviceUsername, value); }
+    public string ServicePassword { get => _servicePassword; set => this.RaiseAndSetIfChanged(ref _servicePassword, value); }
+    public bool ServiceUseTls { get => _serviceUseTls; set => this.RaiseAndSetIfChanged(ref _serviceUseTls, value); }
+
+    public string? TestEmailStatus{ get => _testEmailStatus; set => this.RaiseAndSetIfChanged(ref _testEmailStatus, value); }
+    public string? TestConnectionStatus { get => _testConnectionStatus; set => this.RaiseAndSetIfChanged(ref _testConnectionStatus, value); }
 
     public ReactiveCommand<Unit, Unit> SaveCommand { get; }
     public ReactiveCommand<Unit, Unit> CancelCommand { get; }
     public ReactiveCommand<Unit, Unit> TestEmailCommand { get; }
+    public ReactiveCommand<Unit, Unit> TestConnectionCommand { get; }
 
     /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
-    public event Action<bool>? CloseRequested;
+    public Func<bool, Task>? CloseRequested;
 
     public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService)
     {
         _configService = configService;
         _emailService = emailService;
-        SaveCommand = ReactiveCommand.Create(OnSave);
-        CancelCommand = ReactiveCommand.Create(OnCancel);
+        SaveCommand = ReactiveCommand.CreateFromTask(OnSaveAsync);
+        CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
+        TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync);
     }
 
     private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
@@ -146,6 +173,13 @@ public class SettingsViewModel : ViewModelBase
         AutoPruneEnabled = config.History.AutoPruneEnabled;
         MaxRetentionDays = config.History.MaxRetentionDays ?? 0;
         MaxRecords = config.History.MaxRecords ?? 0;
+        ServiceEnabled = config.Service.Enabled;
+        _serviceWasPreviouslyEnabled = config.Service.Enabled;
+        ServiceHost = config.Service.Host;
+        ServicePort = config.Service.Port;
+        ServiceUsername = config.Service.Username;
+        ServiceUseTls = config.Service.UseTls;
+        AcceptedCertThumbprint = config.Service.TrustedCertThumbprint;
     }
 
     public void ApplyTo(AppConfiguration config)
@@ -172,16 +206,25 @@ public class SettingsViewModel : ViewModelBase
         config.History.AutoPruneEnabled = AutoPruneEnabled;
         config.History.MaxRetentionDays = MaxRetentionDays > 0 ? MaxRetentionDays : null;
         config.History.MaxRecords = MaxRecords > 0 ? MaxRecords : null;
+        config.Service.Enabled = ServiceEnabled;
+        config.Service.Host = ServiceHost;
+        config.Service.Port = ServicePort;
+        config.Service.Username = ServiceUsername;
+        config.Service.UseTls = ServiceUseTls;
+        if (AcceptedCertThumbprint != null)
+            config.Service.TrustedCertThumbprint = AcceptedCertThumbprint;
     }
 
-    private void OnSave()
+    private async Task OnSaveAsync(CancellationToken cancellationToken)
     {
-        CloseRequested?.Invoke(true);
+        if (CloseRequested != null)
+            await CloseRequested(true);
     }
 
-    private void OnCancel()
+    private async Task OnCancelAsync(CancellationToken cancellationToken)
     {
-        CloseRequested?.Invoke(false);
+        if (CloseRequested != null)
+            await CloseRequested(false);
     }
 
     private async Task OnTestEmailAsync(CancellationToken cancellationToken)
@@ -200,6 +243,252 @@ public class SettingsViewModel : ViewModelBase
         catch (Exception ex)
         {
             TestEmailStatus = $"✗ {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Callback wired by the window to show a certificate trust dialog.
+    /// Receives the untrusted X509Certificate2, returns true if the user accepts it.
+    /// </summary>
+    public Func<X509Certificate2, Task<bool>>? ConfirmUntrustedCertificate { get; set; }
+
+    /// <summary>
+    /// Callback wired by the window to offer config migration to the service.
+    /// Receives the list of group names to migrate, returns true if the user confirms.
+    /// </summary>
+    public Func<List<string>, Task<bool>>? ConfirmMigration { get; set; }
+
+    /// <summary>
+    /// True when service mode was newly enabled (wasn't previously enabled) and local groups exist.
+    /// </summary>
+    public bool ShouldOfferMigration => ServiceEnabled && !_serviceWasPreviouslyEnabled;
+
+    /// <summary>
+    /// If the user accepted an untrusted cert during Test Connection, its thumbprint is stored
+    /// here so it can be persisted to config on Save.
+    /// </summary>
+    public string? AcceptedCertThumbprint { get; private set; }
+
+    private async Task OnTestConnectionAsync(CancellationToken cancellationToken)
+    {
+        TestConnectionStatus = "Connecting...";
+
+        var scheme = ServiceUseTls ? "https" : "http";
+        var port = Math.Clamp(ServicePort, 1, 65535);
+        var baseUrl = $"{scheme}://{ServiceHost}:{port}";
+
+        try
+        {
+            // Phase 1: if TLS, probe for cert issues first
+            string? pinnedThumbprint = AcceptedCertThumbprint;
+
+            if (ServiceUseTls && pinnedThumbprint == null)
+            {
+                X509Certificate2? capturedCert = null;
+
+                using var probeHandler = new HttpClientHandler
+                {
+                    ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                    {
+                        if (errors == SslPolicyErrors.None)
+                            return true;
+                        if (cert != null)
+                            capturedCert = new X509Certificate2(cert);
+                        return false;
+                    }
+                };
+
+                using var probeClient = new HttpClient(probeHandler)
+                {
+                    BaseAddress = new Uri(baseUrl),
+                    Timeout = TimeSpan.FromSeconds(10)
+                };
+
+                try
+                {
+                    await probeClient.GetAsync("/api/auth/login", cancellationToken);
+                }
+                catch (HttpRequestException) when (capturedCert != null)
+                {
+                    if (ConfirmUntrustedCertificate != null)
+                    {
+                        var accepted = await ConfirmUntrustedCertificate(capturedCert);
+                        if (!accepted)
+                        {
+                            TestConnectionStatus = "✗ Certificate not trusted.";
+                            return;
+                        }
+                        pinnedThumbprint = capturedCert.Thumbprint;
+                        AcceptedCertThumbprint = pinnedThumbprint;
+                    }
+                    else
+                    {
+                        TestConnectionStatus = "✗ Server certificate is not trusted.";
+                        return;
+                    }
+                }
+                catch (HttpRequestException ex) when (capturedCert == null)
+                {
+                    TestConnectionStatus = $"✗ TLS handshake failed: {ex.InnerException?.Message ?? ex.Message}";
+                    return;
+                }
+            }
+
+            // Phase 2: check protocol version
+            var svcSettings = new ServiceSettings
+            {
+                Host = ServiceHost,
+                Port = port,
+                UseTls = ServiceUseTls
+            };
+            var versionError = await ServiceMonitoringClient.CheckVersionAsync(
+                svcSettings, pinnedThumbprint, cancellationToken);
+            if (versionError != null)
+            {
+                TestConnectionStatus = $"✗ {versionError}";
+                return;
+            }
+
+            // Phase 3: attempt login
+            using var handler = new HttpClientHandler();
+            if (pinnedThumbprint != null)
+            {
+                var pinned = pinnedThumbprint;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                    cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+
+            if (string.IsNullOrWhiteSpace(ServiceUsername) || string.IsNullOrWhiteSpace(ServicePassword))
+            {
+                // No credentials — just check reachability
+                var healthResponse = await client.GetAsync("/api/auth/login", cancellationToken);
+                TestConnectionStatus = "✓ Service is reachable. Enter credentials to test authentication.";
+                return;
+            }
+
+            var payload = JsonSerializer.Serialize(new { username = ServiceUsername, password = ServicePassword });
+            using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/auth/login", content, cancellationToken);
+
+            if (response.IsSuccessStatusCode)
+            {
+                TestConnectionStatus = "✓ Connected and authenticated successfully.";
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                TestConnectionStatus = "✗ Authentication failed — check username and password.";
+            }
+            else
+            {
+                TestConnectionStatus = $"✗ Service returned {(int)response.StatusCode} {response.StatusCode}.";
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            TestConnectionStatus = "✗ Connection timed out.";
+        }
+        catch (HttpRequestException ex)
+        {
+            TestConnectionStatus = $"✗ {ex.InnerException?.Message ?? ex.Message}";
+        }
+        catch (Exception ex)
+        {
+            TestConnectionStatus = $"✗ {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Pushes local config (groups, alerts, email, syslog) to the remote service.
+    /// Returns a human-readable result message.
+    /// </summary>
+    public async Task<string> MigrateConfigToServiceAsync()
+    {
+        var config = _configService.Load();
+        var svc = config.Service;
+        var scheme = svc.UseTls ? "https" : "http";
+        var port = Math.Clamp(svc.Port, 1, 65535);
+        var baseUrl = $"{scheme}://{svc.Host}:{port}";
+
+        try
+        {
+            var thumbprint = AcceptedCertThumbprint ?? svc.TrustedCertThumbprint;
+
+            // Step 1: Login to get JWT
+            var token = await ServiceMonitoringClient.LoginAsync(svc, ServiceUsername ?? "", ServicePassword, thumbprint);
+            if (token == null)
+                return "Migration failed — could not authenticate with the service.";
+
+            // Step 2: Push config via import API
+            using var handler = new HttpClientHandler();
+            if (thumbprint != null)
+            {
+                var pinned = thumbprint;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                    cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var importPayload = new
+            {
+                monitoredGroups = config.MonitoredGroups,
+                alerts = config.Alerts,
+                email = config.Email,
+                syslog = config.Syslog
+            };
+
+            var json = JsonSerializer.Serialize(importPayload, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
+            using var content = new StringContent(json, Encoding.UTF8, "application/json");
+            var response = await client.PostAsync("/api/config/import", content);
+
+            if (!response.IsSuccessStatusCode)
+                return $"Migration failed — service returned {(int)response.StatusCode} {response.StatusCode}.";
+
+            var resultJson = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(resultJson);
+
+            var imported = doc.RootElement.GetProperty("imported");
+            var groups = imported.GetProperty("groups").GetInt32();
+            var alerts = imported.GetProperty("alerts").GetBoolean();
+            var email = imported.GetProperty("email").GetBoolean();
+            var syslog = imported.GetProperty("syslog").GetBoolean();
+
+            var parts = new List<string>();
+            if (groups > 0) parts.Add($"{groups} group(s)");
+            if (alerts) parts.Add("alert settings");
+            if (email) parts.Add("email settings");
+            if (syslog) parts.Add("syslog settings");
+
+            var sqlAuthGroups = config.MonitoredGroups
+                .Where(g => g.Connections.Any(c =>
+                    string.Equals(c.AuthType, "sql", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.CredentialKey)))
+                .Select(g => g.Name)
+                .ToList();
+
+            var result = $"✓ Migrated: {string.Join(", ", parts)}.";
+
+            if (sqlAuthGroups.Count > 0)
+            {
+                result += $"\n\n⚠ The following groups use SQL Server authentication and their passwords were NOT transferred: {string.Join(", ", sqlAuthGroups)}. You will need to re-enter these passwords on the service side.";
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            return $"Migration failed — {ex.Message}";
         }
     }
 }

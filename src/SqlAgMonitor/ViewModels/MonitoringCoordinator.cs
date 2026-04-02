@@ -19,7 +19,7 @@ namespace SqlAgMonitor.ViewModels;
 /// Coordinates AG/DAG monitoring: subscribes to snapshot streams, manages tabs,
 /// feeds snapshots to the alert engine, and records statistics.
 /// </summary>
-public sealed class MonitoringCoordinator : IDisposable
+public sealed class MonitoringCoordinator : IMonitoringCoordinator
 {
     private readonly AgMonitorService _agMonitor;
     private readonly DagMonitorService _dagMonitor;
