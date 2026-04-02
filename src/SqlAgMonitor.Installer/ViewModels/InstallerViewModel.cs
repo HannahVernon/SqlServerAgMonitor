@@ -240,7 +240,10 @@ public class InstallerViewModel : ReactiveObject
 
         try
         {
-            await SetProgress("Publishing service files...", 0);
+            await SetProgress("Checking for existing installation...", 0);
+            await ValidateInstallPathAsync();
+
+            await SetProgress("Publishing service files...", 5);
             await PublishServiceAsync();
             _completedActions.Add($"Published service files to {InstallPath}");
 
@@ -407,6 +410,30 @@ public class InstallerViewModel : ReactiveObject
         File.WriteAllText(settingsPath, json);
     }
 
+    private async Task ValidateInstallPathAsync()
+    {
+        var existingConfig = await QueryServiceConfigAsync();
+        if (existingConfig == null) return;
+
+        var existingBinPath = existingConfig.BinPath.Trim('"');
+        var existingDir = Path.GetDirectoryName(existingBinPath);
+        var targetDir = InstallPath.TrimEnd(Path.DirectorySeparatorChar);
+
+        if (!string.Equals(existingDir, targetDir, StringComparison.OrdinalIgnoreCase))
+        {
+            Log($"Install path mismatch: existing service at \"{existingDir}\", installer targeting \"{targetDir}\"");
+            throw new InvalidOperationException(
+                $"The service '{ServiceName}' is already installed at:\n"
+                + $"  {existingDir}\n\n"
+                + $"You are attempting to install to:\n"
+                + $"  {targetDir}\n\n"
+                + "Installing to a different location would leave the service pointing at the old path. "
+                + "Please either:\n"
+                + $"  • Change the install path to \"{existingDir}\", or\n"
+                + $"  • Uninstall the existing service first (sc.exe delete {ServiceName})");
+        }
+    }
+
     private async Task CreateServiceAsync()
     {
         var exePath = Path.Combine(InstallPath, "SqlAgMonitor.Service.exe");
@@ -420,10 +447,8 @@ public class InstallerViewModel : ReactiveObject
         {
             Log($"Existing service found: BinPath={existingConfig.BinPath}, Account={existingConfig.ServiceAccount}, StartType={existingConfig.StartType}");
 
+            // Path mismatch is already blocked by ValidateInstallPathAsync — only check account and start type
             var differences = new List<string>();
-
-            if (!string.Equals(existingConfig.BinPath.Trim('"'), exePath, StringComparison.OrdinalIgnoreCase))
-                differences.Add($"  Binary path: \"{existingConfig.BinPath}\" → \"{exePath}\"");
 
             if (!string.Equals(existingConfig.ServiceAccount, ServiceAccount, StringComparison.OrdinalIgnoreCase))
                 differences.Add($"  Service account: \"{existingConfig.ServiceAccount}\" → \"{ServiceAccount}\"");
