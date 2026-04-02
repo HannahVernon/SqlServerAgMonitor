@@ -5,6 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Reactive;
+using System.Reactive.Linq;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
@@ -75,6 +77,10 @@ public class InstallerViewModel : ReactiveObject
         BackCommand = ReactiveCommand.Create(OnBack, canGoBack);
         InstallCommand = ReactiveCommand.CreateFromTask(OnInstallAsync, canInstall);
         CloseCommand = ReactiveCommand.Create(OnClose);
+
+        var canViewCert = this.WhenAnyValue(x => x.SelectedCertificate)
+            .Select(cert => cert != null);
+        ViewCertificateCommand = ReactiveCommand.Create(ViewCertificateDetails, canViewCert);
     }
 
     // Commands
@@ -82,6 +88,7 @@ public class InstallerViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> BackCommand { get; }
     public ReactiveCommand<Unit, Unit> InstallCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
+    public ReactiveCommand<Unit, Unit> ViewCertificateCommand { get; }
 
     public event Action? CloseRequested;
 
@@ -456,13 +463,26 @@ public class InstallerViewModel : ReactiveObject
                 .Where(c => c.NotAfter > now && c.HasPrivateKey)
                 .OrderBy(c => c.GetNameInfo(X509NameType.SimpleName, false)))
             {
-                var subject = cert.GetNameInfo(X509NameType.SimpleName, false);
+                var simpleName = cert.GetNameInfo(X509NameType.SimpleName, false);
+                var dnsNames = cert.GetNameInfo(X509NameType.DnsName, false);
                 var expiry = cert.NotAfter.ToString("yyyy-MM-dd");
                 var thumbprint = cert.Thumbprint;
+                var issuer = cert.GetNameInfo(X509NameType.SimpleName, forIssuer: true);
+                var serialNumber = cert.SerialNumber;
+
+                // Show DNS name if different from simple name, otherwise just simple name
+                var primaryName = !string.IsNullOrEmpty(dnsNames) && dnsNames != simpleName
+                    ? dnsNames
+                    : simpleName;
 
                 StoreCertificates.Add(new CertificateEntry(
-                    subject, thumbprint, expiry,
-                    $"{subject}  (expires {expiry}, {thumbprint[..8]}…)"));
+                    Subject: simpleName,
+                    DnsName: dnsNames ?? string.Empty,
+                    Thumbprint: thumbprint,
+                    Expiry: expiry,
+                    Issuer: issuer ?? string.Empty,
+                    SerialNumber: serialNumber ?? string.Empty,
+                    DisplayText: $"{primaryName}  (expires {expiry}, issued by {issuer})"));
             }
 
             store.Close();
@@ -472,9 +492,78 @@ public class InstallerViewModel : ReactiveObject
             // May fail if not running elevated or store is empty — that's OK
         }
     }
+
+    private void ViewCertificateDetails()
+    {
+        if (SelectedCertificate == null) return;
+
+        try
+        {
+            using var store = new X509Store(StoreName.My, StoreLocation.LocalMachine);
+            store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+            var certs = store.Certificates.Find(
+                X509FindType.FindByThumbprint, SelectedCertificate.Thumbprint, validOnly: false);
+            store.Close();
+
+            if (certs.Count > 0)
+            {
+                NativeMethods.ShowCertificateDialog(certs[0]);
+            }
+        }
+        catch
+        {
+            // Non-critical — UI display only
+        }
+    }
+
+    private static class NativeMethods
+    {
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct CRYPTUI_VIEWCERTIFICATE_STRUCT
+        {
+            public int dwSize;
+            public IntPtr hwndParent;
+            public int dwFlags;
+            [MarshalAs(UnmanagedType.LPWStr)] public string? szTitle;
+            public IntPtr pCertContext;
+            public IntPtr rgszPurposes;
+            public int cPurposes;
+            public IntPtr pCryptProviderData;
+            public int fpCryptProviderDataTrustedUsage;
+            public int idxSigner;
+            public int idxCert;
+            public int fCounterSigner;
+            public int idxCounterSigner;
+            public int cStores;
+            public IntPtr rghStores;
+            public int cPropSheetPages;
+            public IntPtr rgPropSheetPages;
+            public int nStartPage;
+        }
+
+        [DllImport("cryptui.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CryptUIDlgViewCertificateW(
+            ref CRYPTUI_VIEWCERTIFICATE_STRUCT pCertViewInfo,
+            out bool pfPropertiesChanged);
+
+        public static void ShowCertificateDialog(X509Certificate2 certificate)
+        {
+            var viewInfo = new CRYPTUI_VIEWCERTIFICATE_STRUCT
+            {
+                dwSize = Marshal.SizeOf<CRYPTUI_VIEWCERTIFICATE_STRUCT>(),
+                pCertContext = certificate.Handle,
+                szTitle = "Certificate Details"
+            };
+
+            CryptUIDlgViewCertificateW(ref viewInfo, out _);
+        }
+    }
 }
 
-public record CertificateEntry(string Subject, string Thumbprint, string Expiry, string DisplayText)
+public record CertificateEntry(
+    string Subject, string DnsName, string Thumbprint,
+    string Expiry, string Issuer, string SerialNumber, string DisplayText)
 {
     public override string ToString() => DisplayText;
 }

@@ -125,6 +125,11 @@
                                       HorizontalAlignment="Stretch" Margin="24,0,0,0"
                                       PlaceholderText="Choose a certificate..." />
 
+                            <Button Content="View Details…" 
+                                    Command="{Binding ViewCertificateCommand}"
+                                    Margin="24,0,0,0" Padding="12,4"
+                                    IsEnabled="{Binding UseStoreCertificate}" />
+
                             <RadioButton Content="Use a .pfx certificate file" 
                                          IsChecked="{Binding !UseStoreCertificate}" GroupName="CertSource" />
                             
