@@ -29,6 +29,7 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     private readonly Dictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
     private HubConnection? _hubConnection;
+    private string? _trustedCertThumbprint;
     private readonly CancellationTokenSource _reconnectCts = new();
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
@@ -48,6 +49,12 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// </summary>
     public event Action<bool>? ConnectionStateChanged;
 
+    /// <summary>
+    /// Raised on the UI thread when a reconnect detects an incompatible service version.
+    /// The string contains the error message to display.
+    /// </summary>
+    public event Action<string>? VersionMismatchDetected;
+
     public bool IsConnected => _hubConnection?.State == HubConnectionState.Connected;
 
     public ServiceMonitoringClient(
@@ -64,6 +71,7 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
     /// </summary>
     public async Task ConnectAsync(string jwtToken, string? trustedCertThumbprint = null, CancellationToken cancellationToken = default)
     {
+        _trustedCertThumbprint = trustedCertThumbprint;
         var config = _configService.Load();
         var serviceConfig = config.Service;
         var scheme = serviceConfig.UseTls ? "https" : "http";
@@ -102,12 +110,33 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
             return Task.CompletedTask;
         };
 
-        _hubConnection.Reconnected += connectionId =>
+        _hubConnection.Reconnected += async connectionId =>
         {
-            _logger.LogInformation("SignalR reconnected (connection {Id})", connectionId);
+            _logger.LogInformation("SignalR reconnected (connection {Id}), checking service version", connectionId);
+
+            try
+            {
+                var currentConfig = _configService.Load();
+                var versionError = await CheckVersionAsync(currentConfig.Service, _trustedCertThumbprint);
+                if (versionError != null)
+                {
+                    _logger.LogError("Service version incompatible after reconnect: {Error}", versionError);
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        ConnectionStateChanged?.Invoke(false);
+                        VersionMismatchDetected?.Invoke(versionError);
+                    });
+                    await _hubConnection.StopAsync();
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Version check failed on reconnect, continuing anyway");
+            }
+
             Dispatcher.UIThread.Post(() => ConnectionStateChanged?.Invoke(true));
             _ = LoadCurrentSnapshotsAsync();
-            return Task.CompletedTask;
         };
 
         _hubConnection.Closed += ex =>

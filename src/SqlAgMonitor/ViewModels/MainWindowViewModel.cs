@@ -233,6 +233,11 @@ public class MainWindowViewModel : ViewModelBase
                 IsServiceConnected = connected;
                 ServiceConnectionText = connected ? "● Connected" : "○ Disconnected";
             };
+            serviceClient.VersionMismatchDetected += error =>
+            {
+                ServiceConnectionText = "⚠ Version mismatch";
+                StatusText = error;
+            };
         }
 
         _coordinator.SubscribeToMonitors();
