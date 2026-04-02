@@ -281,7 +281,12 @@ public partial class App : Application
             };
 
             var okButton = ((StackPanel)dialog.Content).Children[1] as Button;
-            okButton!.Click += (_, _) => dialog.Close();
+            okButton!.Click += (_, _) =>
+            {
+                dialog.Close();
+                if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                    desktop.Shutdown();
+            };
 
             await dialog.ShowDialog(mainWindow);
         });
