@@ -227,15 +227,19 @@ public class MainWindowViewModel : ViewModelBase
         if (_coordinator is ServiceMonitoringClient serviceClient)
         {
             IsServiceMode = true;
-            ServiceConnectionText = "Connecting…";
+            var svc = _configService.Load().Service;
+            var serviceLabel = $"{svc.Host}:{svc.Port}";
+            ServiceConnectionText = $"Connecting to {serviceLabel}…";
             serviceClient.ConnectionStateChanged += connected =>
             {
                 IsServiceConnected = connected;
-                ServiceConnectionText = connected ? "● Connected" : "○ Disconnected";
+                ServiceConnectionText = connected
+                    ? $"● Connected to {serviceLabel}"
+                    : $"○ Disconnected from {serviceLabel}";
             };
             serviceClient.VersionMismatchDetected += error =>
             {
-                ServiceConnectionText = "⚠ Version mismatch";
+                ServiceConnectionText = $"⚠ Version mismatch — {serviceLabel}";
                 StatusText = error;
             };
         }
