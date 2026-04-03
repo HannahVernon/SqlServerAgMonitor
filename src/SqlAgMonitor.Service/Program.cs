@@ -66,6 +66,16 @@ builder.WebHost.ConfigureKestrel(options =>
 // Register Core services (monitoring, alerting, DuckDB, notifications, etc.)
 builder.Services.AddSqlAgMonitorCore();
 
+// Override config service to use a fixed path alongside the binary,
+// so it survives service account changes (not tied to %APPDATA%)
+builder.Services.AddSingleton<IConfigurationService>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<JsonConfigurationService>>();
+    var exeDir = Path.GetDirectoryName(Environment.ProcessPath)
+        ?? AppContext.BaseDirectory;
+    return new JsonConfigurationService(logger, exeDir);
+});
+
 // Authentication — JWT bearer tokens
 builder.Services.AddSingleton<JwtTokenService>();
 builder.Services.AddSingleton<UserStore>();
