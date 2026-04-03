@@ -51,6 +51,14 @@ public partial class App : Application
 
         Services = services.BuildServiceProvider();
 
+        var appVersion = (System.Reflection.CustomAttributeExtensions
+            .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+                System.Reflection.Assembly.GetEntryAssembly()!))
+            ?.InformationalVersion ?? "0.0.0";
+        Services.GetRequiredService<ILoggerFactory>()
+            .CreateLogger<App>()
+            .LogInformation("SqlAgMonitor v{Version} starting", appVersion);
+
         // Restore saved theme
         var configService = Services.GetRequiredService<IConfigurationService>();
         var config = configService.Load();

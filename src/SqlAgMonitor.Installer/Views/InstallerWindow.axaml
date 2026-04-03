@@ -279,6 +279,19 @@
                             </TextBlock>
                         </StackPanel>
                     </Border>
+                    <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
+                            CornerRadius="6" Padding="16" IsVisible="{Binding HasGrantScript}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="⚠ SQL Server Permissions Required" FontWeight="SemiBold" Foreground="#FFFFC107" />
+                            <TextBlock TextWrapping="Wrap" LineHeight="22">
+                                A T-SQL script has been generated that grants the minimum required permissions
+                                to the service account. A database administrator must run this script on each
+                                SQL Server instance you want to monitor.
+                            </TextBlock>
+                            <TextBlock TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
+                                       Text="{Binding GrantScriptPath}" />
+                        </StackPanel>
+                    </Border>
                     <TextBlock Text="The service is registered in Add/Remove Programs and can be uninstalled from Windows Settings."
                                FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
                 </StackPanel>

@@ -287,7 +287,10 @@ app.MapPost("/api/config/import", (ConfigImportRequest request, IConfigurationSe
 
 app.MapHub<MonitorHub>("/monitor").RequireAuthorization();
 
-app.Logger.LogInformation("SqlAgMonitor Service starting on port {Port}", servicePort);
+var serviceVersion = (System.Reflection.CustomAttributeExtensions
+    .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(MonitorHub).Assembly))
+    ?.InformationalVersion ?? "0.0.0";
+app.Logger.LogInformation("SqlAgMonitor Service v{Version} starting on port {Port}", serviceVersion, servicePort);
 
 app.Run();
 
