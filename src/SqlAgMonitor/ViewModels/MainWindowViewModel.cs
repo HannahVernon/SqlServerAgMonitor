@@ -234,8 +234,8 @@ public class MainWindowViewModel : ViewModelBase
             {
                 IsServiceConnected = connected;
                 ServiceConnectionText = connected
-                    ? $"● Connected to {serviceLabel}"
-                    : $"○ Disconnected from {serviceLabel}";
+                    ? $"Connected to {serviceLabel}"
+                    : $"Disconnected from {serviceLabel}";
             };
             serviceClient.VersionMismatchDetected += error =>
             {

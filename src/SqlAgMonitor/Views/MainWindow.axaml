@@ -14,6 +14,7 @@
 
     <Window.Resources>
         <conv:UtcToLocalConverter x:Key="UtcToLocal" />
+        <conv:ServiceDotColorConverter x:Key="ServiceDotColorConverter" />
     </Window.Resources>
 
     <Window.DataTemplates>
@@ -160,8 +161,12 @@
                     </Border>
                     <Border CornerRadius="3" Padding="8,2" VerticalAlignment="Center"
                             IsVisible="{Binding IsServiceMode}">
-                        <TextBlock Text="{Binding ServiceConnectionText}" FontSize="11" FontWeight="SemiBold"
-                                   VerticalAlignment="Center" />
+                        <TextBlock FontSize="11" FontWeight="SemiBold"
+                                   VerticalAlignment="Center">
+                            <Run Text="●" Foreground="{Binding IsServiceConnected, 
+                                Converter={StaticResource ServiceDotColorConverter}}" />
+                            <Run Text="{Binding ServiceConnectionText}" />
+                        </TextBlock>
                     </Border>
                 </StackPanel>
             </DockPanel>
