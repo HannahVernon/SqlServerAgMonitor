@@ -105,20 +105,24 @@ Each alert type can be individually enabled/disabled and configured with custom 
 
 ## SQL Server Permissions
 
-The monitoring account needs **read-only access** to Availability Group DMVs. Grant on every SQL Server instance being monitored:
+The monitoring account needs **read-only access** to Availability Group catalog views and DMVs. Grant on every SQL Server instance being monitored:
 
 ```sql
-/* Minimum permission for AG/DAG monitoring */
+/* Minimum permissions for AG/DAG monitoring */
 GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+GRANT VIEW ANY DEFINITION TO [DOMAIN\ServiceAccount];
 ```
 
 | Permission | Required For |
 |---|---|
-| `VIEW SERVER STATE` | All AG/DAG monitoring (replica states, database sync status, LSN values, send/redo queues) |
+| `VIEW SERVER STATE` | DMV access — replica states, database sync status, LSN values, send/redo queues |
+| `VIEW ANY DEFINITION` | Catalog view visibility — `sys.availability_groups`, `sys.availability_replicas` |
 | `ALTER AVAILABILITY GROUP` | Failover operations (not required for monitoring) |
 | `ALTER DATABASE` / `db_owner` | Suspend/resume replication (not required for monitoring) |
 
-> **Tip:** If using SQL Authentication, create a dedicated login with only `VIEW SERVER STATE`. If using Windows Authentication (domain service account or gMSA), grant the permission to that account.
+> **Why both?** `VIEW SERVER STATE` covers DMVs like `sys.dm_hadr_availability_replica_states`, but AG metadata lives in catalog views (`sys.availability_groups`, `sys.availability_replicas`) which are governed by separate metadata visibility rules. Without `VIEW ANY DEFINITION`, the catalog views return zero rows and monitoring silently fails.
+
+> **Tip:** If using SQL Authentication, create a dedicated login with `VIEW SERVER STATE` and `VIEW ANY DEFINITION`. If using Windows Authentication (domain service account or gMSA), grant both permissions to that account.
 
 ## Building
 

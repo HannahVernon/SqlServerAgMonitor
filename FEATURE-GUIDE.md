@@ -365,26 +365,30 @@ The corresponding `GET /api/config/export` endpoint allows retrieving the servic
 
 ### Monitoring (read-only)
 
-The monitoring account requires only `VIEW SERVER STATE` on each SQL Server instance:
+The monitoring account requires two server-level permissions on each SQL Server instance:
 
 ```sql
 /* Grant to a SQL login */
 GRANT VIEW SERVER STATE TO [SqlAgMonitorLogin];
+GRANT VIEW ANY DEFINITION TO [SqlAgMonitorLogin];
 
 /* Or grant to a Windows/domain account */
 GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+GRANT VIEW ANY DEFINITION TO [DOMAIN\ServiceAccount];
 ```
 
-This single permission covers all DMVs used by the app:
+These permissions cover all catalog views and DMVs used by the app:
 
-| DMV / System View | Purpose |
-|---|---|
-| `sys.availability_groups` | Enumerate AGs and DAGs |
-| `sys.availability_replicas` | Replica names, availability modes, failover modes |
-| `sys.dm_hadr_availability_replica_states` | Replica roles, connected state, sync health |
-| `sys.dm_hadr_database_replica_states` | Database sync state, LSN values, queues, rates, lag |
-| `sys.databases` | Map database IDs to names |
-| `sys.fn_hadr_distributed_ag_replica()` | Drill from DAG to member AG replicas (SQL 2016+) |
+| DMV / System View | Permission | Purpose |
+|---|---|---|
+| `sys.availability_groups` | `VIEW ANY DEFINITION` | Enumerate AGs and DAGs |
+| `sys.availability_replicas` | `VIEW ANY DEFINITION` | Replica names, availability modes, failover modes |
+| `sys.dm_hadr_availability_replica_states` | `VIEW SERVER STATE` | Replica roles, connected state, sync health |
+| `sys.dm_hadr_database_replica_states` | `VIEW SERVER STATE` | Database sync state, LSN values, queues, rates, lag |
+| `sys.databases` | (public) | Map database IDs to names |
+| `sys.fn_hadr_distributed_ag_replica()` | `VIEW ANY DEFINITION` | Drill from DAG to member AG replicas (SQL 2016+) |
+
+> **Why both permissions?** `VIEW SERVER STATE` covers the `sys.dm_hadr_*` DMVs, but AG metadata lives in catalog views (`sys.availability_groups`, `sys.availability_replicas`) governed by separate [metadata visibility rules](https://learn.microsoft.com/en-us/sql/relational-databases/security/metadata-visibility-configuration). Without `VIEW ANY DEFINITION`, the catalog views return zero rows and monitoring silently fails.
 
 ### Control operations (optional)
 
@@ -400,8 +404,8 @@ These permissions are only needed if you use failover or suspend/resume features
 | Deployment | Recommended Auth |
 |---|---|
 | **Desktop app (standalone)** | Windows Authentication (runs as the logged-in user) |
-| **Service (domain account)** | Windows Authentication (grant `VIEW SERVER STATE` to the service account) |
-| **Service (LOCAL SERVICE)** | SQL Authentication (create a dedicated SQL login with `VIEW SERVER STATE` only) |
+| **Service (domain account)** | Windows Authentication (grant `VIEW SERVER STATE` + `VIEW ANY DEFINITION` to the service account) |
+| **Service (LOCAL SERVICE)** | SQL Authentication (create a dedicated SQL login with `VIEW SERVER STATE` + `VIEW ANY DEFINITION`) |
 
 ---
 
