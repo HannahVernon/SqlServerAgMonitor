@@ -117,11 +117,12 @@ builder.Services.AddSignalR(options =>
 builder.Services.AddSingleton<MonitoringWorker>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<MonitoringWorker>());
 
-// File logging alongside console
+// File + console logging — logs go to %ProgramData%\SqlAgMonitor\logs\
 var logDirectory = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+    Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
     "SqlAgMonitor", "logs");
 Directory.CreateDirectory(logDirectory);
+var logFilePath = Path.Combine(logDirectory, $"service-{DateTime.Now:yyyy-MM-dd}.log");
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -130,6 +131,7 @@ builder.Logging.AddSimpleConsole(options =>
     options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
     options.SingleLine = true;
 });
+builder.Logging.AddProvider(new FileLoggerProvider(logFilePath));
 builder.Logging.SetMinimumLevel(
     builder.Configuration.GetValue("Logging:LogLevel:Default", LogLevel.Information));
 
