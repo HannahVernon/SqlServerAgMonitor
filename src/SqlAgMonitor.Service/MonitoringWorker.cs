@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Reactive.Disposables;
 using System.Reactive.Linq;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
@@ -30,6 +32,14 @@ public sealed class MonitoringWorker : BackgroundService
     private readonly CompositeDisposable _subscriptions = new();
     private readonly Dictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new();
     private readonly object _snapshotLock = new();
+    private readonly ConcurrentQueue<AppConfiguration> _pendingReloads = new();
+    private readonly SemaphoreSlim _reloadSignal = new(0);
+
+    /// <summary>
+    /// Tracks the currently monitored groups by name → group type, so we can
+    /// diff against incoming config changes and stop/start as needed.
+    /// </summary>
+    private readonly Dictionary<string, AvailabilityGroupType> _activeGroups = new();
 
     public MonitoringWorker(
         ILogger<MonitoringWorker> logger,
@@ -57,6 +67,8 @@ public sealed class MonitoringWorker : BackgroundService
     {
         _logger.LogInformation("MonitoringWorker starting");
 
+        _configService.ConfigurationChanged += OnConfigurationChanged;
+
         try
         {
             SubscribeToMonitors();
@@ -66,14 +78,36 @@ public sealed class MonitoringWorker : BackgroundService
             StartScheduledExport();
 
             _logger.LogInformation("MonitoringWorker running — monitoring {Count} group(s)",
-                _latestSnapshots.Count);
+                _activeGroups.Count);
 
-            await Task.Delay(Timeout.Infinite, stoppingToken);
+            // Event loop: wait for config reload signals or cancellation
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await _reloadSignal.WaitAsync(stoppingToken);
+
+                // Drain all queued reloads — only the latest matters
+                AppConfiguration? latestConfig = null;
+                while (_pendingReloads.TryDequeue(out var config))
+                    latestConfig = config;
+
+                if (latestConfig != null)
+                    await ReconcileMonitoringAsync(latestConfig, stoppingToken);
+            }
         }
         catch (OperationCanceledException)
         {
             _logger.LogInformation("MonitoringWorker stopping");
         }
+        finally
+        {
+            _configService.ConfigurationChanged -= OnConfigurationChanged;
+        }
+    }
+
+    private void OnConfigurationChanged(AppConfiguration config)
+    {
+        _pendingReloads.Enqueue(config);
+        _reloadSignal.Release();
     }
 
     private void SubscribeToMonitors()
@@ -122,6 +156,8 @@ public sealed class MonitoringWorker : BackgroundService
                 else
                     await _agMonitor.StartMonitoringAsync(group.Name, cancellationToken);
 
+                _activeGroups[group.Name] = groupType;
+
                 _logger.LogInformation("Started monitoring {Group} ({Type})",
                     group.Name, groupType);
             }
@@ -129,6 +165,107 @@ public sealed class MonitoringWorker : BackgroundService
             {
                 _logger.LogError(ex, "Failed to start monitoring {Group}", group.Name);
             }
+        }
+    }
+
+    /// <summary>
+    /// Compares the new configuration against the currently active groups and
+    /// stops removed groups, starts new groups, and restarts changed groups.
+    /// Runs on the MonitoringWorker's own thread to avoid cross-thread issues.
+    /// </summary>
+    private async Task ReconcileMonitoringAsync(AppConfiguration newConfig, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Configuration changed — reconciling monitored groups");
+
+        var newGroups = new Dictionary<string, (MonitoredGroupConfig Config, AvailabilityGroupType Type)>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in newConfig.MonitoredGroups)
+        {
+            var groupType = Enum.TryParse<AvailabilityGroupType>(group.GroupType, out var gt)
+                ? gt : AvailabilityGroupType.AvailabilityGroup;
+            newGroups[group.Name] = (group, groupType);
+        }
+
+        // Stop groups that were removed
+        var removedGroups = _activeGroups.Keys
+            .Where(name => !newGroups.ContainsKey(name))
+            .ToList();
+
+        foreach (var name in removedGroups)
+        {
+            await StopGroupAsync(name);
+        }
+
+        // Start new groups and restart groups whose type changed
+        foreach (var (name, (_, newType)) in newGroups)
+        {
+            if (_activeGroups.TryGetValue(name, out var currentType))
+            {
+                if (currentType != newType)
+                {
+                    _logger.LogInformation("Group {Group} type changed from {Old} to {New} — restarting",
+                        name, currentType, newType);
+                    await StopGroupAsync(name);
+                    await StartGroupAsync(name, newType, cancellationToken);
+                }
+            }
+            else
+            {
+                await StartGroupAsync(name, newType, cancellationToken);
+            }
+        }
+
+        _logger.LogInformation("Reconciliation complete — now monitoring {Count} group(s)",
+            _activeGroups.Count);
+
+        // Notify connected SignalR clients to refresh
+        _ = SafeSendAsync(() =>
+            _hubContext.Clients.All.SendAsync("OnConfigurationChanged", cancellationToken));
+    }
+
+    private async Task StartGroupAsync(string name, AvailabilityGroupType groupType, CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
+                await _dagMonitor.StartMonitoringAsync(name, cancellationToken);
+            else
+                await _agMonitor.StartMonitoringAsync(name, cancellationToken);
+
+            _activeGroups[name] = groupType;
+            _logger.LogInformation("Started monitoring {Group} ({Type})", name, groupType);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start monitoring {Group}", name);
+        }
+    }
+
+    private async Task StopGroupAsync(string name)
+    {
+        try
+        {
+            if (_activeGroups.TryGetValue(name, out var groupType))
+            {
+                if (groupType == AvailabilityGroupType.DistributedAvailabilityGroup)
+                    await _dagMonitor.StopMonitoringAsync(name);
+                else
+                    await _agMonitor.StopMonitoringAsync(name);
+            }
+
+            _activeGroups.Remove(name);
+
+            lock (_snapshotLock)
+            {
+                _latestSnapshots.Remove(name);
+            }
+
+            _logger.LogInformation("Stopped monitoring {Group}", name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stop monitoring {Group}", name);
         }
     }
 
@@ -170,7 +307,9 @@ public sealed class MonitoringWorker : BackgroundService
     {
         _logger.LogInformation("MonitoringWorker shutting down");
 
+        _configService.ConfigurationChanged -= OnConfigurationChanged;
         _subscriptions.Dispose();
+        _reloadSignal.Dispose();
 
         try { await _exportService.StopScheduledExportAsync(); }
         catch (Exception ex) { _logger.LogWarning(ex, "Error stopping export scheduler"); }
