@@ -455,7 +455,9 @@ Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks thro
 3. **Port** — service listening port (default: 58432)
 4. **TLS** — optional HTTPS with certificate
 5. **Admin credentials** — initial username and password for the service API
-6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, and registers in Add/Remove Programs
+6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, registers in Add/Remove Programs, and generates a SQL permission grant script
+
+The installer generates a `grant-permissions.sql` file in the install directory containing `GRANT VIEW SERVER STATE` and `GRANT VIEW ANY DEFINITION` for the selected service account. A database administrator must run this script on each monitored SQL Server instance.
 
 **Upgrade mode:** When an existing installation is detected, the installer pre-populates all settings (install path, service account, port, TLS certificate) from the current configuration. The admin credentials step is skipped — existing admin users are preserved. The button reads "Upgrade" instead of "Install".
 
