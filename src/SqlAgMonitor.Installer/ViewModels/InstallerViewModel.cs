@@ -657,20 +657,14 @@ public class InstallerViewModel : ReactiveObject
             {
                 providerName = rsaCng.Key.Provider?.Provider;
                 var uniqueName = rsaCng.Key.UniqueName;
-                if (!string.IsNullOrEmpty(uniqueName))
-                {
-                    // CNG Software Key Storage Provider → %ProgramData%\Microsoft\Crypto\Keys\
-                    var keysPath = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                        "Microsoft", "Crypto", "Keys", uniqueName);
-                    if (File.Exists(keysPath))
-                        keyFilePath = keysPath;
-                }
+                Log($"RSA CNG key — provider: {providerName ?? "(null)"}, uniqueName: {uniqueName ?? "(null)"}");
+                keyFilePath = FindCngKeyFile(uniqueName);
             }
             else if (rsa is RSACryptoServiceProvider rsaCsp)
             {
                 providerName = rsaCsp.CspKeyContainerInfo.ProviderName;
                 var uniqueName = rsaCsp.CspKeyContainerInfo.UniqueKeyContainerName;
+                Log($"RSA CSP key — provider: {providerName ?? "(null)"}, uniqueName: {uniqueName ?? "(null)"}");
                 if (!string.IsNullOrEmpty(uniqueName))
                 {
                     var machineKeysPath = Path.Combine(
@@ -696,14 +690,8 @@ public class InstallerViewModel : ReactiveObject
                 {
                     providerName = ecdsaCng.Key.Provider?.Provider;
                     var uniqueName = ecdsaCng.Key.UniqueName;
-                    if (!string.IsNullOrEmpty(uniqueName))
-                    {
-                        var keysPath = Path.Combine(
-                            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                            "Microsoft", "Crypto", "Keys", uniqueName);
-                        if (File.Exists(keysPath))
-                            keyFilePath = keysPath;
-                    }
+                    Log($"ECDsa CNG key — provider: {providerName ?? "(null)"}, uniqueName: {uniqueName ?? "(null)"}");
+                    keyFilePath = FindCngKeyFile(uniqueName);
                 }
             }
             catch (CryptographicException)
@@ -756,6 +744,39 @@ public class InstallerViewModel : ReactiveObject
 
         Log($"Granted '{ServiceAccount}' read access to private key file: {keyFilePath}");
         _completedActions.Add($"Granted '{ServiceAccount}' read access to TLS certificate private key");
+    }
+
+    /// <summary>
+    /// Searches all known CNG private key directories for a key file with the given unique name.
+    /// CNG keys can live in Keys\ (user/machine software KSP) or SystemKeys\ (SYSTEM-level).
+    /// The UniqueName may also already be an absolute path on some Windows versions.
+    /// </summary>
+    private string? FindCngKeyFile(string? uniqueName)
+    {
+        if (string.IsNullOrEmpty(uniqueName))
+            return null;
+
+        // Some CNG implementations return a full path as the UniqueName
+        if (Path.IsPathRooted(uniqueName) && File.Exists(uniqueName))
+            return uniqueName;
+
+        var commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+
+        // Machine-level CNG software keys
+        string[] candidateDirs =
+        [
+            Path.Combine(commonAppData, "Microsoft", "Crypto", "Keys"),
+            Path.Combine(commonAppData, "Microsoft", "Crypto", "SystemKeys"),
+        ];
+
+        foreach (var dir in candidateDirs)
+        {
+            var candidate = Path.Combine(dir, uniqueName);
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        return null;
     }
 
     private async Task CreateAdminUserAsync()
