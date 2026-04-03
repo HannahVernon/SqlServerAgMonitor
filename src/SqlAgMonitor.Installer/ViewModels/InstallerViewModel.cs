@@ -36,6 +36,8 @@ public class InstallerViewModel : ReactiveObject
     private bool _isInstalling;
     private bool _isComplete;
     private bool _hasFailed;
+    private bool _isUpgrade;
+    private bool _skipAdminSetup;
     private readonly List<string> _completedActions = new();
 
     // Step 1: Install path
@@ -81,9 +83,11 @@ public class InstallerViewModel : ReactiveObject
         var canInstall = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
             x => x.AdminPassword, x => x.AdminPasswordConfirm,
-            (step, installing, pw, confirm) =>
+            x => x.SkipAdminSetup,
+            (step, installing, pw, confirm, skipAdmin) =>
                 step == 6 && !installing &&
-                !string.IsNullOrWhiteSpace(pw) && pw.Length >= 8 && pw == confirm);
+                (skipAdmin ||
+                 (!string.IsNullOrWhiteSpace(pw) && pw.Length >= 8 && pw == confirm)));
 
         NextCommand = ReactiveCommand.Create(OnNext, canGoNext);
         BackCommand = ReactiveCommand.Create(OnBack, canGoBack);
@@ -93,6 +97,92 @@ public class InstallerViewModel : ReactiveObject
         var canViewCert = this.WhenAnyValue(x => x.SelectedCertificate)
             .Select(cert => cert != null);
         ViewCertificateCommand = ReactiveCommand.Create(ViewCertificateDetails, canViewCert);
+
+        var canCopyError = this.WhenAnyValue(x => x.ErrorMessage)
+            .Select(msg => !string.IsNullOrEmpty(msg));
+        CopyErrorCommand = ReactiveCommand.CreateFromTask(OnCopyErrorAsync, canCopyError);
+    }
+
+    public async Task DetectExistingInstallationAsync()
+    {
+        var existingConfig = await QueryServiceConfigAsync();
+        if (existingConfig == null) return;
+
+        IsUpgrade = true;
+        Log($"Detected existing installation: BinPath={existingConfig.BinPath}, Account={existingConfig.ServiceAccount}");
+
+        var existingBinPath = existingConfig.BinPath.Trim('"');
+        var existingDir = Path.GetDirectoryName(existingBinPath);
+        if (!string.IsNullOrEmpty(existingDir))
+            InstallPath = existingDir;
+
+        var account = existingConfig.ServiceAccount;
+        if (string.Equals(account, @"NT AUTHORITY\LOCAL SERVICE", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(account, "LocalSystem", StringComparison.OrdinalIgnoreCase))
+        {
+            UseLocalService = true;
+        }
+        else
+        {
+            UseLocalService = false;
+            ServiceAccount = account;
+        }
+
+        var appSettingsPath = existingDir != null
+            ? Path.Combine(existingDir, "appsettings.json")
+            : null;
+
+        if (appSettingsPath != null && File.Exists(appSettingsPath))
+        {
+            try
+            {
+                var json = await File.ReadAllTextAsync(appSettingsPath);
+                using var doc = JsonDocument.Parse(json);
+                var root = doc.RootElement;
+
+                if (root.TryGetProperty("Service", out var svc))
+                {
+                    if (svc.TryGetProperty("Port", out var portEl) && portEl.TryGetInt32(out var port))
+                        Port = port;
+
+                    if (svc.TryGetProperty("Tls", out var tls))
+                    {
+                        UseTls = true;
+
+                        if (tls.TryGetProperty("Source", out var src)
+                            && string.Equals(src.GetString(), "Store", StringComparison.OrdinalIgnoreCase))
+                        {
+                            UseStoreCertificate = true;
+                            LoadStoreCertificates();
+
+                            if (tls.TryGetProperty("Thumbprint", out var tp))
+                            {
+                                var thumbprint = tp.GetString();
+                                SelectedCertificate = StoreCertificates
+                                    .FirstOrDefault(c => string.Equals(c.Thumbprint, thumbprint,
+                                        StringComparison.OrdinalIgnoreCase));
+                            }
+                        }
+                        else if (tls.TryGetProperty("Source", out var fileSrc)
+                                 && string.Equals(fileSrc.GetString(), "File", StringComparison.OrdinalIgnoreCase))
+                        {
+                            UseStoreCertificate = false;
+                            if (tls.TryGetProperty("Path", out var pathEl))
+                                CertificatePath = pathEl.GetString() ?? string.Empty;
+                        }
+                    }
+                }
+
+                Log("Pre-populated settings from existing appsettings.json");
+            }
+            catch (Exception ex)
+            {
+                Log($"Failed to read existing appsettings.json: {ex.Message}");
+            }
+        }
+
+        SkipAdminSetup = true;
+        Log("Upgrade mode — admin setup will be skipped (existing admin user preserved)");
     }
 
     // Commands
@@ -101,8 +191,10 @@ public class InstallerViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> InstallCommand { get; }
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
     public ReactiveCommand<Unit, Unit> ViewCertificateCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyErrorCommand { get; }
 
     public event Action? CloseRequested;
+    public Func<string, Task>? CopyToClipboard { get; set; }
 
     // Wizard navigation
     public int CurrentStep
@@ -143,6 +235,8 @@ public class InstallerViewModel : ReactiveObject
         }
     }
     public bool HasFailed { get => _hasFailed; set => this.RaiseAndSetIfChanged(ref _hasFailed, value); }
+    public bool IsUpgrade { get => _isUpgrade; set => this.RaiseAndSetIfChanged(ref _isUpgrade, value); }
+    public bool SkipAdminSetup { get => _skipAdminSetup; set => this.RaiseAndSetIfChanged(ref _skipAdminSetup, value); }
 
     public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
@@ -222,14 +316,33 @@ public class InstallerViewModel : ReactiveObject
     public string AdminPasswordConfirm { get => _adminPasswordConfirm; set => this.RaiseAndSetIfChanged(ref _adminPasswordConfirm, value); }
 
     public string CloseButtonText => IsComplete ? "Close" : "Cancel";
+    public string InstallButtonText => IsUpgrade ? "Upgrade" : "Install";
 
     // Progress
     public string ProgressText { get => _progressText; set => this.RaiseAndSetIfChanged(ref _progressText, value); }
     public double ProgressValue { get => _progressValue; set => this.RaiseAndSetIfChanged(ref _progressValue, value); }
     public string ErrorMessage { get => _errorMessage; set => this.RaiseAndSetIfChanged(ref _errorMessage, value); }
 
-    private void OnNext() => CurrentStep++;
-    private void OnBack() => CurrentStep--;
+    private void OnNext()
+    {
+        var next = CurrentStep + 1;
+        if (SkipAdminSetup && next == 5)
+            next = 6;
+        CurrentStep = next;
+    }
+    private void OnBack()
+    {
+        var prev = CurrentStep - 1;
+        if (SkipAdminSetup && prev == 5)
+            prev = 4;
+        CurrentStep = prev;
+    }
+
+    private async Task OnCopyErrorAsync()
+    {
+        if (CopyToClipboard != null && !string.IsNullOrEmpty(ErrorMessage))
+            await CopyToClipboard(ErrorMessage);
+    }
 
     private async Task OnCloseAsync()
     {
@@ -298,10 +411,17 @@ public class InstallerViewModel : ReactiveObject
             _completedActions.Add("Started the Windows Service");
             Log("Service started");
 
-            await SetProgress("Creating admin user...", 80);
-            await CreateAdminUserAsync();
-            _completedActions.Add($"Created admin user '{AdminUsername}'");
-            Log($"Created admin user '{AdminUsername}'");
+            if (!SkipAdminSetup)
+            {
+                await SetProgress("Creating admin user...", 80);
+                await CreateAdminUserAsync();
+                _completedActions.Add($"Created admin user '{AdminUsername}'");
+                Log($"Created admin user '{AdminUsername}'");
+            }
+            else
+            {
+                Log("Skipped admin user creation — existing admin user preserved");
+            }
 
             await SetProgress("Registering in Add/Remove Programs...", 90);
             WriteUninstallRegistry();
