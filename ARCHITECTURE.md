@@ -348,7 +348,7 @@ PlatformCredentialStoreFactory.Create()
 
 **Desktop app:** Configuration is stored at `%APPDATA%\SqlAgMonitor\config.json` (Linux/macOS: `~/.config/SqlAgMonitor/config.json`).
 
-**Windows Service:** Configuration is stored alongside the binary at `C:\Program Files\SqlAgMonitor\config.json`. This fixed path ensures the config survives service account changes (not tied to any user profile).
+**Windows Service:** Configuration is stored at `%ProgramData%\SqlAgMonitor\config.json`. This fixed, writable location survives service account changes and respects Windows conventions (`%ProgramFiles%` is read-only for services, `%APPDATA%` varies per account).
 
 Key sections of `AppConfiguration`:
 
