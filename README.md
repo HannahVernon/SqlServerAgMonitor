@@ -103,6 +103,23 @@ Each alert type can be individually enabled/disabled and configured with custom 
 | Authentication | JWT Bearer + bcrypt |
 | Service Host | Kestrel + Windows Service |
 
+## SQL Server Permissions
+
+The monitoring account needs **read-only access** to Availability Group DMVs. Grant on every SQL Server instance being monitored:
+
+```sql
+/* Minimum permission for AG/DAG monitoring */
+GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+```
+
+| Permission | Required For |
+|---|---|
+| `VIEW SERVER STATE` | All AG/DAG monitoring (replica states, database sync status, LSN values, send/redo queues) |
+| `ALTER AVAILABILITY GROUP` | Failover operations (not required for monitoring) |
+| `ALTER DATABASE` / `db_owner` | Suspend/resume replication (not required for monitoring) |
+
+> **Tip:** If using SQL Authentication, create a dedicated login with only `VIEW SERVER STATE`. If using Windows Authentication (domain service account or gMSA), grant the permission to that account.
+
 ## Building
 
 Requires [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0) (pinned via `global.json`).
