@@ -66,14 +66,16 @@ builder.WebHost.ConfigureKestrel(options =>
 // Register Core services (monitoring, alerting, DuckDB, notifications, etc.)
 builder.Services.AddSqlAgMonitorCore();
 
-// Override config service to use a fixed path alongside the binary,
-// so it survives service account changes (not tied to %APPDATA%)
+// Override config service to use %ProgramData%\SqlAgMonitor — a fixed,
+// writable location that survives service account changes.
+// (%APPDATA% varies per account, %ProgramFiles% is read-only for services)
 builder.Services.AddSingleton<IConfigurationService>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<JsonConfigurationService>>();
-    var exeDir = Path.GetDirectoryName(Environment.ProcessPath)
-        ?? AppContext.BaseDirectory;
-    return new JsonConfigurationService(logger, exeDir);
+    var configDir = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        "SqlAgMonitor");
+    return new JsonConfigurationService(logger, configDir);
 });
 
 // Authentication — JWT bearer tokens
