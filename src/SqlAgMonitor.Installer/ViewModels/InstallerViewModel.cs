@@ -38,6 +38,7 @@ public class InstallerViewModel : ReactiveObject
     private bool _hasFailed;
     private bool _isUpgrade;
     private bool _skipAdminSetup;
+    private bool _keepExistingSettings = true;
     private readonly List<string> _completedActions = new();
 
     // Step 1: Install path
@@ -83,10 +84,10 @@ public class InstallerViewModel : ReactiveObject
         var canInstall = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
             x => x.AdminPassword, x => x.AdminPasswordConfirm,
-            x => x.SkipAdminSetup,
-            (step, installing, pw, confirm, skipAdmin) =>
+            x => x.SkipAdminSetup, x => x.KeepExistingSettings,
+            (step, installing, pw, confirm, skipAdmin, keepExisting) =>
                 step == 6 && !installing &&
-                (skipAdmin ||
+                ((skipAdmin && keepExisting) ||
                  (!string.IsNullOrWhiteSpace(pw) && pw.Length >= 8 && pw == confirm)));
 
         NextCommand = ReactiveCommand.Create(OnNext, canGoNext);
@@ -235,8 +236,34 @@ public class InstallerViewModel : ReactiveObject
         }
     }
     public bool HasFailed { get => _hasFailed; set => this.RaiseAndSetIfChanged(ref _hasFailed, value); }
-    public bool IsUpgrade { get => _isUpgrade; set => this.RaiseAndSetIfChanged(ref _isUpgrade, value); }
+    public bool IsUpgrade
+    {
+        get => _isUpgrade;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isUpgrade, value);
+            this.RaisePropertyChanged(nameof(InstallButtonText));
+        }
+    }
     public bool SkipAdminSetup { get => _skipAdminSetup; set => this.RaiseAndSetIfChanged(ref _skipAdminSetup, value); }
+    public bool KeepExistingSettings
+    {
+        get => _keepExistingSettings;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _keepExistingSettings, value);
+            if (!value)
+            {
+                SkipAdminSetup = false;
+                this.RaisePropertyChanged(nameof(InstallButtonText));
+            }
+            else if (IsUpgrade)
+            {
+                SkipAdminSetup = true;
+                this.RaisePropertyChanged(nameof(InstallButtonText));
+            }
+        }
+    }
 
     public string AppVersion => GetType().Assembly.GetName().Version?.ToString(3) ?? "0.0.0";
 
@@ -316,7 +343,7 @@ public class InstallerViewModel : ReactiveObject
     public string AdminPasswordConfirm { get => _adminPasswordConfirm; set => this.RaiseAndSetIfChanged(ref _adminPasswordConfirm, value); }
 
     public string CloseButtonText => IsComplete ? "Close" : "Cancel";
-    public string InstallButtonText => IsUpgrade ? "Upgrade" : "Install";
+    public string InstallButtonText => IsUpgrade && KeepExistingSettings ? "Upgrade" : "Install";
 
     // Progress
     public string ProgressText { get => _progressText; set => this.RaiseAndSetIfChanged(ref _progressText, value); }
@@ -326,14 +353,14 @@ public class InstallerViewModel : ReactiveObject
     private void OnNext()
     {
         var next = CurrentStep + 1;
-        if (SkipAdminSetup && next == 5)
+        if (SkipAdminSetup && KeepExistingSettings && next == 5)
             next = 6;
         CurrentStep = next;
     }
     private void OnBack()
     {
         var prev = CurrentStep - 1;
-        if (SkipAdminSetup && prev == 5)
+        if (SkipAdminSetup && KeepExistingSettings && prev == 5)
             prev = 4;
         CurrentStep = prev;
     }
@@ -411,7 +438,7 @@ public class InstallerViewModel : ReactiveObject
             _completedActions.Add("Started the Windows Service");
             Log("Service started");
 
-            if (!SkipAdminSetup)
+            if (!(SkipAdminSetup && KeepExistingSettings))
             {
                 await SetProgress("Creating admin user...", 80);
                 await CreateAdminUserAsync();

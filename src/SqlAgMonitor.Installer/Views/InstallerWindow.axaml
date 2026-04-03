@@ -69,8 +69,15 @@
                             <TextBlock Text="  • Add/Remove Programs entry for clean uninstall" Margin="8,0,0,0" />
                         </StackPanel>
                     </Border>
+                    <CheckBox Content="Perform a clean install (re-enter all settings)"
+                              IsChecked="{Binding !KeepExistingSettings}"
+                              IsVisible="{Binding IsUpgrade}" Margin="0,4,0,0" />
                     <TextBlock Text="Click Next to configure the installation, or Close to cancel."
-                               FontSize="12" Opacity="0.6" Margin="0,8,0,0" />
+                               FontSize="12" Opacity="0.6" Margin="0,8,0,0"
+                               IsVisible="{Binding !IsUpgrade}" />
+                    <TextBlock Text="Click Next to review settings and upgrade, or Close to cancel."
+                               FontSize="12" Opacity="0.6" Margin="0,8,0,0"
+                               IsVisible="{Binding IsUpgrade}" />
                 </StackPanel>
 
                 <!-- Step 1: Install Path -->
