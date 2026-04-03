@@ -2,9 +2,10 @@
 
 ## Quick Start
 
-1. **Launch** — `dotnet run --project src/SqlAgMonitor` (or run the compiled executable)
-2. **Add a group** — File → Add AG/DAG… (walks you through a 4-step wizard)
-3. **Monitor** — The app polls automatically on the interval you chose
+1. **Grant SQL permissions** — The monitoring account needs `VIEW SERVER STATE` on each SQL Server instance (see [SQL Server Permissions](#sql-server-permissions) below)
+2. **Launch** — `dotnet run --project src/SqlAgMonitor` (or run the compiled executable)
+3. **Add a group** — File → Add AG/DAG… (walks you through a 4-step wizard)
+4. **Monitor** — The app polls automatically on the interval you chose
 
 ---
 
@@ -357,6 +358,50 @@ The corresponding `GET /api/config/export` endpoint allows retrieving the servic
 - **Windows:** DPAPI (Data Protection API) encrypts credentials using the current user's Windows login. Credentials are machine- and user-bound.
 - **Other platforms:** AES-256 encryption with a key derived from a random salt stored alongside the encrypted data.
 - **Never plain text** — credentials are encrypted at rest in the AppData directory.
+
+---
+
+## SQL Server Permissions
+
+### Monitoring (read-only)
+
+The monitoring account requires only `VIEW SERVER STATE` on each SQL Server instance:
+
+```sql
+/* Grant to a SQL login */
+GRANT VIEW SERVER STATE TO [SqlAgMonitorLogin];
+
+/* Or grant to a Windows/domain account */
+GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+```
+
+This single permission covers all DMVs used by the app:
+
+| DMV / System View | Purpose |
+|---|---|
+| `sys.availability_groups` | Enumerate AGs and DAGs |
+| `sys.availability_replicas` | Replica names, availability modes, failover modes |
+| `sys.dm_hadr_availability_replica_states` | Replica roles, connected state, sync health |
+| `sys.dm_hadr_database_replica_states` | Database sync state, LSN values, queues, rates, lag |
+| `sys.databases` | Map database IDs to names |
+| `sys.fn_hadr_distributed_ag_replica()` | Drill from DAG to member AG replicas (SQL 2016+) |
+
+### Control operations (optional)
+
+These permissions are only needed if you use failover or suspend/resume features:
+
+| Permission | Operation |
+|---|---|
+| `ALTER AVAILABILITY GROUP` | Manual or forced failover |
+| `ALTER DATABASE` / `db_owner` | Suspend or resume database replication |
+
+### Authentication modes
+
+| Deployment | Recommended Auth |
+|---|---|
+| **Desktop app (standalone)** | Windows Authentication (runs as the logged-in user) |
+| **Service (domain account)** | Windows Authentication (grant `VIEW SERVER STATE` to the service account) |
+| **Service (LOCAL SERVICE)** | SQL Authentication (create a dedicated SQL login with `VIEW SERVER STATE` only) |
 
 ---
 
