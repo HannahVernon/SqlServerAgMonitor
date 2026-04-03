@@ -308,6 +308,10 @@ Pushed when an alert condition is detected.
 
 Pushed when a monitored group's SQL Server connection state changes. `state` values: `"Connected"`, `"Disconnected"`.
 
+#### `OnConfigurationChanged()`
+
+Pushed when the service configuration changes (e.g. after a config import). Clients should reload their snapshots via `GetCurrentSnapshots` to pick up newly added or removed groups.
+
 ---
 
 ## Data Models
@@ -379,7 +383,7 @@ A well-behaved client should follow this sequence:
 2. POST /api/auth/login       → obtain JWT token
 3. Connect to /monitor hub    → pass token via ?access_token=
 4. Invoke GetCurrentSnapshots → populate initial state
-5. Listen for push events     → OnSnapshotReceived, OnAlertFired, OnConnectionStateChanged
+5. Listen for push events     → OnSnapshotReceived, OnAlertFired, OnConnectionStateChanged, OnConfigurationChanged
 ```
 
 On reconnection after a connection drop:

@@ -470,6 +470,12 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
             {
                 _logger.LogInformation("Group {Group} connection state: {State}", groupName, state);
             });
+
+        connection.On("OnConfigurationChanged", () =>
+            {
+                _logger.LogInformation("Service configuration changed — reloading snapshots");
+                _ = LoadCurrentSnapshotsAsync();
+            });
     }
 
     private void OnSnapshotReceived(string groupName, MonitoredGroupSnapshot snapshot)
