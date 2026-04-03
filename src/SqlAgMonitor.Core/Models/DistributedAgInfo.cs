@@ -12,5 +12,5 @@ public class DistributedAgInfo : ObservableModel
     public Guid DagGroupId { get => _dagGroupId; set => SetProperty(ref _dagGroupId, value); }
     public SynchronizationHealth OverallHealth { get => _overallHealth; set => SetProperty(ref _overallHealth, value); }
 
-    public ObservableCollection<DistributedAgMember> Members { get; } = new();
+    public ObservableCollection<DistributedAgMember> Members { get; set; } = new();
 }
