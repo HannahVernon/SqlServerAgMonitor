@@ -199,7 +199,10 @@ public class AgMonitorService : IAgMonitorService
         {
             lease = await wrapper.TryAcquireAsync(cancellationToken);
             if (lease == null)
-                return null; // Previous poll still running — skip silently
+            {
+                _logger.LogDebug("Poll {Group}: skipped — previous poll still running.", groupName);
+                return null;
+            }
         }
 
         await using (lease)
@@ -209,6 +212,19 @@ public class AgMonitorService : IAgMonitorService
                 var connection = lease.Connection;
                 var replicas = await QueryReplicasAsync(connection, cancellationToken);
                 var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
+
+                _logger.LogDebug(
+                    "Poll {Group}: {ReplicaCount} replica(s), {DbStateCount} database state(s) from {Server}.",
+                    groupName, replicas.Count, dbStates.Count, connConfig.Server);
+
+                if (replicas.Count == 0)
+                {
+                    _logger.LogWarning(
+                        "Poll {Group}: DMV query returned 0 replicas from {Server}. "
+                        + "Verify the AG name matches and the service account has VIEW SERVER STATE.",
+                        groupName, connConfig.Server);
+                }
+
                 var agInfo = BuildAgInfo(groupName, replicas, dbStates);
 
                 return new MonitoredGroupSnapshot
