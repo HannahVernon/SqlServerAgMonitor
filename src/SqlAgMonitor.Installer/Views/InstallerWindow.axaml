@@ -28,7 +28,7 @@
                     IsVisible="{Binding !IsComplete}" />
             <Button Content="Next ▶" Command="{Binding NextCommand}" MinWidth="80"
                     IsVisible="{Binding !IsComplete}" />
-            <Button Content="Install" Command="{Binding InstallCommand}" MinWidth="100"
+            <Button Content="{Binding InstallButtonText}" Command="{Binding InstallCommand}" MinWidth="100"
                     Classes="accent" IsVisible="{Binding !IsComplete}" />
             <Button Content="{Binding CloseButtonText}" Command="{Binding CloseCommand}" MinWidth="80" />
         </StackPanel>
@@ -39,10 +39,17 @@
                 <!-- Step 0: Welcome -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep0}">
                     <TextBlock Text="Welcome" FontWeight="SemiBold" FontSize="15" />
-                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                    <TextBlock TextWrapping="Wrap" LineHeight="22"
+                               IsVisible="{Binding !IsUpgrade}">
                         This wizard will install the SQL Server AG Monitor Service as a Windows Service on this machine.
                     </TextBlock>
-                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                    <TextBlock TextWrapping="Wrap" LineHeight="22"
+                               IsVisible="{Binding IsUpgrade}">
+                        An existing SqlAgMonitor Service installation was detected. This wizard will upgrade the service
+                        in place — your configuration, admin credentials, and monitoring data will be preserved.
+                    </TextBlock>
+                    <TextBlock TextWrapping="Wrap" LineHeight="22"
+                               IsVisible="{Binding !IsUpgrade}">
                         The service runs in the background, monitors your SQL Server Availability Groups and Distributed
                         Availability Groups, records health snapshots to a local DuckDB database, and exposes a SignalR
                         API so the SqlAgMonitor desktop app can connect remotely.
@@ -228,18 +235,29 @@
                     <!-- Error -->
                     <Border Background="#40FF4444" CornerRadius="6" Padding="12"
                             IsVisible="{Binding HasFailed}">
-                        <TextBlock Text="{Binding ErrorMessage}" Foreground="#FFFF6666" TextWrapping="Wrap" />
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="{Binding ErrorMessage}" Foreground="#FFFF6666" TextWrapping="Wrap" />
+                            <Button Content="📋 Copy Error" Command="{Binding CopyErrorCommand}"
+                                    HorizontalAlignment="Left" Padding="12,4" FontSize="12" />
+                        </StackPanel>
                     </Border>
                 </StackPanel>
 
                 <!-- Step 7: Complete -->
                 <StackPanel Spacing="16" IsVisible="{Binding IsStep7}">
-                    <TextBlock Text="✓ Installation Complete" FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50" />
-                    <TextBlock TextWrapping="Wrap" LineHeight="22">
+                    <TextBlock FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50"
+                               IsVisible="{Binding !IsUpgrade}" Text="✓ Installation Complete" />
+                    <TextBlock FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50"
+                               IsVisible="{Binding IsUpgrade}" Text="✓ Upgrade Complete" />
+                    <TextBlock TextWrapping="Wrap" LineHeight="22" IsVisible="{Binding !IsUpgrade}">
                         The SqlAgMonitor Service has been installed and started successfully.
                     </TextBlock>
+                    <TextBlock TextWrapping="Wrap" LineHeight="22" IsVisible="{Binding IsUpgrade}">
+                        The SqlAgMonitor Service has been upgraded and restarted successfully.
+                        Your existing configuration, admin credentials, and monitoring data have been preserved.
+                    </TextBlock>
                     <Border Background="{DynamicResource SystemControlBackgroundListLowBrush}" 
-                            CornerRadius="6" Padding="16">
+                            CornerRadius="6" Padding="16" IsVisible="{Binding !IsUpgrade}">
                         <StackPanel Spacing="8">
                             <TextBlock Text="Next Steps:" FontWeight="SemiBold" />
                             <TextBlock TextWrapping="Wrap" Text="1. Open the SqlAgMonitor desktop app" />

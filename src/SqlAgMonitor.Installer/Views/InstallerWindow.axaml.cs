@@ -1,5 +1,7 @@
 using System.Security.Cryptography.X509Certificates;
 using System.Threading.Tasks;
+using Avalonia.Controls;
+using Avalonia.Input.Platform;
 using Avalonia.ReactiveUI;
 using Avalonia.Threading;
 using SqlAgMonitor.Installer.ViewModels;
@@ -24,6 +26,12 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
             vm.ConfirmCancelInstallation = PromptUserForCancelConfirmation;
             vm.ConfirmServiceReconfigure = PromptUserForServiceReconfigure;
             vm.ConfirmCertificateKeyPermission = PromptUserForCertKeyPermission;
+            vm.CopyToClipboard = CopyTextToClipboardAsync;
+
+            Dispatcher.UIThread.Post(async () =>
+            {
+                await vm.DetectExistingInstallationAsync();
+            });
         }
     }
 
@@ -75,5 +83,12 @@ public partial class InstallerWindow : ReactiveWindow<InstallerViewModel>
             await dialog.ShowDialog(this);
             return dialog.Confirmed;
         });
+    }
+
+    private async Task CopyTextToClipboardAsync(string text)
+    {
+        var clipboard = TopLevel.GetTopLevel(this)?.Clipboard;
+        if (clipboard != null)
+            await clipboard.SetTextAsync(text);
     }
 }

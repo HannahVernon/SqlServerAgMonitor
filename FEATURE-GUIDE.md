@@ -457,6 +457,8 @@ Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks thro
 5. **Admin credentials** — initial username and password for the service API
 6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, and registers in Add/Remove Programs
 
+**Upgrade mode:** When an existing installation is detected, the installer pre-populates all settings (install path, service account, port, TLS certificate) from the current configuration. The admin credentials step is skipped — existing admin users are preserved. The button reads "Upgrade" instead of "Install".
+
 To uninstall, use Windows Settings → Apps → SQL Server AG Monitor Service, or run `SqlAgMonitor.Installer.exe /uninstall`.
 
 #### PowerShell Scripts (advanced)
