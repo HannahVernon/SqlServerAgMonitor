@@ -767,10 +767,14 @@ public class InstallerViewModel : ReactiveObject
 
         var args = $"create {ServiceName} binPath= {expectedBinPath} DisplayName= \"{DisplayName}\" start= delayed-auto obj= \"{ServiceAccount}\"";
 
+        var redactedArgs = args;
         if (!UseLocalService && !string.IsNullOrEmpty(ServicePassword))
+        {
             args += $" password= \"{ServicePassword}\"";
+            redactedArgs += " password= \"***REDACTED***\"";
+        }
 
-        Log($"Running: sc.exe {args}");
+        Log($"Running: sc.exe {redactedArgs}");
         var exitCode = await RunProcessAsync("sc.exe", args);
         if (exitCode != 0)
             throw new InvalidOperationException($"sc.exe create failed with exit code {exitCode}.");
