@@ -20,6 +20,10 @@ Whenever you make a code change that affects any of the following, you **must** 
 - `IntPtr` buffers must be freed in `finally` blocks
 - Passwords must never be logged — redact as `***REDACTED***`
 
+## GitHub Issue Linking
+
+Before starting work on a bug fix or feature, search the repository's GitHub Issues to see if a matching issue already exists. If one exists, reference it in your PR (e.g., `Fixes #123` or `Closes #123`) so it is automatically closed when the PR merges. If no matching issue exists, create one first with a clear title and description, then link it to your PR the same way.
+
 ## NuGet Vulnerability Scanning
 
 Whenever a NuGet package is added, updated, or its version changes, run `dotnet list package --vulnerable` from the solution root and verify zero vulnerabilities before committing. If a vulnerability is found, check for a patched version or flag it to the user for a decision.
