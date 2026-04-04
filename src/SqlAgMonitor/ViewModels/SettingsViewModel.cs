@@ -23,6 +23,7 @@ public class SettingsViewModel : ViewModelBase
 
     private int _globalPollingIntervalSeconds;
     private string _theme = "dark";
+    private string _logLevel = "Information";
 
     // Email
     private bool _emailEnabled;
@@ -67,6 +68,7 @@ public class SettingsViewModel : ViewModelBase
 
     public List<string> ThemeOptions { get; } = new() { "Light", "Dark", "High Contrast" };
     public List<string> SyslogProtocolOptions { get; } = new() { "UDP", "TCP" };
+    public List<string> LogLevelOptions { get; } = new() { "Debug", "Information", "Warning", "Error" };
 
     public int GlobalPollingIntervalSeconds
     {
@@ -78,6 +80,12 @@ public class SettingsViewModel : ViewModelBase
     {
         get => _theme;
         set => this.RaiseAndSetIfChanged(ref _theme, value);
+    }
+
+    public string LogLevel
+    {
+        get => _logLevel;
+        set => this.RaiseAndSetIfChanged(ref _logLevel, value);
     }
 
     // Email settings
@@ -155,6 +163,7 @@ public class SettingsViewModel : ViewModelBase
     {
         GlobalPollingIntervalSeconds = config.GlobalPollingIntervalSeconds;
         Theme = ThemeToDisplay.GetValueOrDefault(config.Theme, "Dark");
+        LogLevel = LogLevelOptions.Contains(config.LogLevel) ? config.LogLevel : "Information";
         EmailEnabled = config.Email.Enabled;
         SmtpServer = config.Email.SmtpServer;
         SmtpPort = config.Email.SmtpPort;
@@ -186,6 +195,7 @@ public class SettingsViewModel : ViewModelBase
     {
         config.GlobalPollingIntervalSeconds = GlobalPollingIntervalSeconds;
         config.Theme = DisplayToTheme.GetValueOrDefault(Theme, "dark");
+        config.LogLevel = LogLevel;
         config.Email.Enabled = EmailEnabled;
         config.Email.SmtpServer = SmtpServer;
         config.Email.SmtpPort = SmtpPort;

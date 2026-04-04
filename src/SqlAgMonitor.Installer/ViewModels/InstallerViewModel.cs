@@ -105,6 +105,10 @@ public class InstallerViewModel : ReactiveObject
         var canCopyError = this.WhenAnyValue(x => x.ErrorMessage)
             .Select(msg => !string.IsNullOrEmpty(msg));
         CopyErrorCommand = ReactiveCommand.CreateFromTask(OnCopyErrorAsync, canCopyError);
+
+        var canCopyScript = this.WhenAnyValue(x => x.GrantScriptPath)
+            .Select(p => !string.IsNullOrEmpty(p));
+        CopyGrantScriptCommand = ReactiveCommand.CreateFromTask(OnCopyGrantScriptAsync, canCopyScript);
     }
 
     public async Task DetectExistingInstallationAsync()
@@ -196,6 +200,7 @@ public class InstallerViewModel : ReactiveObject
     public ReactiveCommand<Unit, Unit> CloseCommand { get; }
     public ReactiveCommand<Unit, Unit> ViewCertificateCommand { get; }
     public ReactiveCommand<Unit, Unit> CopyErrorCommand { get; }
+    public ReactiveCommand<Unit, Unit> CopyGrantScriptCommand { get; }
 
     public event Action? CloseRequested;
     public Func<string, Task>? CopyToClipboard { get; set; }
@@ -376,6 +381,19 @@ public class InstallerViewModel : ReactiveObject
     {
         if (CopyToClipboard != null && !string.IsNullOrEmpty(ErrorMessage))
             await CopyToClipboard(ErrorMessage);
+    }
+
+    private async Task OnCopyGrantScriptAsync()
+    {
+        if (CopyToClipboard != null && !string.IsNullOrEmpty(GrantScriptPath))
+        {
+            try
+            {
+                var scriptContent = File.ReadAllText(GrantScriptPath);
+                await CopyToClipboard(scriptContent);
+            }
+            catch { /* best effort */ }
+        }
     }
 
     private async Task OnCloseAsync()

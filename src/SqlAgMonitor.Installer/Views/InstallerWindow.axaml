@@ -290,6 +290,8 @@
                             </TextBlock>
                             <TextBlock TextWrapping="Wrap" FontFamily="Consolas" FontSize="12"
                                        Text="{Binding GrantScriptPath}" />
+                            <Button Content="📋 Copy Script to Clipboard" Command="{Binding CopyGrantScriptCommand}"
+                                    HorizontalAlignment="Left" />
                         </StackPanel>
                     </Border>
                     <TextBlock Text="The service is registered in Add/Remove Programs and can be uninstalled from Windows Settings."
