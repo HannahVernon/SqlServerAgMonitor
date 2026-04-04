@@ -7,28 +7,41 @@ namespace SqlAgMonitor;
 public sealed class FileLoggerProvider : ILoggerProvider
 {
     private readonly string _filePath;
+    private volatile LogLevel _minimumLevel;
 
-    public FileLoggerProvider(string filePath) => _filePath = filePath;
+    public FileLoggerProvider(string filePath, LogLevel minimumLevel = LogLevel.Information)
+    {
+        _filePath = filePath;
+        _minimumLevel = minimumLevel;
+    }
 
-    public ILogger CreateLogger(string categoryName) => new FileLogger(_filePath, categoryName);
+    public LogLevel MinimumLevel
+    {
+        get => _minimumLevel;
+        set => _minimumLevel = value;
+    }
+
+    public ILogger CreateLogger(string categoryName) => new FileLogger(this, _filePath, categoryName);
 
     public void Dispose() { }
 
     private sealed class FileLogger : ILogger
     {
+        private readonly FileLoggerProvider _provider;
         private readonly string _filePath;
         private readonly string _category;
         private static readonly object Lock = new();
 
-        public FileLogger(string filePath, string category)
+        public FileLogger(FileLoggerProvider provider, string filePath, string category)
         {
+            _provider = provider;
             _filePath = filePath;
             _category = category;
         }
 
         public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
 
-        public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Information;
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= _provider._minimumLevel;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
         {

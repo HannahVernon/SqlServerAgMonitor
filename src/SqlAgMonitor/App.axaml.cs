@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net.Http;
 using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
@@ -38,11 +39,31 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         var services = new ServiceCollection();
+
+        // Parse saved log level from config (before DI is built)
+        var earlyConfigPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "SqlAgMonitor", "config.json");
+        var initialLogLevel = LogLevel.Information;
+        if (File.Exists(earlyConfigPath))
+        {
+            try
+            {
+                var json = File.ReadAllText(earlyConfigPath);
+                using var doc = System.Text.Json.JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("logLevel", out var lvlProp))
+                    Enum.TryParse(lvlProp.GetString(), true, out initialLogLevel);
+            }
+            catch { /* use default */ }
+        }
+
+        var fileLoggerProvider = new FileLoggerProvider(Program.LogFilePath, initialLogLevel);
         services.AddLogging(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Debug);
-            builder.AddProvider(new FileLoggerProvider(Program.LogFilePath));
+            builder.AddProvider(fileLoggerProvider);
         });
+        services.AddSingleton(fileLoggerProvider);
         services.AddSqlAgMonitorCore();
 
         // UI-layer services
@@ -63,6 +84,13 @@ public partial class App : Application
         var configService = Services.GetRequiredService<IConfigurationService>();
         var config = configService.Load();
         Services.GetRequiredService<IThemeService>().SetTheme(config.Theme);
+
+        // Update file log level at runtime when settings change
+        configService.ConfigurationChanged += cfg =>
+        {
+            if (Enum.TryParse<LogLevel>(cfg.LogLevel, true, out var newLevel))
+                fileLoggerProvider.MinimumLevel = newLevel;
+        };
 
         // Initialize event history database (errors are logged; DuckDB degrades gracefully if unavailable)
         var historyMaintenance = Services.GetRequiredService<IHistoryMaintenanceService>();

@@ -9,6 +9,9 @@ public class AppConfiguration
     /// <see cref="MonitoredGroupConfig.PollingIntervalSeconds"/>. Clamped to ≥ 5s at runtime.</summary>
     public int GlobalPollingIntervalSeconds { get; set; } = 16;
     public string Theme { get; set; } = "dark";
+    /// <summary>Minimum log level for the desktop app file logger.
+    /// One of: Debug, Information, Warning, Error. Default: Information.</summary>
+    public string LogLevel { get; set; } = "Information";
     public EmailSettings Email { get; set; } = new();
     public SyslogSettings Syslog { get; set; } = new();
     public AlertSettings Alerts { get; set; } = new();

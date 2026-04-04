@@ -261,7 +261,8 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 
 ### General Tab
 - Polling interval defaults
-- Log level configuration
+- Theme selection (Light / Dark / High Contrast)
+- **Log level** — Controls file log verbosity for the desktop app (Debug, Information, Warning, Error). Changes take effect immediately on save. The Windows Service log level is configured via `Logging:LogLevel:Default` in `appsettings.json` (requires service restart).
 
 ### Email Notifications Tab
 - SMTP server, port, TLS toggle

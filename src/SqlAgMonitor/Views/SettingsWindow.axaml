@@ -97,6 +97,16 @@
                                       SelectedItem="{Binding Theme}"
                                       Width="200" HorizontalAlignment="Left" />
                         </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Log Level" />
+                            <TextBlock Text="Controls verbosity of the desktop app log file. Takes effect immediately on save."
+                                       FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                            <ComboBox x:CompileBindings="False"
+                                      ItemsSource="{Binding LogLevelOptions}"
+                                      SelectedItem="{Binding LogLevel}"
+                                      Width="200" HorizontalAlignment="Left" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
