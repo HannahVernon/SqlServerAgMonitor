@@ -13,3 +13,9 @@ Whenever you make a code change that affects any of the following, you **must** 
 | Contribution workflow, coding standards | `CONTRIBUTING.md` |
 
 **Do not defer documentation updates to a follow-up commit.** Treat docs as part of the definition of done for every change.
+
+## Win32 Interop Safety Rules
+
+- All Win32 handles (`HANDLE`) must be closed in `finally` blocks
+- `IntPtr` buffers must be freed in `finally` blocks
+- Passwords must never be logged — redact as `***REDACTED***`
