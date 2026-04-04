@@ -346,9 +346,15 @@ The indicator updates in real time as the SignalR connection state changes.
 
 ### Config Migration
 
-When service mode is **newly enabled** and the app has locally configured monitored groups, a **Migration Dialog** offers to push the local configuration to the remote service. This is a one-time convenience to avoid re-entering groups, alert settings, email, and syslog configuration on the service.
+When service mode is **newly enabled** and the app has locally configured monitored groups, a **Migration Dialog** offers to push the local configuration to the remote service. Before showing the dialog, the app fetches the service's current groups via `GET /api/config/export` and categorizes each group:
 
-The migration uses `POST /api/config/import` to perform an **additive merge** — existing service configuration is preserved, and the local settings are added on top. The dialog warns that **SQL authentication passwords are not transferred** (they must be re-entered on the service side).
+- **New (local only)** — groups that exist locally but not on the service. Pre-checked for migration.
+- **Shared** — groups that exist in both. Unchecked by default; selecting them will overwrite the service's configuration for that group.
+- **Service only** — groups already on the service with no local counterpart. Shown for information only, no action needed.
+
+The user selects which groups to push, then clicks **Migrate Selected**. Alert, email, and syslog settings are always included. The dialog warns that **SQL authentication passwords are not transferred** (they must be re-entered on the service side).
+
+The migration uses `POST /api/config/import` to perform an **additive merge** — existing service configuration is preserved, and the selected local groups are added or updated on top.
 
 The corresponding `GET /api/config/export` endpoint allows retrieving the service's current configuration with credentials redacted.
 

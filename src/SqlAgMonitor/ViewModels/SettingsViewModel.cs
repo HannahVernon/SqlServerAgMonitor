@@ -417,7 +417,69 @@ public class SettingsViewModel : ViewModelBase
     /// Pushes local config (groups, alerts, email, syslog) to the remote service.
     /// Returns a human-readable result message.
     /// </summary>
-    public async Task<string> MigrateConfigToServiceAsync()
+    public Task<string> MigrateConfigToServiceAsync()
+    {
+        var config = _configService.Load();
+        return MigrateSelectedGroupsAsync(config.MonitoredGroups.Select(g => g.Name).ToList());
+    }
+
+    /// <summary>
+    /// Fetches the list of monitored group names from the remote service.
+    /// Returns an empty list if the service is unreachable or has no groups.
+    /// </summary>
+    public async Task<List<string>> FetchServiceGroupNamesAsync()
+    {
+        var config = _configService.Load();
+        var svc = config.Service;
+        var scheme = svc.UseTls ? "https" : "http";
+        var port = Math.Clamp(svc.Port, 1, 65535);
+        var baseUrl = $"{scheme}://{svc.Host}:{port}";
+        var thumbprint = AcceptedCertThumbprint ?? svc.TrustedCertThumbprint;
+
+        try
+        {
+            var token = await ServiceMonitoringClient.LoginAsync(svc, ServiceUsername ?? "", ServicePassword, thumbprint);
+            if (token == null) return new List<string>();
+
+            using var handler = new HttpClientHandler();
+            if (thumbprint != null)
+            {
+                var pinned = thumbprint;
+                handler.ServerCertificateCustomValidationCallback = (_, cert, _, _) =>
+                    cert != null && string.Equals(cert.GetCertHashString(), pinned, StringComparison.OrdinalIgnoreCase);
+            }
+
+            using var client = new HttpClient(handler)
+            {
+                BaseAddress = new Uri(baseUrl),
+                Timeout = TimeSpan.FromSeconds(10)
+            };
+            client.DefaultRequestHeaders.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+            var response = await client.GetAsync("/api/config/export");
+            if (!response.IsSuccessStatusCode) return new List<string>();
+
+            var json = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("monitoredGroups", out var groupsArray))
+            {
+                return groupsArray.EnumerateArray()
+                    .Select(g => g.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "")
+                    .Where(n => !string.IsNullOrEmpty(n))
+                    .ToList();
+            }
+        }
+        catch { /* best effort */ }
+
+        return new List<string>();
+    }
+
+    /// <summary>
+    /// Pushes only the selected local groups (plus alerts, email, syslog) to the remote service.
+    /// Returns a human-readable result message.
+    /// </summary>
+    public async Task<string> MigrateSelectedGroupsAsync(List<string> selectedGroupNames)
     {
         var config = _configService.Load();
         var svc = config.Service;
@@ -451,9 +513,13 @@ public class SettingsViewModel : ViewModelBase
             client.DefaultRequestHeaders.Authorization =
                 new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
+            var selectedGroups = config.MonitoredGroups
+                .Where(g => selectedGroupNames.Contains(g.Name, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
             var importPayload = new
             {
-                monitoredGroups = config.MonitoredGroups,
+                monitoredGroups = selectedGroups,
                 alerts = config.Alerts,
                 email = config.Email,
                 syslog = config.Syslog
@@ -481,7 +547,7 @@ public class SettingsViewModel : ViewModelBase
             if (email) parts.Add("email settings");
             if (syslog) parts.Add("syslog settings");
 
-            var sqlAuthGroups = config.MonitoredGroups
+            var sqlAuthGroups = selectedGroups
                 .Where(g => g.Connections.Any(c =>
                     string.Equals(c.AuthType, "sql", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(c.CredentialKey)))
                 .Select(g => g.Name)
