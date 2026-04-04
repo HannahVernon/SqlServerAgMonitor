@@ -118,7 +118,7 @@ public class InstallerViewModel : ReactiveObject
 
     public async Task DetectExistingInstallationAsync()
     {
-        var existingConfig = await QueryServiceConfigAsync();
+        var existingConfig = QueryServiceConfigWin32();
         if (existingConfig == null) return;
 
         IsUpgrade = true;
@@ -469,7 +469,7 @@ public class InstallerViewModel : ReactiveObject
         try
         {
             await SetProgress("Checking for existing installation...", 0);
-            await ValidateInstallPathAsync();
+            ValidateInstallPath();
 
             await SetProgress("Publishing service files...", 5);
             await PublishServiceAsync();
@@ -683,9 +683,9 @@ public class InstallerViewModel : ReactiveObject
         File.WriteAllText(settingsPath, json);
     }
 
-    private async Task ValidateInstallPathAsync()
+    private void ValidateInstallPath()
     {
-        var existingConfig = await QueryServiceConfigAsync();
+        var existingConfig = QueryServiceConfigWin32();
         if (existingConfig == null) return;
 
         var existingBinPath = existingConfig.BinPath.Trim('"');
@@ -703,7 +703,7 @@ public class InstallerViewModel : ReactiveObject
                 + "Installing to a different location would leave the service pointing at the old path. "
                 + "Please either:\n"
                 + $"  • Change the install path to \"{existingDir}\", or\n"
-                + $"  • Uninstall the existing service first (sc.exe delete {ServiceName})");
+                + $"  • Uninstall the existing service first");
         }
     }
 
@@ -714,13 +714,13 @@ public class InstallerViewModel : ReactiveObject
             throw new FileNotFoundException($"Service executable not found at {exePath}");
 
         var expectedBinPath = $"\"{exePath}\"";
-        var existingConfig = await QueryServiceConfigAsync();
+        var existingConfig = QueryServiceConfigWin32();
 
         if (existingConfig != null)
         {
             Log($"Existing service found: BinPath={existingConfig.BinPath}, Account={existingConfig.ServiceAccount}, StartType={existingConfig.StartType}");
 
-            // Path mismatch is already blocked by ValidateInstallPathAsync — only check account and start type
+            // Path mismatch is already blocked by ValidateInstallPath — only check account and start type
             var differences = new List<string>();
 
             if (!string.Equals(existingConfig.ServiceAccount, ServiceAccount, StringComparison.OrdinalIgnoreCase))
@@ -757,79 +757,362 @@ public class InstallerViewModel : ReactiveObject
                 }
             }
 
-            // User approved reconfiguration — delete and recreate
-            Log($"Deleting service '{ServiceName}' for reconfiguration...");
-            var deleteExitCode = await RunProcessAsync("sc.exe", $"delete {ServiceName}");
-            Log($"sc.exe delete exited with code {deleteExitCode}");
-            if (deleteExitCode == 0)
+            // User approved reconfiguration — try ChangeServiceConfig first
+            Log($"Reconfiguring service '{ServiceName}'...");
+            var password = !UseLocalService && !string.IsNullOrEmpty(ServicePassword)
+                ? ServicePassword : null;
+            var passwordRedacted = password != null ? "***REDACTED***" : "(null)";
+            Log($"ChangeServiceConfig: obj=\"{ServiceAccount}\", password={passwordRedacted}, startType=AUTO_START");
+
+            var reconfigured = ReconfigureServiceWin32(ServiceAccount, password);
+
+            if (!reconfigured)
+            {
+                // Fallback: delete and recreate
+                Log("ChangeServiceConfig failed — falling back to delete and recreate.");
+                DeleteServiceWin32();
                 await Task.Delay(2000);
+                CreateServiceWin32(expectedBinPath, ServiceAccount, password);
+            }
         }
-
-        var args = $"create {ServiceName} binPath= {expectedBinPath} DisplayName= \"{DisplayName}\" start= delayed-auto obj= \"{ServiceAccount}\"";
-
-        var redactedArgs = args;
-        if (!UseLocalService && !string.IsNullOrEmpty(ServicePassword))
+        else
         {
-            args += $" password= \"{ServicePassword}\"";
-            redactedArgs += " password= \"***REDACTED***\"";
-        }
+            var password = !UseLocalService && !string.IsNullOrEmpty(ServicePassword)
+                ? ServicePassword : null;
+            var passwordRedacted = password != null ? "***REDACTED***" : "(null)";
+            Log($"Creating service '{ServiceName}': binPath={expectedBinPath}, obj=\"{ServiceAccount}\", password={passwordRedacted}");
 
-        Log($"Running: sc.exe {redactedArgs}");
-        var exitCode = await RunProcessAsync("sc.exe", args);
-        if (exitCode != 0)
-            throw new InvalidOperationException($"sc.exe create failed with exit code {exitCode}.");
+            CreateServiceWin32(expectedBinPath, ServiceAccount, password);
+        }
 
         // Set description
-        await RunProcessAsync("sc.exe",
-            $"description {ServiceName} \"Monitors SQL Server Availability Groups and Distributed Availability Groups via SignalR.\"");
+        SetServiceDescription("Monitors SQL Server Availability Groups and Distributed Availability Groups via SignalR.");
 
-        // Configure recovery policy
-        await RunProcessAsync("sc.exe",
-            $"failure {ServiceName} reset= 86400 actions= restart/60000/restart/120000//");
+        // Configure recovery policy: restart after 60s, restart after 120s, then nothing; reset after 86400s
+        SetServiceFailureActions();
+
+        // Set delayed auto-start via registry
+        using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}", writable: true);
+        if (key != null)
+        {
+            key.SetValue("DelayedAutostart", 1, RegistryValueKind.DWord);
+            Log("Set service to delayed auto-start via registry.");
+        }
+
+        // Grant "Log on as a service" right for domain accounts
+        if (!UseLocalService)
+        {
+            GrantLogonAsServiceRight(ServiceAccount);
+            _completedActions.Add($"Granted 'Log on as a service' right to '{ServiceAccount}'");
+        }
     }
 
-    private async Task<ServiceConfig?> QueryServiceConfigAsync()
+    private void CreateServiceWin32(string binPath, string account, string? password)
     {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+
         try
         {
-            using var process = Process.Start(new ProcessStartInfo
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SC_MANAGER_ALL_ACCESS);
+            if (hSCManager == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            hService = NativeMethods.CreateService(
+                hSCManager, ServiceName, DisplayName,
+                NativeMethods.SERVICE_ALL_ACCESS,
+                NativeMethods.SERVICE_WIN32_OWN_PROCESS,
+                NativeMethods.SERVICE_AUTO_START,
+                NativeMethods.SERVICE_ERROR_NORMAL,
+                binPath,
+                null, IntPtr.Zero, null,
+                account, password);
+
+            if (hService == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            Log($"Service '{ServiceName}' created successfully.");
+        }
+        finally
+        {
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
+        }
+    }
+
+    private bool ReconfigureServiceWin32(string account, string? password)
+    {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+
+        try
+        {
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SC_MANAGER_ALL_ACCESS);
+            if (hSCManager == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            hService = NativeMethods.OpenService(hSCManager, ServiceName, NativeMethods.SERVICE_ALL_ACCESS);
+            if (hService == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            var result = NativeMethods.ChangeServiceConfig(
+                hService,
+                NativeMethods.SERVICE_NO_CHANGE,
+                NativeMethods.SERVICE_AUTO_START,
+                NativeMethods.SERVICE_NO_CHANGE,
+                null, null, IntPtr.Zero, null,
+                account, password,
+                null);
+
+            if (!result)
             {
-                FileName = "sc.exe",
-                Arguments = $"qc {ServiceName}",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            });
-
-            if (process == null) return null;
-
-            var stdout = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0) return null;
-
-            // Parse sc.exe qc output — lines like "BINARY_PATH_NAME : ...", "START_TYPE : ...", "SERVICE_START_NAME : ..."
-            string? binPath = null, startType = null, account = null;
-            foreach (var line in stdout.Split('\n'))
-            {
-                var trimmed = line.Trim();
-                if (trimmed.StartsWith("BINARY_PATH_NAME", StringComparison.OrdinalIgnoreCase))
-                    binPath = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
-                else if (trimmed.StartsWith("START_TYPE", StringComparison.OrdinalIgnoreCase))
-                    startType = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
-                else if (trimmed.StartsWith("SERVICE_START_NAME", StringComparison.OrdinalIgnoreCase))
-                    account = trimmed.Split(':', 2).ElementAtOrDefault(1)?.Trim();
+                var error = Marshal.GetLastWin32Error();
+                Log($"ChangeServiceConfig failed with error {error}: {new System.ComponentModel.Win32Exception(error).Message}");
+                return false;
             }
 
-            if (binPath == null) return null;
+            Log($"Service '{ServiceName}' reconfigured successfully.");
+            return true;
+        }
+        finally
+        {
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
+        }
+    }
 
-            return new ServiceConfig(binPath, startType ?? "UNKNOWN", account ?? "UNKNOWN");
+    private void DeleteServiceWin32()
+    {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+
+        try
+        {
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SC_MANAGER_ALL_ACCESS);
+            if (hSCManager == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            hService = NativeMethods.OpenService(hSCManager, ServiceName, NativeMethods.DELETE);
+            if (hService == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            if (!NativeMethods.DeleteService(hService))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            Log($"Service '{ServiceName}' deleted.");
+        }
+        finally
+        {
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
+        }
+    }
+
+    private void SetServiceDescription(string description)
+    {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+
+        try
+        {
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SC_MANAGER_ALL_ACCESS);
+            if (hSCManager == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            hService = NativeMethods.OpenService(hSCManager, ServiceName, NativeMethods.SERVICE_ALL_ACCESS);
+            if (hService == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            var desc = new NativeMethods.SERVICE_DESCRIPTION { lpDescription = description };
+            if (!NativeMethods.ChangeServiceConfig2(hService, NativeMethods.SERVICE_CONFIG_DESCRIPTION, ref desc))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            Log("Service description set.");
+        }
+        finally
+        {
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
+        }
+    }
+
+    private void SetServiceFailureActions()
+    {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+        var actionsPtr = IntPtr.Zero;
+
+        try
+        {
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SC_MANAGER_ALL_ACCESS);
+            if (hSCManager == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            hService = NativeMethods.OpenService(hSCManager, ServiceName, NativeMethods.SERVICE_ALL_ACCESS);
+            if (hService == IntPtr.Zero)
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            var actions = new NativeMethods.SC_ACTION[]
+            {
+                new() { Type = NativeMethods.SC_ACTION_RESTART, Delay = 60_000 },
+                new() { Type = NativeMethods.SC_ACTION_RESTART, Delay = 120_000 },
+                new() { Type = 0 /* SC_ACTION_NONE */, Delay = 0 }
+            };
+
+            var actionSize = Marshal.SizeOf<NativeMethods.SC_ACTION>();
+            actionsPtr = Marshal.AllocHGlobal(actionSize * actions.Length);
+            for (var i = 0; i < actions.Length; i++)
+                Marshal.StructureToPtr(actions[i], actionsPtr + i * actionSize, false);
+
+            var failureActions = new NativeMethods.SERVICE_FAILURE_ACTIONS
+            {
+                dwResetPeriod = 86400,
+                lpRebootMsg = IntPtr.Zero,
+                lpCommand = IntPtr.Zero,
+                cActions = (uint)actions.Length,
+                lpsaActions = actionsPtr
+            };
+
+            if (!NativeMethods.ChangeServiceConfig2(hService, NativeMethods.SERVICE_CONFIG_FAILURE_ACTIONS, ref failureActions))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            Log("Service failure actions configured (restart after 60s, restart after 120s, then none; reset after 86400s).");
+        }
+        finally
+        {
+            if (actionsPtr != IntPtr.Zero) Marshal.FreeHGlobal(actionsPtr);
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
+        }
+    }
+
+    private void GrantLogonAsServiceRight(string accountName)
+    {
+        Log($"Granting 'Log on as a service' right to '{accountName}'...");
+
+        uint sidSize = 0;
+        uint domainSize = 0;
+        NativeMethods.LookupAccountName(null, accountName, IntPtr.Zero, ref sidSize, null, ref domainSize, out _);
+
+        var sidPtr = Marshal.AllocHGlobal((int)sidSize);
+        var domainBuilder = new StringBuilder((int)domainSize);
+        try
+        {
+            if (!NativeMethods.LookupAccountName(null, accountName, sidPtr, ref sidSize, domainBuilder, ref domainSize, out _))
+                throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+
+            var systemName = new NativeMethods.LSA_UNICODE_STRING();
+            var objectAttrs = new NativeMethods.LSA_OBJECT_ATTRIBUTES
+            {
+                Length = (uint)Marshal.SizeOf<NativeMethods.LSA_OBJECT_ATTRIBUTES>()
+            };
+            var status = NativeMethods.LsaOpenPolicy(ref systemName, ref objectAttrs, NativeMethods.POLICY_ALL_ACCESS, out var policyHandle);
+            if (status != 0)
+                throw new System.ComponentModel.Win32Exception(NativeMethods.LsaNtStatusToWinError(status));
+
+            var rights = new[] { NativeMethods.CreateLsaString("SeServiceLogonRight") };
+            try
+            {
+                status = NativeMethods.LsaAddAccountRights(policyHandle, sidPtr, rights, 1);
+                if (status != 0)
+                    throw new System.ComponentModel.Win32Exception(NativeMethods.LsaNtStatusToWinError(status));
+
+                Log($"Granted 'Log on as a service' right to '{accountName}'.");
+            }
+            finally
+            {
+                NativeMethods.LsaClose(policyHandle);
+                Marshal.FreeHGlobal(rights[0].Buffer);
+            }
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(sidPtr);
+        }
+    }
+
+    private ServiceConfig? QueryServiceConfigWin32()
+    {
+        var hSCManager = IntPtr.Zero;
+        var hService = IntPtr.Zero;
+        var buffer = IntPtr.Zero;
+
+        try
+        {
+            hSCManager = NativeMethods.OpenSCManager(null, null, NativeMethods.SERVICE_QUERY_CONFIG);
+            if (hSCManager == IntPtr.Zero)
+            {
+                Log($"OpenSCManager failed: {new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                return null;
+            }
+
+            hService = NativeMethods.OpenService(hSCManager, ServiceName, NativeMethods.SERVICE_QUERY_CONFIG);
+            if (hService == IntPtr.Zero)
+                return null; // Service does not exist
+
+            // First call to get required buffer size
+            NativeMethods.QueryServiceConfig(hService, IntPtr.Zero, 0, out var bytesNeeded);
+            var lastError = (uint)Marshal.GetLastWin32Error();
+            if (lastError != NativeMethods.ERROR_INSUFFICIENT_BUFFER)
+            {
+                Log($"QueryServiceConfig sizing call failed with error {lastError}");
+                return null;
+            }
+
+            buffer = Marshal.AllocHGlobal((int)bytesNeeded);
+            if (!NativeMethods.QueryServiceConfig(hService, buffer, bytesNeeded, out _))
+            {
+                Log($"QueryServiceConfig failed: {new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error()).Message}");
+                return null;
+            }
+
+            var config = Marshal.PtrToStructure<NativeMethods.QUERY_SERVICE_CONFIG>(buffer);
+            var binPath = config.lpBinaryPathName != IntPtr.Zero
+                ? Marshal.PtrToStringUni(config.lpBinaryPathName) ?? "UNKNOWN"
+                : "UNKNOWN";
+            var account = config.lpServiceStartName != IntPtr.Zero
+                ? Marshal.PtrToStringUni(config.lpServiceStartName) ?? "UNKNOWN"
+                : "UNKNOWN";
+
+            // Map dwStartType to a human-readable string compatible with existing comparison logic
+            var startTypeStr = config.dwStartType switch
+            {
+                0 => "BOOT_START",
+                1 => "SYSTEM_START",
+                2 => "AUTO_START",
+                3 => "DEMAND_START",
+                4 => "DISABLED",
+                _ => $"UNKNOWN({config.dwStartType})"
+            };
+
+            // Check for delayed auto-start via registry
+            if (config.dwStartType == NativeMethods.SERVICE_AUTO_START)
+            {
+                try
+                {
+                    using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{ServiceName}");
+                    var delayedValue = key?.GetValue("DelayedAutostart");
+                    if (delayedValue is int delayed && delayed == 1)
+                        startTypeStr = "AUTO_START (DELAYED)";
+                }
+                catch
+                {
+                    // Registry read is best-effort
+                }
+            }
+
+            return new ServiceConfig(binPath, startTypeStr, account);
         }
         catch (Exception ex)
         {
             Log($"Failed to query service config: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
+            if (hService != IntPtr.Zero) NativeMethods.CloseServiceHandle(hService);
+            if (hSCManager != IntPtr.Zero) NativeMethods.CloseServiceHandle(hSCManager);
         }
     }
 
@@ -1378,6 +1661,156 @@ public class InstallerViewModel : ReactiveObject
             };
 
             CryptUIDlgViewCertificateW(ref viewInfo, out _);
+        }
+
+        // Service Control Manager
+        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "CreateServiceW", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr CreateService(
+            IntPtr hSCManager, string serviceName, string displayName,
+            uint desiredAccess, uint serviceType, uint startType, uint errorControl,
+            string binaryPathName, string? loadOrderGroup, IntPtr tagId,
+            string? dependencies, string? serviceStartName, string? password);
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern IntPtr OpenService(IntPtr hSCManager, string serviceName, uint desiredAccess);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool DeleteService(IntPtr hService);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeServiceConfig(
+            IntPtr hService, uint serviceType, uint startType, uint errorControl,
+            string? binaryPathName, string? loadOrderGroup, IntPtr tagId,
+            string? dependencies, string? serviceStartName, string? password,
+            string? displayName);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfig2W", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeServiceConfig2(IntPtr hService, uint infoLevel, ref SERVICE_DESCRIPTION info);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfig2W", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeServiceConfig2(IntPtr hService, uint infoLevel, ref SERVICE_FAILURE_ACTIONS info);
+
+        [DllImport("advapi32.dll", EntryPoint = "QueryServiceConfigW", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool QueryServiceConfig(IntPtr hService, IntPtr serviceConfig, uint bufSize, out uint bytesNeeded);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        // LSA for "Log on as a service" right
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern uint LsaOpenPolicy(
+            ref LSA_UNICODE_STRING systemName, ref LSA_OBJECT_ATTRIBUTES objectAttributes,
+            uint desiredAccess, out IntPtr policyHandle);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        public static extern uint LsaAddAccountRights(
+            IntPtr policyHandle, IntPtr accountSid,
+            LSA_UNICODE_STRING[] userRights, uint countOfRights);
+
+        [DllImport("advapi32.dll")]
+        public static extern uint LsaClose(IntPtr objectHandle);
+
+        [DllImport("advapi32.dll")]
+        public static extern int LsaNtStatusToWinError(uint status);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool LookupAccountName(
+            string? systemName, string accountName,
+            IntPtr sid, ref uint sidSize,
+            StringBuilder? domainName, ref uint domainSize,
+            out int accountType);
+
+        // Constants
+        public const uint SC_MANAGER_ALL_ACCESS  = 0xF003F;
+        public const uint SERVICE_ALL_ACCESS     = 0xF01FF;
+        public const uint SERVICE_QUERY_CONFIG   = 0x0001;
+        public const uint SERVICE_WIN32_OWN_PROCESS = 0x00000010;
+        public const uint SERVICE_AUTO_START     = 0x00000002;
+        public const uint SERVICE_ERROR_NORMAL   = 0x00000001;
+        public const uint SERVICE_NO_CHANGE      = 0xFFFFFFFF;
+        public const uint SERVICE_CONFIG_DESCRIPTION      = 1;
+        public const uint SERVICE_CONFIG_FAILURE_ACTIONS   = 2;
+        public const uint POLICY_ALL_ACCESS      = 0x00F0FFF;
+        public const uint DELETE                 = 0x00010000;
+        public const uint ERROR_INSUFFICIENT_BUFFER = 122;
+        public const uint SC_ACTION_RESTART      = 1;
+
+        // Structs
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct SERVICE_DESCRIPTION
+        {
+            public string lpDescription;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SERVICE_FAILURE_ACTIONS
+        {
+            public uint dwResetPeriod;
+            public IntPtr lpRebootMsg;
+            public IntPtr lpCommand;
+            public uint cActions;
+            public IntPtr lpsaActions;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct SC_ACTION
+        {
+            public uint Type;
+            public uint Delay;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LSA_UNICODE_STRING
+        {
+            public ushort Length;
+            public ushort MaximumLength;
+            public IntPtr Buffer;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        public struct LSA_OBJECT_ATTRIBUTES
+        {
+            public uint Length;
+            public IntPtr RootDirectory;
+            public IntPtr ObjectName;
+            public uint Attributes;
+            public IntPtr SecurityDescriptor;
+            public IntPtr SecurityQualityOfService;
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        public struct QUERY_SERVICE_CONFIG
+        {
+            public uint dwServiceType;
+            public uint dwStartType;
+            public uint dwErrorControl;
+            public IntPtr lpBinaryPathName;
+            public IntPtr lpLoadOrderGroup;
+            public uint dwTagId;
+            public IntPtr lpDependencies;
+            public IntPtr lpServiceStartName;
+            public IntPtr lpDisplayName;
+        }
+
+        public static LSA_UNICODE_STRING CreateLsaString(string value)
+        {
+            var s = new LSA_UNICODE_STRING
+            {
+                Length = (ushort)(value.Length * sizeof(char)),
+                MaximumLength = (ushort)((value.Length + 1) * sizeof(char)),
+                Buffer = Marshal.StringToHGlobalUni(value)
+            };
+            return s;
         }
     }
 
