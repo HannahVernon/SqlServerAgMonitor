@@ -7,7 +7,7 @@
          - Patch: set to the merged PR number by GitHub Actions
          Dev builds between tags get a pre-release suffix (e.g., 1.2.33-alpha.0.5). -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerMinimumMajorMinor>1.0</MinVerMinimumMajorMinor>
+    <MinVerMinimumMajorMinor>2.0</MinVerMinimumMajorMinor>
   </PropertyGroup>
 
   <ItemGroup>

@@ -12,5 +12,5 @@ public class AvailabilityGroupInfo : ObservableModel
     public Guid AgGroupId { get => _agGroupId; set => SetProperty(ref _agGroupId, value); }
     public SynchronizationHealth OverallHealth { get => _overallHealth; set => SetProperty(ref _overallHealth, value); }
 
-    public ObservableCollection<ReplicaInfo> Replicas { get; } = new();
+    public ObservableCollection<ReplicaInfo> Replicas { get; set; } = new();
 }

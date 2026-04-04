@@ -1,6 +1,6 @@
 # Windows Service + SignalR API — Design Plan
 
-> **Status:** Planned — not yet implemented.
+> **Status:** Implemented — Phases 1–4 complete. See [Architecture](ARCHITECTURE.md) for technical details and scripts/ for deployment.
 
 ## Goal
 

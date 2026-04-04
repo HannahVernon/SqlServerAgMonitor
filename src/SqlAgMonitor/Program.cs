@@ -1,7 +1,10 @@
 using Avalonia;
 using Avalonia.ReactiveUI;
+using ReactiveUI;
 using System;
 using System.IO;
+using System.Reactive.Concurrency;
+using System.Threading.Tasks;
 
 namespace SqlAgMonitor;
 
@@ -23,6 +26,14 @@ sealed class Program
         {
             WriteLog("FATAL", $"Unhandled exception: {e.ExceptionObject}");
         };
+
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            WriteLog("ERROR", $"Unobserved task exception: {e.Exception}");
+            e.SetObserved();
+        };
+
+        RxApp.DefaultExceptionHandler = new GlobalRxExceptionHandler();
 
         try
         {
@@ -51,4 +62,24 @@ sealed class Program
             .WithInterFont()
             .LogToTrace()
             .UseReactiveUI();
+
+    /// <summary>
+    /// Prevents unhandled exceptions in ReactiveUI observable pipelines
+    /// from tearing down the process. Logs the error and swallows it so
+    /// the application stays alive.
+    /// </summary>
+    private sealed class GlobalRxExceptionHandler : IObserver<Exception>
+    {
+        public void OnNext(Exception value)
+        {
+            WriteLog("ERROR", $"ReactiveUI unhandled exception: {value}");
+        }
+
+        public void OnError(Exception error)
+        {
+            WriteLog("FATAL", $"ReactiveUI exception handler error: {error}");
+        }
+
+        public void OnCompleted() { }
+    }
 }

@@ -2,7 +2,7 @@
 
 A cross-platform desktop application for real-time monitoring of SQL Server Availability Groups (AGs) and Distributed Availability Groups (DAGs). Built with Avalonia UI for Windows, macOS, and Linux.
 
-📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 🔮 [Service Plan](SERVICE-PLAN.md) · 🤝 [Contributing](CONTRIBUTING.md)
+📖 [Feature Guide](FEATURE-GUIDE.md) · 🏗️ [Architecture](ARCHITECTURE.md) · 📦 [Install Guide](INSTALL-GUIDE.md) · 🔌 [Service Protocol](SERVICE-PROTOCOL.md) · 🔮 [Service Plan](SERVICE-PLAN.md) · 🤝 [Contributing](CONTRIBUTING.md)
 
 ## What It Monitors
 
@@ -85,6 +85,7 @@ Each alert type can be individually enabled/disabled and configured with custom 
 - **SQL Server 2014+ compatibility** — Automatically falls back to a legacy query when `secondary_lag_seconds` is unavailable (SQL error 207). The time-lag column shows 0 on SQL Server 2014; all other metrics remain fully functional.
 - **Statistics & Trends** — Historical trend charts (View → Statistics…) with time range presets from 24 hours to 1 year plus custom date pickers. Three-tier data retention (raw snapshots → hourly → daily summaries) with automatic rollup and pruning. Summary grid, four line charts (Log Send Queue, Redo Queue, Secondary Lag, Log Block Difference), and one-click Excel export.
 - **Keyboard shortcuts** — F5 to refresh the active tab, standard menu accelerators.
+- **Windows Service mode** — Run monitoring as a headless Windows Service (`SqlAgMonitor.Service`) with real-time SignalR API. The desktop app connects remotely for live data, alerts, statistics, and Excel export. JWT bearer authentication with bcrypt-hashed local user store. Automatic reconnect with exponential backoff. Protocol versioning (`GET /api/version`) ensures client/service compatibility — see [SERVICE-PROTOCOL.md](SERVICE-PROTOCOL.md). Graphical installer (`SqlAgMonitor.Installer`) handles deployment, service registration, and initial admin setup with Add/Remove Programs compliance.
 
 ## Technology Stack
 
@@ -98,6 +99,30 @@ Each alert type can be individually enabled/disabled and configured with custom 
 | Charts | LiveCharts2 (SkiaSharp) |
 | Excel Export | ClosedXML |
 | Configuration | JSON (AppData) |
+| SignalR | ASP.NET Core SignalR (server + client) |
+| Authentication | JWT Bearer + bcrypt |
+| Service Host | Kestrel + Windows Service |
+
+## SQL Server Permissions
+
+The monitoring account needs **read-only access** to Availability Group catalog views and DMVs. Grant on every SQL Server instance being monitored:
+
+```sql
+/* Minimum permissions for AG/DAG monitoring */
+GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+GRANT VIEW ANY DEFINITION TO [DOMAIN\ServiceAccount];
+```
+
+| Permission | Required For |
+|---|---|
+| `VIEW SERVER STATE` | DMV access — replica states, database sync status, LSN values, send/redo queues |
+| `VIEW ANY DEFINITION` | Catalog view visibility — `sys.availability_groups`, `sys.availability_replicas` |
+| `ALTER AVAILABILITY GROUP` | Failover operations (not required for monitoring) |
+| `ALTER DATABASE` / `db_owner` | Suspend/resume replication (not required for monitoring) |
+
+> **Why both?** `VIEW SERVER STATE` covers DMVs like `sys.dm_hadr_availability_replica_states`, but AG metadata lives in catalog views (`sys.availability_groups`, `sys.availability_replicas`) which are governed by separate metadata visibility rules. Without `VIEW ANY DEFINITION`, the catalog views return zero rows and monitoring silently fails.
+
+> **Tip:** If using SQL Authentication, create a dedicated login with `VIEW SERVER STATE` and `VIEW ANY DEFINITION`. If using Windows Authentication (domain service account or gMSA), grant both permissions to that account.
 
 ## Building
 
@@ -117,16 +142,22 @@ dotnet run --project src/SqlAgMonitor
 
 ```
 SqlAgMonitor.sln
-├── src/SqlAgMonitor/              # Avalonia desktop app
+├── src/SqlAgMonitor/              # Avalonia desktop app (standalone or service-client mode)
 │   ├── Views/                     # AXAML views
 │   ├── ViewModels/                # ReactiveUI ViewModels
+│   ├── Services/                  # ServiceMonitoringClient, hub proxy adapters
 │   ├── Controls/                  # Custom controls (topology diagram)
 │   ├── Converters/                # Value converters
 │   └── Helpers/                   # DataGrid auto-fit helper
-├── src/SqlAgMonitor.Core/         # Shared business logic
+├── src/SqlAgMonitor.Core/         # Shared business logic (headless)
 │   ├── Models/                    # Domain models
 │   ├── Services/                  # Service implementations
 │   └── Configuration/             # Config model + persistence
+├── src/SqlAgMonitor.Service/      # Windows Service + SignalR API
+│   ├── Hubs/                      # MonitorHub (real-time push + queries)
+│   └── Auth/                      # JWT token service, local user store
+├── src/SqlAgMonitor.Installer/    # Graphical service installer (Windows only)
+├── scripts/                       # Service publish/install/uninstall scripts
 └── tests/SqlAgMonitor.Tests/      # Unit tests
 ```
 

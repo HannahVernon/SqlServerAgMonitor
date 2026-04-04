@@ -19,6 +19,7 @@ public class StatisticsState
     public string? Replica { get; set; }
     public string? Database { get; set; }
     public bool AutoRefresh { get; set; }
+    public int RefreshIntervalMinutes { get; set; } = 5;
 }
 
 public class WindowLayoutState

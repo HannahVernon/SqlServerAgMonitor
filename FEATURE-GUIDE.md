@@ -2,9 +2,10 @@
 
 ## Quick Start
 
-1. **Launch** — `dotnet run --project src/SqlAgMonitor` (or run the compiled executable)
-2. **Add a group** — File → Add AG/DAG… (walks you through a 4-step wizard)
-3. **Monitor** — The app polls automatically on the interval you chose
+1. **Grant SQL permissions** — The monitoring account needs `VIEW SERVER STATE` on each SQL Server instance (see [SQL Server Permissions](#sql-server-permissions) below)
+2. **Launch** — `dotnet run --project src/SqlAgMonitor` (or run the compiled executable)
+3. **Add a group** — File → Add AG/DAG… (walks you through a 4-step wizard)
+4. **Monitor** — The app polls automatically on the interval you chose
 
 ---
 
@@ -260,7 +261,8 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 
 ### General Tab
 - Polling interval defaults
-- Log level configuration
+- Theme selection (Light / Dark / High Contrast)
+- **Log level** — Controls file log verbosity for the desktop app (Debug, Information, Warning, Error). Changes take effect immediately on save. The Windows Service log level is configured via `Logging:LogLevel:Default` in `appsettings.json` (requires service restart).
 
 ### Email Notifications Tab
 - SMTP server, port, TLS toggle
@@ -290,6 +292,72 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 - **Maximum number of records** — only the most recent N records are kept (default: 0 = unlimited)
 - Pruning runs automatically 10 seconds after startup and then every 24 hours
 
+### Service Tab
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Enable Service Client Mode | Off | When enabled, the app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly |
+| Service Host | localhost | Hostname or IP address of the service |
+| Service Port | 58432 | Port the service listens on |
+| Username | — | Username for service authentication |
+| Password | — | Password for service authentication (stored securely via AesCredentialStore; never saved in plain text) |
+| Require TLS | Off | When enabled, uses HTTPS for the SignalR connection |
+| Test Connection | — | Button that probes the service, handles TLS certificate trust, and verifies authentication credentials |
+
+When service mode is enabled, the app does not make direct SQL Server connections. All monitoring data, alerts, and statistics come from the remote service.
+
+---
+
+## Service Client Connection
+
+When service mode is enabled (Settings → Service tab), the desktop app connects to a remote SqlAgMonitor Service instead of monitoring SQL Server directly. This section describes the connection flow and related features.
+
+### Test Connection
+
+The **Test Connection** button in the Service tab performs a full connection probe:
+
+1. Attempts to reach the service at the configured host and port
+2. If TLS is enabled and the server presents an untrusted certificate, opens the **Certificate Trust Dialog**
+3. Authenticates with the provided username and password
+4. Reports success or a specific error message
+
+### Certificate Trust Dialog
+
+When the service presents a TLS certificate that is not trusted by the OS certificate store (e.g., self-signed or issued by an internal CA), a dialog appears showing:
+
+- Certificate subject and issuer
+- Validity period
+- SHA-256 thumbprint
+
+The user can choose to **trust and pin** the certificate thumbprint. Once pinned, the app accepts that specific certificate for all future connections without prompting again. Both `LoginAsync` and `ConnectAsync` in `ServiceMonitoringClient` use the pinned thumbprint, including the ongoing SignalR hub connection.
+
+### Auto-Login on Startup
+
+When service mode is enabled and credentials (username + password) are stored, the app automatically attempts to log in and establish the SignalR connection on startup. If the service's TLS certificate is untrusted and no thumbprint has been pinned, the Certificate Trust Dialog is shown before completing the connection.
+
+### Connection Status Indicator
+
+In service mode, the main window status bar displays a live connection indicator:
+
+- **● Connected** — SignalR connection is active and receiving data
+- **○ Disconnected** — SignalR connection is down or not yet established
+
+The indicator updates in real time as the SignalR connection state changes.
+
+### Config Migration
+
+When service mode is **newly enabled** and the app has locally configured monitored groups, a **Migration Dialog** offers to push the local configuration to the remote service. Before showing the dialog, the app fetches the service's current groups via `GET /api/config/export` and categorizes each group:
+
+- **New (local only)** — groups that exist locally but not on the service. Pre-checked for migration.
+- **Shared** — groups that exist in both. Unchecked by default; selecting them will overwrite the service's configuration for that group.
+- **Service only** — groups already on the service with no local counterpart. Shown for information only, no action needed.
+
+The user selects which groups to push, then clicks **Migrate Selected**. Alert, email, and syslog settings are always included. The dialog warns that **SQL authentication passwords are not transferred** (they must be re-entered on the service side).
+
+The migration uses `POST /api/config/import` to perform an **additive merge** — existing service configuration is preserved, and the selected local groups are added or updated on top.
+
+The corresponding `GET /api/config/export` endpoint allows retrieving the service's current configuration with credentials redacted.
+
 ---
 
 ## Credential Security
@@ -297,6 +365,54 @@ Retention periods are configurable via `SnapshotRetentionSettings`.
 - **Windows:** DPAPI (Data Protection API) encrypts credentials using the current user's Windows login. Credentials are machine- and user-bound.
 - **Other platforms:** AES-256 encryption with a key derived from a random salt stored alongside the encrypted data.
 - **Never plain text** — credentials are encrypted at rest in the AppData directory.
+
+---
+
+## SQL Server Permissions
+
+### Monitoring (read-only)
+
+The monitoring account requires two server-level permissions on each SQL Server instance:
+
+```sql
+/* Grant to a SQL login */
+GRANT VIEW SERVER STATE TO [SqlAgMonitorLogin];
+GRANT VIEW ANY DEFINITION TO [SqlAgMonitorLogin];
+
+/* Or grant to a Windows/domain account */
+GRANT VIEW SERVER STATE TO [DOMAIN\ServiceAccount];
+GRANT VIEW ANY DEFINITION TO [DOMAIN\ServiceAccount];
+```
+
+These permissions cover all catalog views and DMVs used by the app:
+
+| DMV / System View | Permission | Purpose |
+|---|---|---|
+| `sys.availability_groups` | `VIEW ANY DEFINITION` | Enumerate AGs and DAGs |
+| `sys.availability_replicas` | `VIEW ANY DEFINITION` | Replica names, availability modes, failover modes |
+| `sys.dm_hadr_availability_replica_states` | `VIEW SERVER STATE` | Replica roles, connected state, sync health |
+| `sys.dm_hadr_database_replica_states` | `VIEW SERVER STATE` | Database sync state, LSN values, queues, rates, lag |
+| `sys.databases` | (public) | Map database IDs to names |
+| `sys.fn_hadr_distributed_ag_replica()` | `VIEW ANY DEFINITION` | Drill from DAG to member AG replicas (SQL 2016+) |
+
+> **Why both permissions?** `VIEW SERVER STATE` covers the `sys.dm_hadr_*` DMVs, but AG metadata lives in catalog views (`sys.availability_groups`, `sys.availability_replicas`) governed by separate [metadata visibility rules](https://learn.microsoft.com/en-us/sql/relational-databases/security/metadata-visibility-configuration). Without `VIEW ANY DEFINITION`, the catalog views return zero rows and monitoring silently fails.
+
+### Control operations (optional)
+
+These permissions are only needed if you use failover or suspend/resume features:
+
+| Permission | Operation |
+|---|---|
+| `ALTER AVAILABILITY GROUP` | Manual or forced failover |
+| `ALTER DATABASE` / `db_owner` | Suspend or resume database replication |
+
+### Authentication modes
+
+| Deployment | Recommended Auth |
+|---|---|
+| **Desktop app (standalone)** | Windows Authentication (runs as the logged-in user) |
+| **Service (domain account)** | Windows Authentication (grant `VIEW SERVER STATE` + `VIEW ANY DEFINITION` to the service account) |
+| **Service (LOCAL SERVICE)** | SQL Authentication (create a dedicated SQL login with `VIEW SERVER STATE` + `VIEW ANY DEFINITION`) |
 
 ---
 
@@ -328,3 +444,46 @@ Three themes available from the View menu:
 - **Dark** (default) — Dark backgrounds optimized for low-light monitoring
 - **Light** — Light backgrounds for bright environments
 - **High Contrast** — Maximum contrast for accessibility
+
+---
+
+## Windows Service Mode
+
+The SqlAgMonitor Windows Service runs headless monitoring and exposes a SignalR API for remote clients.
+
+### Deployment
+
+#### Graphical Installer (recommended)
+
+Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks through:
+
+1. **Install path** — where to publish the service (default: `C:\Program Files\SqlAgMonitor`)
+2. **Service account** — LOCAL SERVICE (default) or a domain account for Windows-authenticated SQL connections
+3. **Port** — service listening port (default: 58432)
+4. **TLS** — optional HTTPS with certificate
+5. **Firewall** — optionally create a Windows Firewall inbound rule for the service port (allow from any source or restrict to a specific IP/subnet)
+6. **Admin credentials** — initial username and password for the service API
+7. **Install** — publishes the service, creates the Windows Service, starts it, configures the firewall rule, creates the admin user, registers in Add/Remove Programs, and generates a SQL permission grant script
+
+The installer generates a `grant-permissions.sql` file in the install directory containing `GRANT VIEW SERVER STATE` and `GRANT VIEW ANY DEFINITION` for the selected service account. A database administrator must run this script on each monitored SQL Server instance.
+
+The installer uses Win32 APIs directly (`OpenSCManager`, `CreateService`, `ChangeServiceConfig`, etc.) for all service management — there is no dependency on `sc.exe`. When a custom domain account is selected, the installer automatically grants the **"Log on as a service"** right (`SeServiceLogonRight`) to that account via `LsaAddAccountRights`.
+
+**Upgrade mode:** When an existing installation is detected, the installer pre-populates all settings (install path, service account, port, TLS certificate) from the current configuration. The admin credentials step is skipped — existing admin users are preserved. The button reads "Upgrade" instead of "Install".
+
+To uninstall, use Windows Settings → Apps → SQL Server AG Monitor Service, or run `SqlAgMonitor.Installer.exe /uninstall`.
+
+#### PowerShell Scripts (advanced)
+
+1. **Publish:** `.\scripts\Publish-Service.ps1` — builds a self-contained single-file executable
+2. **Install:** `.\scripts\Install-Service.ps1` — registers as a Windows Service with delayed auto-start
+3. **Initial setup:** `POST http://host:58432/api/auth/setup` with `{"username":"admin","password":"YourPassword"}` to create the first user account
+4. **Start:** `Start-Service SqlAgMonitorService`
+
+### Authentication
+
+The service uses JWT bearer tokens. Clients authenticate via `POST /api/auth/login` and include the token in subsequent SignalR connections. Passwords are hashed with bcrypt (work factor 12). The JWT signing key is auto-generated per deployment and stored in `%APPDATA%\SqlAgMonitor\service\jwt-signing-key.bin`.
+
+### Uninstall
+
+Use Windows Settings → Apps → SQL Server AG Monitor Service for GUI uninstall, or run `SqlAgMonitor.Installer.exe /uninstall` for silent removal. Alternatively, `.\scripts\Uninstall-Service.ps1` stops and removes the Windows Service (published files are left in place for manual cleanup).

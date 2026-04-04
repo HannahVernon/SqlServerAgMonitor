@@ -3,11 +3,11 @@
         xmlns:vm="using:SqlAgMonitor.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="650"
+        mc:Ignorable="d" d:DesignWidth="600" d:DesignHeight="750"
         x:Class="SqlAgMonitor.Views.SettingsWindow"
         x:DataType="vm:SettingsViewModel"
         Title="Settings"
-        Width="600" Height="650"
+        Width="600" Height="750"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
 
@@ -24,6 +24,59 @@
 
         <!-- Settings tabs -->
         <TabControl>
+            <!-- Service -->
+            <TabItem Header="Service">
+                <ScrollViewer Padding="8">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="Service Connection" FontWeight="Bold" FontSize="16" />
+                        <TextBlock Text="Connect to a remote SqlAgMonitor Windows Service instead of monitoring SQL Server directly. The service manages all SQL connections and pushes updates via SignalR."
+                                   FontSize="12" Opacity="0.6" TextWrapping="Wrap" />
+
+                        <CheckBox Content="Enable Service Client Mode" IsChecked="{Binding ServiceEnabled}" />
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding ServiceEnabled}">
+                            <TextBlock Text="Service Host" />
+                            <TextBox Text="{Binding ServiceHost}" Watermark="localhost" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding ServiceEnabled}">
+                            <TextBlock Text="Service Port" />
+                            <NumericUpDown x:CompileBindings="False" Value="{Binding ServicePort}" 
+                                           Minimum="1" Maximum="65535" Increment="1" 
+                                           Width="150" HorizontalAlignment="Left" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding ServiceEnabled}">
+                            <TextBlock Text="Username" />
+                            <TextBox Text="{Binding ServiceUsername}" Watermark="admin" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4" IsEnabled="{Binding ServiceEnabled}">
+                            <TextBlock Text="Password" />
+                            <TextBox Text="{Binding ServicePassword}" 
+                                     PasswordChar="●" Watermark="Service password"
+                                     RevealPassword="False" />
+                        </StackPanel>
+
+                        <CheckBox Content="Require TLS (HTTPS)" IsChecked="{Binding ServiceUseTls}" 
+                                  IsEnabled="{Binding ServiceEnabled}" />
+
+                        <Button Content="Test Connection" Command="{Binding TestConnectionCommand}"
+                                IsEnabled="{Binding ServiceEnabled}" HorizontalAlignment="Left" />
+                        <TextBlock Text="{Binding TestConnectionStatus}" Opacity="0.7" FontSize="12"
+                                   TextWrapping="Wrap"
+                                   IsVisible="{Binding TestConnectionStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                        <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}" 
+                                BorderThickness="0,1,0,0" Padding="0,12,0,0" Margin="0,4,0,0"
+                                IsVisible="{Binding ServiceEnabled}">
+                            <TextBlock Text="When service mode is enabled, the app will not make direct SQL Server connections. All monitoring data comes from the service. The password for the service account will be prompted on first connection."
+                                       FontSize="11" Opacity="0.5" TextWrapping="Wrap" />
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <!-- General -->
             <TabItem Header="General">
                 <ScrollViewer Padding="8">
@@ -42,6 +95,16 @@
                             <ComboBox x:CompileBindings="False" 
                                       ItemsSource="{Binding ThemeOptions}" 
                                       SelectedItem="{Binding Theme}"
+                                      Width="200" HorizontalAlignment="Left" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="Log Level" />
+                            <TextBlock Text="Controls verbosity of the desktop app log file. Takes effect immediately on save."
+                                       FontSize="11" Opacity="0.6" TextWrapping="Wrap" />
+                            <ComboBox x:CompileBindings="False"
+                                      ItemsSource="{Binding LogLevelOptions}"
+                                      SelectedItem="{Binding LogLevel}"
                                       Width="200" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>

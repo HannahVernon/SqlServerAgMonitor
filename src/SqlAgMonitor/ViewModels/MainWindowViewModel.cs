@@ -22,13 +22,14 @@ using SqlAgMonitor.Core.Services.Credentials;
 using SqlAgMonitor.Core.Services.History;
 using SqlAgMonitor.Core.Services.Monitoring;
 using SqlAgMonitor.Core.Services.Notifications;
+using SqlAgMonitor.Services;
 using SqlAgMonitor.Views;
 
 namespace SqlAgMonitor.ViewModels;
 
 public class MainWindowViewModel : ViewModelBase
 {
-    private readonly MonitoringCoordinator _coordinator;
+    private readonly IMonitoringCoordinator _coordinator;
     private readonly MaintenanceScheduler _maintenanceScheduler;
     private readonly IConfigurationService _configService;
     private readonly IHistoryMaintenanceService _historyMaintenance;
@@ -48,6 +49,9 @@ public class MainWindowViewModel : ViewModelBase
     private bool _isAllPaused;
     private string _lastPolledText = string.Empty;
     private AlertHistoryViewModel? _alertHistoryVm;
+    private bool _isServiceMode;
+    private bool _isServiceConnected;
+    private string _serviceConnectionText = string.Empty;
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs => _coordinator.MonitorTabs;
     public ObservableCollection<object> AllTabs { get; } = new();
@@ -88,6 +92,24 @@ public class MainWindowViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _lastPolledText, value);
     }
 
+    public bool IsServiceMode
+    {
+        get => _isServiceMode;
+        set => this.RaiseAndSetIfChanged(ref _isServiceMode, value);
+    }
+
+    public bool IsServiceConnected
+    {
+        get => _isServiceConnected;
+        set => this.RaiseAndSetIfChanged(ref _isServiceConnected, value);
+    }
+
+    public string ServiceConnectionText
+    {
+        get => _serviceConnectionText;
+        set => this.RaiseAndSetIfChanged(ref _serviceConnectionText, value);
+    }
+
     public ReactiveCommand<Unit, Unit> AddGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> RemoveGroupCommand { get; }
     public ReactiveCommand<Unit, Unit> OpenSettingsCommand { get; }
@@ -101,7 +123,7 @@ public class MainWindowViewModel : ViewModelBase
     public ReactiveCommand<Unit, Unit> OpenStatisticsCommand { get; }
 
     public MainWindowViewModel(
-        MonitoringCoordinator coordinator,
+        IMonitoringCoordinator coordinator,
         MaintenanceScheduler maintenanceScheduler,
         IConfigurationService configService,
         IHistoryMaintenanceService historyMaintenance,
@@ -202,11 +224,30 @@ public class MainWindowViewModel : ViewModelBase
             _ = Dispatcher.UIThread.InvokeAsync(() => AlertHistory.LoadEventsAsync());
         };
 
+        if (_coordinator is ServiceMonitoringClient serviceClient)
+        {
+            IsServiceMode = true;
+            var svc = _configService.Load().Service;
+            var serviceLabel = $"{svc.Host}:{svc.Port}";
+            ServiceConnectionText = $"Connecting to {serviceLabel}…";
+            serviceClient.ConnectionStateChanged += connected =>
+            {
+                IsServiceConnected = connected;
+                ServiceConnectionText = connected
+                    ? $"Connected to {serviceLabel}"
+                    : $"Disconnected from {serviceLabel}";
+            };
+            serviceClient.VersionMismatchDetected += error =>
+            {
+                ServiceConnectionText = $"⚠ Version mismatch — {serviceLabel}";
+                StatusText = error;
+            };
+        }
+
         _coordinator.SubscribeToMonitors();
-        _ = InitializeAsync();
     }
 
-    private async Task InitializeAsync()
+    public async Task InitializeAsync()
     {
         await _coordinator.LoadAndStartAsync();
         var groupCount = MonitorTabs.Count;

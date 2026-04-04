@@ -38,6 +38,7 @@ public class StatisticsViewModel : ViewModelBase
     private SnapshotTier _activeTier;
     private bool _initializing;
     private bool _autoRefresh;
+    private int _refreshIntervalMinutes = 5;
     private IDisposable? _autoRefreshSubscription;
     private CancellationTokenSource? _loadCts;
 
@@ -51,6 +52,14 @@ public class StatisticsViewModel : ViewModelBase
         {
             this.RaiseAndSetIfChanged(ref _selectedTimeRange, value);
             IsCustomRange = value == "Custom";
+            this.RaisePropertyChanged(nameof(IsAutoRefreshEnabled));
+
+            // Auto-refresh is only practical for short time ranges.
+            // Disable it for ranges >= 8 hours to avoid repeatedly loading
+            // large data sets.
+            if (!_initializing && !IsAutoRefreshAllowed(value))
+                AutoRefresh = false;
+
             if (!IsCustomRange && !_initializing)
                 _ = LoadDataAsync();
         }
@@ -83,6 +92,22 @@ public class StatisticsViewModel : ViewModelBase
             ConfigureAutoRefresh(value);
         }
     }
+
+    public bool IsAutoRefreshEnabled => IsAutoRefreshAllowed(_selectedTimeRange);
+
+    public int RefreshIntervalMinutes
+    {
+        get => _refreshIntervalMinutes;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _refreshIntervalMinutes, Math.Clamp(value, 1, 60));
+            if (_autoRefresh)
+                ConfigureAutoRefresh(true);
+        }
+    }
+
+    private static bool IsAutoRefreshAllowed(string timeRange)
+        => timeRange is "15 minutes" or "1 hour" or "4 hours";
 
     public string? SelectedGroup
     {
@@ -268,6 +293,10 @@ public class StatisticsViewModel : ViewModelBase
         await LoadDataAsync();
 
         // Enable auto-refresh after initial load if saved state requested it
+        if (savedState != null && savedState.RefreshIntervalMinutes > 0)
+            _refreshIntervalMinutes = Math.Clamp(savedState.RefreshIntervalMinutes, 1, 60);
+        this.RaisePropertyChanged(nameof(RefreshIntervalMinutes));
+
         if (savedState?.AutoRefresh == true)
             AutoRefresh = true;
     }
@@ -658,9 +687,9 @@ public class StatisticsViewModel : ViewModelBase
         _autoRefreshSubscription?.Dispose();
         _autoRefreshSubscription = null;
 
-        if (!enabled) return;
+        if (!enabled || _autoRefreshPaused) return;
 
-        var intervalSeconds = _configService.Load().GlobalPollingIntervalSeconds;
+        var intervalSeconds = Math.Clamp(_refreshIntervalMinutes, 1, 60) * 60;
 
         _autoRefreshSubscription = Observable.Interval(TimeSpan.FromSeconds(intervalSeconds))
             .ObserveOn(RxApp.MainThreadScheduler)
@@ -669,13 +698,37 @@ public class StatisticsViewModel : ViewModelBase
             .Subscribe();
     }
 
+    private bool _autoRefreshPaused;
+
+    /// <summary>
+    /// Temporarily suspends auto-refresh while the window is minimized
+    /// to avoid SkiaSharp rendering on an invisible surface.
+    /// </summary>
+    public void PauseAutoRefresh()
+    {
+        _autoRefreshPaused = true;
+        _autoRefreshSubscription?.Dispose();
+        _autoRefreshSubscription = null;
+    }
+
+    /// <summary>
+    /// Resumes auto-refresh when the window becomes visible again.
+    /// </summary>
+    public void ResumeAutoRefresh()
+    {
+        _autoRefreshPaused = false;
+        if (_autoRefresh)
+            ConfigureAutoRefresh(true);
+    }
+
     public StatisticsState SaveState() => new()
     {
         TimeRange = _selectedTimeRange,
         Group = _selectedGroup,
         Replica = _selectedReplica,
         Database = _selectedDatabase,
-        AutoRefresh = _autoRefresh
+        AutoRefresh = _autoRefresh,
+        RefreshIntervalMinutes = _refreshIntervalMinutes
     };
 
     public void Dispose()

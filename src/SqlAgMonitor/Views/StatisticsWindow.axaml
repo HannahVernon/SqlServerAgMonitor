@@ -65,8 +65,16 @@
 
                 <!-- Refresh -->
                 <Button Content="🔄 Refresh Now" Command="{Binding LoadCommand}" Margin="0 0 8 0" />
-                <CheckBox Content="Auto-refresh" IsChecked="{Binding AutoRefresh}"
-                          VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 16 0" />
+                <CheckBox Content="Auto-refresh every" IsChecked="{Binding AutoRefresh}"
+                          IsEnabled="{Binding IsAutoRefreshEnabled}"
+                          ToolTip.Tip="Auto-refresh is available for time ranges under 8 hours to avoid repeatedly loading large data sets."
+                          VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 4 0" />
+                <NumericUpDown Value="{Binding RefreshIntervalMinutes}"
+                               Minimum="1" Maximum="60" Increment="1"
+                               FormatString="0"
+                               IsEnabled="{Binding IsAutoRefreshEnabled}"
+                               Width="70" VerticalAlignment="Center" Margin="0 0 4 0" />
+                <TextBlock Text="min" VerticalAlignment="Center" Foreground="#a6adc8" Margin="0 0 16 0" />
 
 
             </WrapPanel>
@@ -75,14 +83,13 @@
         <!-- Loading overlay -->
         <Panel>
             <!-- Main content -->
-            <Grid RowDefinitions="Auto,*">
+            <Grid RowDefinitions="200,4,*">
                 <!-- Summary DataGrid -->
                 <DataGrid Grid.Row="0"
                           x:Name="SummaryGrid"
                           ItemsSource="{Binding SummaryRows}"
                           IsReadOnly="True"
                           AutoGenerateColumns="False"
-                          MaxHeight="300"
                           GridLinesVisibility="Horizontal"
                           HeadersVisibility="Column"
                           CanUserSortColumns="True"
@@ -114,9 +121,13 @@
                     </DataGrid.Columns>
                 </DataGrid>
 
+                <!-- Drag to resize the split between summary data and charts -->
+                <GridSplitter Grid.Row="1" ResizeDirection="Rows"
+                              Background="{DynamicResource SystemControlForegroundBaseMediumLowBrush}" />
+
                 <!-- Charts in a 2x2 grid — hidden during data loads to prevent the
                      composition thread from accessing SkiaSharp objects mid-transition -->
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto"
                               IsVisible="{Binding !IsLoading}">
                     <Grid RowDefinitions="*,*" ColumnDefinitions="*,*" Margin="4">
                         <Border Grid.Row="0" Grid.Column="0" Margin="4" Padding="4" CornerRadius="8" Background="#1e1e2e">

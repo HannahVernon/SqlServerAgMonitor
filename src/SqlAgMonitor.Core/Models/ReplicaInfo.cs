@@ -28,5 +28,5 @@ public class ReplicaInfo : ObservableModel
     public int DatabaseCount { get => _databaseCount; set => SetProperty(ref _databaseCount, value); }
     public string? EndpointUrl { get => _endpointUrl; set => SetProperty(ref _endpointUrl, value); }
 
-    public ObservableCollection<DatabaseReplicaState> DatabaseStates { get; } = new();
+    public ObservableCollection<DatabaseReplicaState> DatabaseStates { get; set; } = new();
 }
