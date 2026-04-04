@@ -245,10 +245,9 @@ public class MainWindowViewModel : ViewModelBase
         }
 
         _coordinator.SubscribeToMonitors();
-        _ = InitializeAsync();
     }
 
-    private async Task InitializeAsync()
+    public async Task InitializeAsync()
     {
         await _coordinator.LoadAndStartAsync();
         var groupCount = MonitorTabs.Count;

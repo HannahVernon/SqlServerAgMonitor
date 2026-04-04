@@ -72,6 +72,10 @@ public partial class MainWindow : ReactiveWindow<MainWindowViewModel>
 
             // Load alert history once the window is fully shown and dispatcher is active
             _ = vm.AlertHistory.LoadEventsAsync();
+
+            // Start monitoring AFTER the window is visible so SQL connection
+            // timeouts don't block the UI from appearing
+            _ = vm.InitializeAsync();
         }
     }
 
