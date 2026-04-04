@@ -11,6 +11,7 @@ Whenever you make a code change that affects any of the following, you **must** 
 | New/changed NuGet dependencies | `licence.md` (package name, version, copyright, license) |
 | Build requirements, project structure, quick-start steps | `README.md` |
 | Contribution workflow, coding standards | `CONTRIBUTING.md` |
+| Installer changes (steps, service config, firewall, accounts) | `scripts/Install-Service.ps1`, `scripts/Uninstall-Service.ps1`, `scripts/Publish-Service.ps1` |
 
 **Do not defer documentation updates to a follow-up commit.** Treat docs as part of the definition of done for every change.
 
