@@ -292,7 +292,13 @@ public class SettingsViewModel : ViewModelBase
     /// <summary>
     /// True when service mode was newly enabled (wasn't previously enabled) and local groups exist.
     /// </summary>
-    public bool ShouldOfferMigration => ServiceEnabled && !_serviceWasPreviouslyEnabled;
+    public bool ShouldOfferMigration =>
+        ServiceEnabled && (!_serviceWasPreviouslyEnabled || ServiceConnectionChanged);
+
+    private bool ServiceConnectionChanged =>
+        _serviceWasPreviouslyEnabled &&
+        (!string.Equals(ServiceHost, _originalServiceHost, StringComparison.OrdinalIgnoreCase)
+         || ServicePort != _originalServicePort);
 
     /// <summary>
     /// If the user accepted an untrusted cert during Test Connection, its thumbprint is stored
