@@ -19,3 +19,7 @@ Whenever you make a code change that affects any of the following, you **must** 
 - All Win32 handles (`HANDLE`) must be closed in `finally` blocks
 - `IntPtr` buffers must be freed in `finally` blocks
 - Passwords must never be logged — redact as `***REDACTED***`
+
+## NuGet Vulnerability Scanning
+
+Whenever a NuGet package is added, updated, or its version changes, run `dotnet list package --vulnerable` from the solution root and verify zero vulnerabilities before committing. If a vulnerability is found, check for a patched version or flag it to the user for a decision.
