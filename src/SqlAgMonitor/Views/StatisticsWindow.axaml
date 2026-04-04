@@ -65,10 +65,16 @@
 
                 <!-- Refresh -->
                 <Button Content="🔄 Refresh Now" Command="{Binding LoadCommand}" Margin="0 0 8 0" />
-                <CheckBox Content="Auto-refresh" IsChecked="{Binding AutoRefresh}"
+                <CheckBox Content="Auto-refresh every" IsChecked="{Binding AutoRefresh}"
                           IsEnabled="{Binding IsAutoRefreshEnabled}"
                           ToolTip.Tip="Auto-refresh is available for time ranges under 8 hours to avoid repeatedly loading large data sets."
-                          VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 16 0" />
+                          VerticalAlignment="Center" Foreground="#cdd6f4" Margin="0 0 4 0" />
+                <NumericUpDown Value="{Binding RefreshIntervalMinutes}"
+                               Minimum="1" Maximum="60" Increment="1"
+                               FormatString="0"
+                               IsEnabled="{Binding IsAutoRefreshEnabled}"
+                               Width="70" VerticalAlignment="Center" Margin="0 0 4 0" />
+                <TextBlock Text="min" VerticalAlignment="Center" Foreground="#a6adc8" Margin="0 0 16 0" />
 
 
             </WrapPanel>
