@@ -82,7 +82,7 @@
 
                 <!-- Step 1: Install Path -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep1}">
-                    <TextBlock Text="Step 1 of 6 — Install Location" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Step 1 of 7 — Install Location" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Choose where to install the service files. The directory will be created if it doesn't exist." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <StackPanel Spacing="4">
@@ -93,7 +93,7 @@
 
                 <!-- Step 2: Service Account -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep2}">
-                    <TextBlock Text="Step 2 of 6 — Service Account" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Step 2 of 7 — Service Account" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="The service runs under this Windows account. Use LOCAL SERVICE for local monitoring, or a domain account for Windows-authenticated SQL connections." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <CheckBox Content="Use LOCAL SERVICE (recommended)" IsChecked="{Binding UseLocalService}" />
@@ -109,7 +109,7 @@
 
                 <!-- Step 3: Port -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep3}">
-                    <TextBlock Text="Step 3 of 6 — Service Port" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Step 3 of 7 — Service Port" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="The port the service will listen on for SignalR connections from desktop clients." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <StackPanel Spacing="4">
@@ -122,7 +122,7 @@
 
                 <!-- Step 4: TLS -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep4}">
-                    <TextBlock Text="Step 4 of 6 — TLS / HTTPS" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Step 4 of 7 — TLS / HTTPS" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Enable TLS to encrypt connections between the desktop app and the service." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <CheckBox Content="Enable TLS (HTTPS)" IsChecked="{Binding UseTls}" />
@@ -178,9 +178,32 @@
                                IsVisible="{Binding !UseTls}" />
                 </StackPanel>
 
-                <!-- Step 5: Admin Credentials -->
+                <!-- Step 5: Firewall -->
                 <StackPanel Spacing="12" IsVisible="{Binding IsStep5}">
-                    <TextBlock Text="Step 5 of 6 — Admin Credentials" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Step 5 of 7 — Windows Firewall" FontWeight="SemiBold" FontSize="15" />
+                    <TextBlock Text="Allow inbound connections to the service through Windows Firewall."
+                               TextWrapping="Wrap" Opacity="0.7" />
+
+                    <CheckBox Content="{Binding FirewallCheckboxText}" IsChecked="{Binding CreateFirewallRule}" />
+
+                    <StackPanel Spacing="8" IsEnabled="{Binding CreateFirewallRule}" Margin="24,0,0,0">
+                        <RadioButton Content="Allow from any source"
+                                     IsChecked="{Binding FirewallAllowAnySource}"
+                                     GroupName="FirewallSource" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <RadioButton Content="Restrict to IP or subnet:"
+                                         GroupName="FirewallSource" />
+                            <TextBox Text="{Binding FirewallRemoteAddress}"
+                                     Watermark="e.g. 192.168.1.0/24"
+                                     IsEnabled="{Binding !FirewallAllowAnySource}"
+                                     Width="250" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Step 6: Admin Credentials -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep6}">
+                    <TextBlock Text="Step 6 of 7 — Admin Credentials" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Create the initial admin account for the service." 
                                TextWrapping="Wrap" Opacity="0.7" />
                     <Border Background="#33005599" CornerRadius="4" Padding="10" Margin="0,2,0,0">
@@ -201,9 +224,9 @@
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Step 6: Ready to Install -->
-                <StackPanel Spacing="12" IsVisible="{Binding IsStep6}">
-                    <TextBlock Text="Step 6 of 6 — Ready to Install" FontWeight="SemiBold" FontSize="15" />
+                <!-- Step 7: Ready to Install -->
+                <StackPanel Spacing="12" IsVisible="{Binding IsStep7}">
+                    <TextBlock Text="Step 7 of 7 — Ready to Install" FontWeight="SemiBold" FontSize="15" />
                     <TextBlock Text="Review your settings and click Install to begin." 
                                TextWrapping="Wrap" Opacity="0.7"
                                IsVisible="{Binding !IsInstalling}" />
@@ -230,6 +253,9 @@
                             <TextBlock>
                                 <Run Text="Admin User: " FontWeight="SemiBold" /><Run Text="{Binding AdminUsername}" />
                             </TextBlock>
+                            <TextBlock IsVisible="{Binding CreateFirewallRule}">
+                                <Run Text="Firewall: " FontWeight="SemiBold" /><Run Text="Allow inbound TCP " /><Run Text="{Binding Port}" />
+                            </TextBlock>
                         </StackPanel>
                     </Border>
 
@@ -250,8 +276,8 @@
                     </Border>
                 </StackPanel>
 
-                <!-- Step 7: Complete -->
-                <StackPanel Spacing="16" IsVisible="{Binding IsStep7}">
+                <!-- Step 8: Complete -->
+                <StackPanel Spacing="16" IsVisible="{Binding IsStep8}">
                     <TextBlock FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50"
                                IsVisible="{Binding !IsUpgrade}" Text="✓ Installation Complete" />
                     <TextBlock FontWeight="Bold" FontSize="18" Foreground="#FF4CAF50"

@@ -61,7 +61,12 @@ public class InstallerViewModel : ReactiveObject
     private bool _isSelfSignedCert;
     private bool _trustSelfSignedCert;
 
-    // Step 5: Admin credentials
+    // Step 5: Firewall
+    private bool _createFirewallRule = true;
+    private bool _firewallAllowAnySource = true;
+    private string _firewallRemoteAddress = string.Empty;
+
+    // Step 6: Admin credentials
     private string _adminUsername = "admin";
     private string _adminPassword = string.Empty;
     private string _adminPasswordConfirm = string.Empty;
@@ -78,7 +83,7 @@ public class InstallerViewModel : ReactiveObject
     {
         var canGoNext = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
-            (step, installing) => step < 6 && !installing);
+            (step, installing) => step < 7 && !installing);
 
         var canGoBack = this.WhenAnyValue(
             x => x.CurrentStep, x => x.IsInstalling,
@@ -89,7 +94,7 @@ public class InstallerViewModel : ReactiveObject
             x => x.AdminPassword, x => x.AdminPasswordConfirm,
             x => x.SkipAdminSetup, x => x.KeepExistingSettings,
             (step, installing, pw, confirm, skipAdmin, keepExisting) =>
-                step == 6 && !installing &&
+                step == 7 && !installing &&
                 ((skipAdmin && keepExisting) ||
                  (!string.IsNullOrWhiteSpace(pw) && pw.Length >= 8 && pw == confirm)));
 
@@ -220,6 +225,7 @@ public class InstallerViewModel : ReactiveObject
             this.RaisePropertyChanged(nameof(IsStep5));
             this.RaisePropertyChanged(nameof(IsStep6));
             this.RaisePropertyChanged(nameof(IsStep7));
+            this.RaisePropertyChanged(nameof(IsStep8));
         }
     }
 
@@ -232,6 +238,7 @@ public class InstallerViewModel : ReactiveObject
     public bool IsStep5 => CurrentStep == 5;
     public bool IsStep6 => CurrentStep == 6;
     public bool IsStep7 => CurrentStep == 7;
+    public bool IsStep8 => CurrentStep == 8;
 
     public bool IsInstalling { get => _isInstalling; set => this.RaiseAndSetIfChanged(ref _isInstalling, value); }
     public bool IsComplete
@@ -292,7 +299,15 @@ public class InstallerViewModel : ReactiveObject
     public string ServicePassword { get => _servicePassword; set => this.RaiseAndSetIfChanged(ref _servicePassword, value); }
 
     // Step 3
-    public int Port { get => _port; set => this.RaiseAndSetIfChanged(ref _port, Math.Clamp(value, 1024, 65535)); }
+    public int Port
+    {
+        get => _port;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _port, Math.Clamp(value, 1024, 65535));
+            this.RaisePropertyChanged(nameof(FirewallCheckboxText));
+        }
+    }
 
     // Step 4
     public bool UseTls
@@ -345,7 +360,25 @@ public class InstallerViewModel : ReactiveObject
     /// <summary>Selected certificate thumbprint — from store selection or empty if using .pfx file.</summary>
     public string SelectedThumbprint => SelectedCertificate?.Thumbprint ?? string.Empty;
 
-    // Step 5
+    // Step 5: Firewall
+    public bool CreateFirewallRule
+    {
+        get => _createFirewallRule;
+        set => this.RaiseAndSetIfChanged(ref _createFirewallRule, value);
+    }
+    public bool FirewallAllowAnySource
+    {
+        get => _firewallAllowAnySource;
+        set => this.RaiseAndSetIfChanged(ref _firewallAllowAnySource, value);
+    }
+    public string FirewallRemoteAddress
+    {
+        get => _firewallRemoteAddress;
+        set => this.RaiseAndSetIfChanged(ref _firewallRemoteAddress, value);
+    }
+    public string FirewallCheckboxText => $"Create Windows Firewall rule for inbound TCP port {Port}";
+
+    // Step 6
     public string AdminUsername { get => _adminUsername; set => this.RaiseAndSetIfChanged(ref _adminUsername, value); }
     public string AdminPassword { get => _adminPassword; set => this.RaiseAndSetIfChanged(ref _adminPassword, value); }
     public string AdminPasswordConfirm { get => _adminPasswordConfirm; set => this.RaiseAndSetIfChanged(ref _adminPasswordConfirm, value); }
@@ -365,15 +398,15 @@ public class InstallerViewModel : ReactiveObject
     private void OnNext()
     {
         var next = CurrentStep + 1;
-        if (SkipAdminSetup && KeepExistingSettings && next == 5)
-            next = 6;
+        if (SkipAdminSetup && KeepExistingSettings && next == 6)
+            next = 7;
         CurrentStep = next;
     }
     private void OnBack()
     {
         var prev = CurrentStep - 1;
-        if (SkipAdminSetup && KeepExistingSettings && prev == 5)
-            prev = 4;
+        if (SkipAdminSetup && KeepExistingSettings && prev == 6)
+            prev = 5;
         CurrentStep = prev;
     }
 
@@ -458,10 +491,18 @@ public class InstallerViewModel : ReactiveObject
             _completedActions.Add($"Created Windows Service '{ServiceName}'");
             Log($"Created service '{ServiceName}'");
 
-            await SetProgress("Starting service...", 60);
+            await SetProgress("Starting service...", 55);
             await StartServiceAsync();
             _completedActions.Add("Started the Windows Service");
             Log("Service started");
+
+            if (CreateFirewallRule)
+            {
+                await SetProgress("Configuring Windows Firewall...", 65);
+                await CreateFirewallRuleAsync();
+                _completedActions.Add($"Created firewall rule for TCP port {Port}");
+                Log($"Created firewall rule for port {Port}");
+            }
 
             if (!(SkipAdminSetup && KeepExistingSettings))
             {
@@ -487,7 +528,7 @@ public class InstallerViewModel : ReactiveObject
 
             await SetProgress("Installation complete!", 100);
             IsComplete = true;
-            CurrentStep = 7;
+            CurrentStep = 8;
             Log("=== Installation completed successfully ===");
         }
         catch (Exception ex)
@@ -508,6 +549,25 @@ public class InstallerViewModel : ReactiveObject
         ProgressText = text;
         ProgressValue = value;
         return Task.Delay(200); // brief pause so UI updates
+    }
+
+    private async Task CreateFirewallRuleAsync()
+    {
+        var ruleName = $"SqlAgMonitor Service (TCP {Port})";
+
+        // Remove existing rule if present (idempotent)
+        await RunProcessAsync("netsh", $"advfirewall firewall delete rule name=\"{ruleName}\"");
+
+        var args = $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=tcp localport={Port} profile=any";
+
+        if (!FirewallAllowAnySource && !string.IsNullOrWhiteSpace(FirewallRemoteAddress))
+        {
+            args += $" remoteip=\"{FirewallRemoteAddress.Trim()}\"";
+        }
+
+        var exitCode = await RunProcessAsync("netsh", args);
+        if (exitCode != 0)
+            throw new InvalidOperationException($"Failed to create firewall rule (exit code {exitCode}).");
     }
 
     private async Task PublishServiceAsync()
