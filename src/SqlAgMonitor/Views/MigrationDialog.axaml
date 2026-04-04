@@ -2,30 +2,33 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="SqlAgMonitor.Views.MigrationDialog"
         Title="Migrate Configuration to Service"
-        Width="500" Height="360"
+        Width="550" Height="500"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         SystemDecorations="Full">
-    <StackPanel Margin="24" Spacing="16">
-        <TextBlock x:Name="HeadingText" FontSize="16" FontWeight="Bold" TextWrapping="Wrap" />
-        <TextBlock x:Name="DescriptionText" TextWrapping="Wrap" Opacity="0.8" />
+    <DockPanel Margin="24">
+        <TextBlock DockPanel.Dock="Top" x:Name="HeadingText" FontSize="16" FontWeight="Bold"
+                   TextWrapping="Wrap" Margin="0,0,0,8" />
+        <TextBlock DockPanel.Dock="Top" x:Name="DescriptionText" TextWrapping="Wrap"
+                   Opacity="0.8" Margin="0,0,0,16" />
 
-        <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                BorderThickness="1" CornerRadius="4" Padding="12" MaxHeight="120">
-            <ScrollViewer>
-                <TextBlock x:Name="GroupListText" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" />
-            </ScrollViewer>
-        </Border>
+        <TextBlock DockPanel.Dock="Top" x:Name="WarningText" Foreground="#e8a825"
+                   TextWrapping="Wrap" FontSize="12" Margin="0,0,0,8" />
 
-        <TextBlock x:Name="WarningText" Foreground="#e8a825" TextWrapping="Wrap" FontSize="12" />
+        <TextBlock DockPanel.Dock="Top" x:Name="ResultText" TextWrapping="Wrap"
+                   FontSize="12" IsVisible="False" Margin="0,0,0,8" />
 
-        <TextBlock x:Name="ResultText" TextWrapping="Wrap" FontSize="12" IsVisible="False" />
-
-        <StackPanel x:Name="ButtonPanel" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-            <Button x:Name="MigrateBtn" Content="Migrate Now" Classes="accent" />
+        <StackPanel DockPanel.Dock="Bottom" x:Name="ButtonPanel" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button x:Name="MigrateBtn" Content="Migrate Selected" Classes="accent" />
             <Button x:Name="SkipBtn" Content="Skip" />
         </StackPanel>
 
-        <Button x:Name="CloseBtn" Content="Close" HorizontalAlignment="Right" IsVisible="False" />
-    </StackPanel>
+        <Button DockPanel.Dock="Bottom" x:Name="CloseBtn" Content="Close"
+                HorizontalAlignment="Right" IsVisible="False" Margin="0,16,0,0" />
+
+        <ScrollViewer>
+            <StackPanel x:Name="GroupPanel" Spacing="12" />
+        </ScrollViewer>
+    </DockPanel>
 </Window>

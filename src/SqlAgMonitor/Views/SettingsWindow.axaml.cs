@@ -67,7 +67,7 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
 
     private async Task OfferMigrationAsync(SettingsViewModel vm, AppConfiguration config)
     {
-        var groupNames = config.MonitoredGroups.Select(g => g.Name).ToList();
+        var localGroupNames = config.MonitoredGroups.Select(g => g.Name).ToList();
 
         var sqlAuthGroupNames = config.MonitoredGroups
             .Where(g => g.Connections.Any(c =>
@@ -75,7 +75,9 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
             .Select(g => g.Name)
             .ToList();
 
-        var dialog = new MigrationDialog(groupNames, sqlAuthGroupNames, vm.MigrateConfigToServiceAsync);
+        var serviceGroupNames = await vm.FetchServiceGroupNamesAsync();
+
+        var dialog = new MigrationDialog(localGroupNames, serviceGroupNames, sqlAuthGroupNames, vm.MigrateSelectedGroupsAsync);
         await dialog.ShowDialog(this);
     }
 }
