@@ -551,7 +551,7 @@ public class InstallerViewModel : ReactiveObject
             await SetProgress("Stopping existing service...", 0);
 
             sc.Stop();
-            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(30));
+            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(60));
             _completedActions.Add($"Stopped existing service '{ServiceName}' for upgrade");
             Log($"Service '{ServiceName}' stopped.");
         }
@@ -755,12 +755,14 @@ public class InstallerViewModel : ReactiveObject
 
     private async Task StartServiceAsync()
     {
-        var exitCode = await RunProcessAsync("sc.exe", $"start {ServiceName}");
-        if (exitCode != 0)
-            throw new InvalidOperationException($"Failed to start service (exit code {exitCode}).");
+        using var sc = new ServiceController(ServiceName);
+        sc.Start();
+        Log($"Service start requested, waiting for Running status...");
 
-        // Wait for the service to be ready
-        await Task.Delay(3000);
+        await Task.Run(() =>
+            sc.WaitForStatus(ServiceControllerStatus.Running, TimeSpan.FromSeconds(120)));
+
+        Log($"Service is running (status: {sc.Status}).");
     }
 
     /// <summary>
