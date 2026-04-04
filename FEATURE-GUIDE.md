@@ -461,8 +461,9 @@ Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks thro
 2. **Service account** — LOCAL SERVICE (default) or a domain account for Windows-authenticated SQL connections
 3. **Port** — service listening port (default: 58432)
 4. **TLS** — optional HTTPS with certificate
-5. **Admin credentials** — initial username and password for the service API
-6. **Install** — publishes the service, creates the Windows Service, starts it, creates the admin user, registers in Add/Remove Programs, and generates a SQL permission grant script
+5. **Firewall** — optionally create a Windows Firewall inbound rule for the service port (allow from any source or restrict to a specific IP/subnet)
+6. **Admin credentials** — initial username and password for the service API
+7. **Install** — publishes the service, creates the Windows Service, starts it, configures the firewall rule, creates the admin user, registers in Add/Remove Programs, and generates a SQL permission grant script
 
 The installer generates a `grant-permissions.sql` file in the install directory containing `GRANT VIEW SERVER STATE` and `GRANT VIEW ANY DEFINITION` for the selected service account. A database administrator must run this script on each monitored SQL Server instance.
 
