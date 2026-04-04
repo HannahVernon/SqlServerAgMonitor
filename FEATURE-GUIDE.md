@@ -467,6 +467,8 @@ Run `SqlAgMonitor.Installer.exe` (requires administrator). The wizard walks thro
 
 The installer generates a `grant-permissions.sql` file in the install directory containing `GRANT VIEW SERVER STATE` and `GRANT VIEW ANY DEFINITION` for the selected service account. A database administrator must run this script on each monitored SQL Server instance.
 
+The installer uses Win32 APIs directly (`OpenSCManager`, `CreateService`, `ChangeServiceConfig`, etc.) for all service management — there is no dependency on `sc.exe`. When a custom domain account is selected, the installer automatically grants the **"Log on as a service"** right (`SeServiceLogonRight`) to that account via `LsaAddAccountRights`.
+
 **Upgrade mode:** When an existing installation is detected, the installer pre-populates all settings (install path, service account, port, TLS certificate) from the current configuration. The admin credentials step is skipped — existing admin users are preserved. The button reads "Upgrade" instead of "Install".
 
 To uninstall, use Windows Settings → Apps → SQL Server AG Monitor Service, or run `SqlAgMonitor.Installer.exe /uninstall`.
