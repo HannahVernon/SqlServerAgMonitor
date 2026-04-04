@@ -61,6 +61,8 @@ public class SettingsViewModel : ViewModelBase
     private string? _serviceUsername;
     private string _servicePassword = string.Empty;
     private bool _serviceUseTls;
+    private string? _originalServiceHost;
+    private int _originalServicePort;
 
     // UI feedback
     private string? _testEmailStatus;
@@ -118,8 +120,26 @@ public class SettingsViewModel : ViewModelBase
 
     // Service settings
     public bool ServiceEnabled { get => _serviceEnabled; set => this.RaiseAndSetIfChanged(ref _serviceEnabled, value); }
-    public string ServiceHost { get => _serviceHost; set => this.RaiseAndSetIfChanged(ref _serviceHost, value); }
-    public int ServicePort { get => _servicePort; set => this.RaiseAndSetIfChanged(ref _servicePort, value); }
+    public string ServiceHost
+    {
+        get => _serviceHost;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _serviceHost, value);
+            if (!string.Equals(value, _originalServiceHost, StringComparison.OrdinalIgnoreCase))
+                AcceptedCertThumbprint = null;
+        }
+    }
+    public int ServicePort
+    {
+        get => _servicePort;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _servicePort, value);
+            if (value != _originalServicePort)
+                AcceptedCertThumbprint = null;
+        }
+    }
     public string? ServiceUsername { get => _serviceUsername; set => this.RaiseAndSetIfChanged(ref _serviceUsername, value); }
     public string ServicePassword { get => _servicePassword; set => this.RaiseAndSetIfChanged(ref _servicePassword, value); }
     public bool ServiceUseTls { get => _serviceUseTls; set => this.RaiseAndSetIfChanged(ref _serviceUseTls, value); }
@@ -186,6 +206,8 @@ public class SettingsViewModel : ViewModelBase
         _serviceWasPreviouslyEnabled = config.Service.Enabled;
         ServiceHost = config.Service.Host;
         ServicePort = config.Service.Port;
+        _originalServiceHost = config.Service.Host;
+        _originalServicePort = config.Service.Port;
         ServiceUsername = config.Service.Username;
         ServiceUseTls = config.Service.UseTls;
         AcceptedCertThumbprint = config.Service.TrustedCertThumbprint;
@@ -221,8 +243,7 @@ public class SettingsViewModel : ViewModelBase
         config.Service.Port = ServicePort;
         config.Service.Username = ServiceUsername;
         config.Service.UseTls = ServiceUseTls;
-        if (AcceptedCertThumbprint != null)
-            config.Service.TrustedCertThumbprint = AcceptedCertThumbprint;
+        config.Service.TrustedCertThumbprint = AcceptedCertThumbprint;
     }
 
     private async Task OnSaveAsync(CancellationToken cancellationToken)
@@ -289,19 +310,23 @@ public class SettingsViewModel : ViewModelBase
 
         try
         {
-            // Phase 1: if TLS, probe for cert issues first
+            // Phase 1: if TLS, probe for cert issues
             string? pinnedThumbprint = AcceptedCertThumbprint;
 
-            if (ServiceUseTls && pinnedThumbprint == null)
+            if (ServiceUseTls)
             {
                 X509Certificate2? capturedCert = null;
+                bool systemTrusted = false;
 
                 using var probeHandler = new HttpClientHandler
                 {
                     ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
                     {
                         if (errors == SslPolicyErrors.None)
+                        {
+                            systemTrusted = true;
                             return true;
+                        }
                         if (cert != null)
                             capturedCert = new X509Certificate2(cert);
                         return false;
@@ -316,12 +341,19 @@ public class SettingsViewModel : ViewModelBase
 
                 try
                 {
-                    await probeClient.GetAsync("/api/auth/login", cancellationToken);
+                    await probeClient.GetAsync("/api/version", cancellationToken);
                 }
                 catch (HttpRequestException) when (capturedCert != null)
                 {
-                    if (ConfirmUntrustedCertificate != null)
+                    // Certificate is not system-trusted — check if the pinned thumbprint still matches
+                    if (pinnedThumbprint != null && string.Equals(
+                            capturedCert.Thumbprint, pinnedThumbprint, StringComparison.OrdinalIgnoreCase))
                     {
+                        // Pinned thumbprint matches — proceed without prompting
+                    }
+                    else if (ConfirmUntrustedCertificate != null)
+                    {
+                        // Thumbprint changed or no pin — show the trust dialog
                         var accepted = await ConfirmUntrustedCertificate(capturedCert);
                         if (!accepted)
                         {
@@ -342,6 +374,9 @@ public class SettingsViewModel : ViewModelBase
                     TestConnectionStatus = $"✗ TLS handshake failed: {ex.InnerException?.Message ?? ex.Message}";
                     return;
                 }
+
+                if (systemTrusted)
+                    pinnedThumbprint = null; // System-trusted cert — no need to pin
             }
 
             // Phase 2: check protocol version
