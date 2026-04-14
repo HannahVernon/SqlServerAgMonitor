@@ -449,14 +449,34 @@ SQL Server stores LSNs as `numeric(25,0)` with the structure:
 VLF_sequence (10 digits) × 10^15 + Block_offset (10 digits) × 10^5 + Slot (5 digits)
 ```
 
-`LsnHelper.ComputeLogBlockDiff()` strips the slot (irrelevant at block level), then computes the absolute difference. The result maps to health levels:
+`LsnHelper` separates the VLF sequence and block offset, comparing them independently:
 
-| Difference | Health Level | Meaning |
-|---|---|---|
-| ≤ 1,000,000 | InSync | Within ~1 MB — fully caught up |
-| ≤ 100,000,000 | SlightlyBehind | Within ~100 MB — minor transient lag |
-| ≤ 10,000,000,000 | ModeratelyBehind | Within same VLF range — moderate lag |
-| > 10,000,000,000 | DangerZone | VLF boundary crossed or massive lag |
+- **`ComputeLogBlockDiff()`** returns the block-offset byte difference within the same VLF. When replicas are in different VLFs, it returns `Max(primaryBlock, secondaryBlock)` as a lower-bound estimate (VLF sizes are unknown).
+- **`ComputeVlfDiff()`** returns the absolute VLF sequence number gap (0 = same VLF).
+
+Health level mapping uses both values:
+
+| VLF Diff | Block Diff | Health Level | Meaning |
+|---|---|---|---|
+| 0 | ≤ 1,000,000 | InSync | Within ~1 MB — fully caught up |
+| 0 | ≤ 100,000,000 | SlightlyBehind | Within ~100 MB — minor transient lag |
+| 0 | ≤ 1,000,000,000 | ModeratelyBehind | Within ~1 GB — moderate lag |
+| > 0 | any | DangerZone | VLF boundary crossed |
+| any | > 1,000,000,000 | DangerZone | Massive intra-VLF lag |
+
+Alert messages use `FormatLag()` to produce human-readable descriptions (e.g., "1 VLF + 250.9 KB behind") instead of raw numeric differences.
+
+### Units Convention
+
+All byte quantities throughout the application use **binary (powers-of-2) units**:
+
+| Unit | Value |
+|---|---|
+| 1 KB | 1,024 bytes |
+| 1 MB | 1,048,576 bytes (1,024²) |
+| 1 GB | 1,073,741,824 bytes (1,024³) |
+
+`LsnHelper.FormatBytes()` enforces this convention for all user-facing byte displays (alerts, exports, UI).
 
 Display format: `VVVVVVVV:BBBBBBBB` (hex VLF:Block), matching SQL Server's standard LSN display.
 
