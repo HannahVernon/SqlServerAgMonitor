@@ -237,6 +237,9 @@ public class MonitorTabViewModel : ViewModelBase
             var maxDiff = allStates.Count > 0
                 ? allStates.Max(d => d.LogBlockDifference)
                 : 0;
+            var maxVlfDiff = allStates.Count > 0
+                ? allStates.Max(d => d.VlfDifference)
+                : 0;
             var maxLagSeconds = allStates.Count > 0
                 ? allStates.Max(d => d.SecondaryLagSeconds)
                 : 0;
@@ -257,6 +260,7 @@ public class MonitorTabViewModel : ViewModelBase
             {
                 DatabaseName = dbGroup.Key,
                 MaxLogBlockDiff = maxDiff,
+                MaxVlfDiff = maxVlfDiff,
                 SecondaryLagSeconds = maxLagSeconds,
                 WorstSyncState = worstSync,
                 AnySuspended = anySuspended,

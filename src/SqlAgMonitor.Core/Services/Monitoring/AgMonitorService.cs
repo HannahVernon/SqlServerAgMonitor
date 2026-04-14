@@ -379,6 +379,7 @@ public class AgMonitorService : IAgMonitorService
             if (primaryStates.TryGetValue(dbState.DatabaseName, out var primaryLsn))
             {
                 dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
+                dbState.VlfDifference = LsnHelper.ComputeVlfDiff(primaryLsn, dbState.LastHardenedLsn);
             }
         }
 

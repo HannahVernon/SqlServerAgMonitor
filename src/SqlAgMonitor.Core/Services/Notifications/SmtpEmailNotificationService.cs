@@ -62,7 +62,7 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             {
                 From = new MailAddress(settings.FromAddress),
                 Subject = "SqlAgMonitor — Test Email",
-                Body = "<p>This is a test email from <strong>SqlAgMonitor</strong>. SMTP connectivity is working.</p>",
+                Body = $"<p>This is a test email from <strong>SqlAgMonitor</strong> on <strong>{WebUtility.HtmlEncode(Environment.MachineName)}</strong>. SMTP connectivity is working.</p>",
                 IsBodyHtml = true
             };
 
@@ -138,9 +138,13 @@ public class SmtpEmailNotificationService : IEmailNotificationService
                         <td style="padding: 6px 12px; font-weight: bold;">Message</td>
                         <td style="padding: 6px 12px;">{WebUtility.HtmlEncode(alert.Message)}</td>
                     </tr>
+                    <tr>
+                        <td style="padding: 6px 12px; font-weight: bold;">Monitor Host</td>
+                        <td style="padding: 6px 12px;">{WebUtility.HtmlEncode(Environment.MachineName)}</td>
+                    </tr>
                 </table>
                 <hr style="margin-top: 20px;" />
-                <p style="font-size: 0.85em; color: #888;">Sent by SqlAgMonitor</p>
+                <p style="font-size: 0.85em; color: #888;">Sent by SqlAgMonitor on {WebUtility.HtmlEncode(Environment.MachineName)}</p>
             </body>
             </html>
             """;

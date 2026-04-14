@@ -550,6 +550,7 @@ public class DagMonitorService : IAgMonitorService
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
                     dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
+                    dbState.VlfDifference = LsnHelper.ComputeVlfDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }
@@ -606,6 +607,7 @@ public class DagMonitorService : IAgMonitorService
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
                     dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
+                    dbState.VlfDifference = LsnHelper.ComputeVlfDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }
