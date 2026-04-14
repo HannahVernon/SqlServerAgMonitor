@@ -94,8 +94,22 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             var password = await _credentialStore.GetPasswordAsync(settings.CredentialKey, cancellationToken);
             if (!string.IsNullOrEmpty(password))
             {
+                _logger.LogDebug(
+                    "SMTP authenticating as '{Username}' with stored credential '{CredentialKey}'.",
+                    settings.Username, settings.CredentialKey);
+                client.UseDefaultCredentials = false;
                 client.Credentials = new NetworkCredential(settings.Username, password);
             }
+            else
+            {
+                _logger.LogWarning(
+                    "SMTP credential key '{CredentialKey}' exists but no password was found in the credential store.",
+                    settings.CredentialKey);
+            }
+        }
+        else
+        {
+            _logger.LogDebug("SMTP sending without authentication (no credential key configured).");
         }
 
         return client;
