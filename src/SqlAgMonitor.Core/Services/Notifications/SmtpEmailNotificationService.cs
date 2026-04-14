@@ -74,21 +74,62 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             _logger.LogInformation("SMTP test email sent successfully.");
             return null;
         }
+        catch (SmtpFailedRecipientsException ex)
+        {
+            _logger.LogError(ex, "SMTP connection test failed.");
+            return TranslateSmtpError(ex);
+        }
         catch (SmtpFailedRecipientException ex)
         {
             _logger.LogError(ex, "SMTP connection test failed.");
-            return ex.Message;
+            return TranslateSmtpError(ex);
         }
         catch (SmtpException ex)
         {
             _logger.LogError(ex, "SMTP connection test failed.");
-            return ex.InnerException?.Message ?? ex.Message;
+            return TranslateSmtpError(ex);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "SMTP connection test failed.");
-            return ex.Message;
+            return ex.InnerException?.Message ?? ex.Message;
         }
+    }
+
+    private static string TranslateSmtpError(SmtpException ex)
+    {
+        var serverResponse = ex.Message;
+
+        // Extract the inner exception's message for wrapped errors
+        if (ex is SmtpFailedRecipientsException multi && multi.InnerExceptions.Length > 0)
+            serverResponse = multi.InnerExceptions[0].Message;
+
+        var responseLower = serverResponse.ToLowerInvariant();
+
+        if (responseLower.Contains("authenticate") || responseLower.Contains("authentication")
+            || responseLower.Contains("incorrect authentication")
+            || ex.StatusCode == SmtpStatusCode.ClientNotPermitted)
+        {
+            return "Authentication failed — check your SMTP username and password.";
+        }
+
+        if (responseLower.Contains("relay") && responseLower.Contains("denied"))
+            return "Relay denied — the server requires authentication. Check your username and password.";
+
+        return ex.StatusCode switch
+        {
+            SmtpStatusCode.MustIssueStartTlsFirst =>
+                "The server requires TLS. Enable the 'Use TLS' option and try again.",
+            SmtpStatusCode.MailboxUnavailable =>
+                $"Mailbox unavailable — {serverResponse}",
+            SmtpStatusCode.MailboxBusy =>
+                "The server is busy. Please try again later.",
+            SmtpStatusCode.InsufficientStorage =>
+                "The server reported insufficient storage.",
+            SmtpStatusCode.ServiceNotAvailable =>
+                "The SMTP service is not available. Check the server address and port.",
+            _ => serverResponse
+        };
     }
 
     private async Task<SmtpClient> CreateSmtpClientAsync(EmailSettings settings, CancellationToken cancellationToken)
