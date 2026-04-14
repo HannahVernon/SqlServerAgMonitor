@@ -33,6 +33,8 @@ public class SettingsViewModel : ViewModelBase
     private string _fromAddress = string.Empty;
     private string _toAddresses = string.Empty;
     private string? _emailUsername;
+    private string _emailPassword = string.Empty;
+    private bool _hasStoredSmtpPassword;
 
     // Syslog
     private bool _syslogEnabled;
@@ -98,6 +100,8 @@ public class SettingsViewModel : ViewModelBase
     public string FromAddress { get => _fromAddress; set => this.RaiseAndSetIfChanged(ref _fromAddress, value); }
     public string ToAddresses { get => _toAddresses; set => this.RaiseAndSetIfChanged(ref _toAddresses, value); }
     public string? EmailUsername { get => _emailUsername; set => this.RaiseAndSetIfChanged(ref _emailUsername, value); }
+    public string EmailPassword { get => _emailPassword; set => this.RaiseAndSetIfChanged(ref _emailPassword, value); }
+    public bool HasStoredSmtpPassword { get => _hasStoredSmtpPassword; set => this.RaiseAndSetIfChanged(ref _hasStoredSmtpPassword, value); }
 
     // Syslog settings
     public bool SyslogEnabled { get => _syslogEnabled; set => this.RaiseAndSetIfChanged(ref _syslogEnabled, value); }
@@ -191,6 +195,7 @@ public class SettingsViewModel : ViewModelBase
         FromAddress = config.Email.FromAddress;
         ToAddresses = string.Join("; ", config.Email.ToAddresses);
         EmailUsername = config.Email.Username;
+        HasStoredSmtpPassword = !string.IsNullOrEmpty(config.Email.CredentialKey);
         SyslogEnabled = config.Syslog.Enabled;
         SyslogServer = config.Syslog.Server;
         SyslogPort = config.Syslog.Port;
