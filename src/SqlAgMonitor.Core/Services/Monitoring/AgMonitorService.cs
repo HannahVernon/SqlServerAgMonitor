@@ -212,6 +212,7 @@ public class AgMonitorService : IAgMonitorService
                 var connection = lease.Connection;
                 var replicas = await QueryReplicasAsync(connection, cancellationToken);
                 var dbStates = await QueryDatabaseStatesAsync(connection, cancellationToken);
+                var serverTime = await QueryServerTimeAsync(connection, cancellationToken);
 
                 _logger.LogDebug(
                     "Poll {Group}: {ReplicaCount} replica(s), {DbStateCount} database state(s) from {Server}.",
@@ -232,7 +233,7 @@ public class AgMonitorService : IAgMonitorService
                     Name = groupName,
                     GroupType = Enum.TryParse<AvailabilityGroupType>(groupConfig.GroupType, out var groupType)
                         ? groupType : AvailabilityGroupType.AvailabilityGroup,
-                    Timestamp = DateTimeOffset.UtcNow,
+                    Timestamp = serverTime,
                     AgInfo = agInfo,
                     OverallHealth = agInfo.OverallHealth,
                     IsConnected = true
@@ -273,6 +274,27 @@ public class AgMonitorService : IAgMonitorService
             _connections[key] = wrapper;
         }
         return wrapper;
+    }
+
+    /// <summary>
+    /// Queries SYSDATETIMEOFFSET() from the SQL Server to get the server's local time with UTC offset.
+    /// Falls back to DateTimeOffset.UtcNow if the query fails.
+    /// </summary>
+    private static async Task<DateTimeOffset> QueryServerTimeAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT SYSDATETIMEOFFSET();";
+            var result = await cmd.ExecuteScalarAsync(cancellationToken);
+            if (result is DateTimeOffset dto)
+                return dto;
+        }
+        catch
+        {
+            // Non-critical — fall back to monitor machine's UTC time
+        }
+        return DateTimeOffset.UtcNow;
     }
 
     private async Task<List<ReplicaInfo>> QueryReplicasAsync(SqlConnection connection, CancellationToken cancellationToken)
