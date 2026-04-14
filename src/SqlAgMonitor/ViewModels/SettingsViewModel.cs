@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.Credentials;
 using SqlAgMonitor.Core.Services.Notifications;
 using SqlAgMonitor.Services;
 
@@ -20,6 +21,7 @@ public class SettingsViewModel : ViewModelBase
 {
     private readonly IConfigurationService _configService;
     private readonly IEmailNotificationService _emailService;
+    private readonly ICredentialStore _credentialStore;
 
     private int _globalPollingIntervalSeconds;
     private string _theme = "dark";
@@ -159,10 +161,11 @@ public class SettingsViewModel : ViewModelBase
     /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
     public Func<bool, Task>? CloseRequested;
 
-    public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService)
+    public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService, ICredentialStore credentialStore)
     {
         _configService = configService;
         _emailService = emailService;
+        _credentialStore = credentialStore;
         SaveCommand = ReactiveCommand.CreateFromTask(OnSaveAsync);
         CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
@@ -271,6 +274,15 @@ public class SettingsViewModel : ViewModelBase
             // Save current email settings first so the service reads them
             var config = _configService.Load();
             ApplyTo(config);
+
+            // Store SMTP password in credential store before testing
+            if (!string.IsNullOrEmpty(EmailPassword))
+            {
+                const string smtpCredentialKey = "smtp-password";
+                config.Email.CredentialKey = smtpCredentialKey;
+                await _credentialStore.StorePasswordAsync(smtpCredentialKey, EmailPassword, cancellationToken);
+            }
+
             _configService.Save(config);
 
             var success = await _emailService.TestConnectionAsync(cancellationToken);
