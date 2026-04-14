@@ -37,16 +37,74 @@ public static class LsnHelper
     }
 
     /// <summary>
-    /// Computes a meaningful difference between two LSNs by stripping the slot
-    /// component first. The result represents the combined VLF + block offset
-    /// distance. Within the same VLF, this is the byte-offset difference in the
-    /// transaction log. Across VLF boundaries, the VLF difference dominates
-    /// (each VLF boundary adds ~10^10 to the result).
+    /// Computes the block-offset difference between two LSNs within their
+    /// respective VLFs. When both LSNs share the same VLF, the result is
+    /// the byte-offset difference in the transaction log. When the VLFs
+    /// differ, only the block-offset difference within the primary's VLF
+    /// is meaningful; the VLF gap is tracked separately via
+    /// <see cref="ComputeVlfDiff"/>.
     /// </summary>
-    public static decimal ComputeLogBlockDiff(decimal primaryLsn, decimal secondaryLsn)
+    public static long ComputeLogBlockDiff(decimal primaryLsn, decimal secondaryLsn)
     {
-        decimal primaryStripped = decimal.Truncate(primaryLsn / SlotDivisor);
-        decimal secondaryStripped = decimal.Truncate(secondaryLsn / SlotDivisor);
-        return Math.Abs(primaryStripped - secondaryStripped);
+        var (primaryVlf, primaryBlock) = ParseComponents(primaryLsn);
+        var (secondaryVlf, secondaryBlock) = ParseComponents(secondaryLsn);
+
+        if (primaryVlf == secondaryVlf)
+            return Math.Abs(primaryBlock - secondaryBlock);
+
+        // Different VLFs — block offsets are not directly comparable because
+        // VLF sizes vary. Return the secondary's block offset distance from
+        // the end of its VLF (unknown) plus the primary's offset — but since
+        // we don't know VLF sizes, just return the primary's block offset as
+        // a lower-bound estimate of the intra-VLF lag.
+        return Math.Max(primaryBlock, secondaryBlock);
+    }
+
+    /// <summary>
+    /// Returns the absolute VLF sequence number difference between two LSNs.
+    /// Zero means both LSNs are in the same VLF.
+    /// </summary>
+    public static long ComputeVlfDiff(decimal primaryLsn, decimal secondaryLsn)
+    {
+        var (primaryVlf, _) = ParseComponents(primaryLsn);
+        var (secondaryVlf, _) = ParseComponents(secondaryLsn);
+        return Math.Abs(primaryVlf - secondaryVlf);
+    }
+
+    /// <summary>
+    /// Produces a human-readable description of the lag between two LSNs.
+    /// </summary>
+    public static string FormatLag(decimal primaryLsn, decimal secondaryLsn)
+    {
+        if (primaryLsn == secondaryLsn) return "in sync";
+
+        var vlfDiff = ComputeVlfDiff(primaryLsn, secondaryLsn);
+        var blockDiff = ComputeLogBlockDiff(primaryLsn, secondaryLsn);
+
+        if (vlfDiff == 0)
+            return $"{FormatBytes(blockDiff)} behind";
+
+        var vlfLabel = vlfDiff == 1 ? "1 VLF" : $"{vlfDiff:N0} VLFs";
+        if (blockDiff > 0)
+            return $"{vlfLabel} + {FormatBytes(blockDiff)} behind";
+        return $"{vlfLabel} behind";
+    }
+
+    /// <summary>
+    /// Formats a byte count as a human-readable string (B, KB, MB, GB).
+    /// </summary>
+    public static string FormatBytes(long bytes)
+    {
+        const long KB = 1_024;
+        const long MB = 1_024 * KB;
+        const long GB = 1_024 * MB;
+
+        return bytes switch
+        {
+            >= GB => $"{bytes / (double)GB:F1} GB",
+            >= MB => $"{bytes / (double)MB:F1} MB",
+            >= KB => $"{bytes / (double)KB:F1} KB",
+            _ => $"{bytes:N0} bytes"
+        };
     }
 }

@@ -16,8 +16,11 @@ public class DatabasePivotRow
 
     public string DatabaseName { get; init; } = string.Empty;
 
-    /// <summary>Maximum log block position difference from primary across all secondaries.</summary>
-    public decimal MaxLogBlockDiff { get; init; }
+    /// <summary>Maximum log block byte difference from primary across all secondaries.</summary>
+    public long MaxLogBlockDiff { get; init; }
+
+    /// <summary>Maximum VLF sequence difference from primary across all secondaries.</summary>
+    public long MaxVlfDiff { get; init; }
 
     /// <summary>Worst secondary lag in seconds across all secondaries for this database.</summary>
     public long SecondaryLagSeconds { get; init; }
@@ -51,7 +54,7 @@ public class DatabasePivotRow
     };
 
     /// <summary>Health color hex for the database row dot, based on MaxLogBlockDiff.</summary>
-    public string HealthColorHex => HealthLevelExtensions.FromLogBlockDifference(MaxLogBlockDiff) switch
+    public string HealthColorHex => HealthLevelExtensions.FromLogBlockDifference(MaxLogBlockDiff, MaxVlfDiff) switch
     {
         HealthLevel.InSync => "#4CAF50",
         HealthLevel.SlightlyBehind => "#FFC107",

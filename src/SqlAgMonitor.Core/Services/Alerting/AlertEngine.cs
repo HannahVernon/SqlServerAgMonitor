@@ -318,27 +318,38 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
             .ToDictionary(d => d.DatabaseName, StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, DatabaseReplicaState>(StringComparer.OrdinalIgnoreCase);
 
-        // SyncFellBehind: default 1,000,000 log blocks (~1 MB). Only alert on the
+        // SyncFellBehind: default 1,000,000 bytes (~1 MB). Only alert on the
         // threshold-crossing transition (not while continuously above), so repeated
         // polls with a large diff don't produce duplicate alerts.
+        // Any VLF difference also triggers SyncFellBehind since it means the secondary
+        // is at least one full VLF behind.
         var syncBehindThreshold = GetThreshold(alertSettings, AlertType.SyncFellBehind, defaultValue: 1_000_000);
 
         foreach (var db in currentReplica.DatabaseStates)
         {
             previousDbByName.TryGetValue(db.DatabaseName, out var prevDb);
 
-            // SyncFellBehind: log block difference exceeds threshold
-            if (db.LogBlockDifference > syncBehindThreshold)
+            // SyncFellBehind: log block difference exceeds threshold or VLFs differ
+            bool isBehind = db.VlfDifference > 0 || db.LogBlockDifference > syncBehindThreshold;
+            if (isBehind)
             {
-                var wasBelowThreshold = prevDb == null || prevDb.LogBlockDifference <= syncBehindThreshold;
+                bool wasBelowThreshold = prevDb == null
+                    || (prevDb.VlfDifference == 0 && prevDb.LogBlockDifference <= syncBehindThreshold);
                 if (wasBelowThreshold)
                 {
+                    var lagDescription = LsnHelper.FormatLag(db.LastHardenedLsn, db.LastHardenedLsn)
+                        is "in sync" ? $"{LsnHelper.FormatBytes(db.LogBlockDifference)} behind"
+                        : LsnHelper.FormatLag(
+                            /* primary LSN is not directly available here; approximate from diff */
+                            db.LastHardenedLsn + (decimal)db.LogBlockDifference * 100_000m,
+                            db.LastHardenedLsn);
+
                     alerts.Add(CreateAlert(
                         AlertType.SyncFellBehind,
                         groupName,
                         currentReplica.ReplicaServerName,
                         db.DatabaseName,
-                        $"Database '{db.DatabaseName}' on replica '{currentReplica.ReplicaServerName}' fell behind (log block diff: {db.LogBlockDifference:N0}, threshold: {syncBehindThreshold:N0})",
+                        $"Database '{db.DatabaseName}' on replica '{currentReplica.ReplicaServerName}' fell behind — {(db.VlfDifference > 0 ? $"{db.VlfDifference} VLF(s) + " : "")}{LsnHelper.FormatBytes(db.LogBlockDifference)} (threshold: {LsnHelper.FormatBytes(syncBehindThreshold)})",
                         AlertSeverity.Warning));
                 }
             }

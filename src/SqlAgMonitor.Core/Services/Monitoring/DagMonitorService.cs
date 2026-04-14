@@ -250,11 +250,16 @@ public class DagMonitorService : IAgMonitorService
             var dagInfo = MergeResults(groupName,
                 memberResults.Where(r => r != null).ToArray()!);
 
+            // Use the primary member's server time if available, else first successful
+            var primaryResult = memberResults.FirstOrDefault(r => r is { IsSuccess: true })
+                ?? memberResults.FirstOrDefault(r => r != null);
+            var snapshotTime = primaryResult?.ServerTime ?? DateTimeOffset.UtcNow;
+
             return new MonitoredGroupSnapshot
             {
                 Name = groupName,
                 GroupType = AvailabilityGroupType.DistributedAvailabilityGroup,
-                Timestamp = DateTimeOffset.UtcNow,
+                Timestamp = snapshotTime,
                 DagInfo = dagInfo,
                 OverallHealth = dagInfo.OverallHealth,
                 IsConnected = memberResults.Any(r => r is { IsSuccess: true })
@@ -293,6 +298,7 @@ public class DagMonitorService : IAgMonitorService
                 var dagTopology = await QueryDagTopologyAsync(connection, ct);
                 var localReplicas = await QueryLocalAgReplicasAsync(connection, ct);
                 var localDbStates = await QueryLocalAgDbStatesAsync(connection, ct);
+                var serverTime = await QueryServerTimeAsync(connection, ct);
 
                 return new MemberPollResult
                 {
@@ -300,7 +306,8 @@ public class DagMonitorService : IAgMonitorService
                     IsSuccess = true,
                     DagTopology = dagTopology,
                     LocalReplicas = localReplicas,
-                    LocalDbStates = localDbStates
+                    LocalDbStates = localDbStates,
+                    ServerTime = serverTime
                 };
             }
             catch (Exception ex)
@@ -332,6 +339,27 @@ public class DagMonitorService : IAgMonitorService
             _connections[key] = wrapper;
         }
         return wrapper;
+    }
+
+    /// <summary>
+    /// Queries SYSDATETIMEOFFSET() from the SQL Server to get the server's local time with UTC offset.
+    /// Falls back to DateTimeOffset.UtcNow if the query fails.
+    /// </summary>
+    private static async Task<DateTimeOffset> QueryServerTimeAsync(SqlConnection connection, CancellationToken ct)
+    {
+        try
+        {
+            using var cmd = connection.CreateCommand();
+            cmd.CommandText = "SELECT SYSDATETIMEOFFSET();";
+            var result = await cmd.ExecuteScalarAsync(ct);
+            if (result is DateTimeOffset dto)
+                return dto;
+        }
+        catch
+        {
+            // Non-critical — fall back to monitor machine's UTC time
+        }
+        return DateTimeOffset.UtcNow;
     }
 
     private async Task<List<DagTopologyRow>> QueryDagTopologyAsync(
@@ -550,6 +578,7 @@ public class DagMonitorService : IAgMonitorService
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
                     dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
+                    dbState.VlfDifference = LsnHelper.ComputeVlfDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }
@@ -606,6 +635,7 @@ public class DagMonitorService : IAgMonitorService
                 if (primaryLsnByDb.TryGetValue(dbState.DatabaseName, out var primaryLsn))
                 {
                     dbState.LogBlockDifference = LsnHelper.ComputeLogBlockDiff(primaryLsn, dbState.LastHardenedLsn);
+                    dbState.VlfDifference = LsnHelper.ComputeVlfDiff(primaryLsn, dbState.LastHardenedLsn);
                 }
             }
         }
@@ -662,6 +692,7 @@ public class DagMonitorService : IAgMonitorService
         public List<DagTopologyRow> DagTopology { get; init; } = [];
         public List<ReplicaInfo> LocalReplicas { get; init; } = [];
         public List<DatabaseReplicaState> LocalDbStates { get; init; } = [];
+        public DateTimeOffset ServerTime { get; init; }
         public bool Claimed { get; set; }
     }
 
