@@ -2,34 +2,32 @@ namespace SqlAgMonitor.Core.Models;
 
 public enum HealthLevel
 {
-    /// <summary>Green: log block difference ≤ 1MB offset — fully in sync</summary>
+    /// <summary>Green: same VLF and block offset ≤ 1 MB — fully in sync</summary>
     InSync,
-    /// <summary>Yellow: log block difference ≤ 100MB offset — slightly behind</summary>
+    /// <summary>Yellow: same VLF and block offset ≤ 100 MB — slightly behind</summary>
     SlightlyBehind,
-    /// <summary>Orange: log block difference ≤ 10GB offset (within same VLF range) — moderately behind</summary>
+    /// <summary>Orange: same VLF and block offset ≤ 1 GB — moderately behind</summary>
     ModeratelyBehind,
-    /// <summary>Red: large difference, VLF boundary crossed, or disconnected</summary>
+    /// <summary>Red: different VLFs, large offset, or disconnected</summary>
     DangerZone
 }
 
 public static class HealthLevelExtensions
 {
     /// <summary>
-    /// Determines health level from a log block position difference.
-    /// The difference is computed by stripping the slot from numeric(25,0) LSN values
-    /// before subtracting. Within the same VLF, the value represents byte-offset
-    /// distance in the transaction log. Across VLF boundaries each boundary adds ~10^10.
+    /// Determines health level from block-offset byte difference and VLF gap.
     /// </summary>
-    public static HealthLevel FromLogBlockDifference(decimal logBlockDiff, bool isDisconnected = false)
+    public static HealthLevel FromLogBlockDifference(long blockDiff, long vlfDiff = 0, bool isDisconnected = false)
     {
         if (isDisconnected) return HealthLevel.DangerZone;
+        if (vlfDiff > 0) return HealthLevel.DangerZone;
 
-        return logBlockDiff switch
+        return blockDiff switch
         {
-            <= 1_000_000m => HealthLevel.InSync,            // ≤ ~1 MB log offset
-            <= 100_000_000m => HealthLevel.SlightlyBehind,  // ≤ ~100 MB log offset
-            <= 10_000_000_000m => HealthLevel.ModeratelyBehind, // within same VLF range
-            _ => HealthLevel.DangerZone                     // VLF boundary crossed or massive lag
+            <= 1_000_000L => HealthLevel.InSync,
+            <= 100_000_000L => HealthLevel.SlightlyBehind,
+            <= 1_000_000_000L => HealthLevel.ModeratelyBehind,
+            _ => HealthLevel.DangerZone
         };
     }
 }
