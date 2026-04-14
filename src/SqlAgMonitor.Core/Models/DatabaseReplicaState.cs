@@ -16,7 +16,8 @@ public class DatabaseReplicaState : ObservableModel
     private bool _isSuspended;
     private string? _suspendReason;
     private AvailabilityMode _availabilityMode;
-    private decimal _logBlockDifference;
+    private long _logBlockDifference;
+    private long _vlfDifference;
     private long _secondaryLagSeconds;
 
     public string DatabaseName { get => _databaseName; set => SetProperty(ref _databaseName, value); }
@@ -35,10 +36,16 @@ public class DatabaseReplicaState : ObservableModel
     public AvailabilityMode AvailabilityMode { get => _availabilityMode; set => SetProperty(ref _availabilityMode, value); }
 
     /// <summary>
-    /// Log block position difference from the primary replica, computed by stripping
-    /// the slot component from the numeric(25,0) LSN before subtracting.
+    /// Block-offset byte difference from the primary replica within the same VLF.
+    /// When the replicas are in different VLFs, this is a lower-bound estimate.
     /// </summary>
-    public decimal LogBlockDifference { get => _logBlockDifference; set => SetProperty(ref _logBlockDifference, value); }
+    public long LogBlockDifference { get => _logBlockDifference; set => SetProperty(ref _logBlockDifference, value); }
+
+    /// <summary>
+    /// Number of VLF boundaries between this replica and the primary.
+    /// Zero means both are in the same VLF.
+    /// </summary>
+    public long VlfDifference { get => _vlfDifference; set => SetProperty(ref _vlfDifference, value); }
 
     /// <summary>
     /// Synchronization delay in seconds (from sys.dm_hadr_database_replica_states.secondary_lag_seconds).

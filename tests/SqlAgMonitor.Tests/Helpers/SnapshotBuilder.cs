@@ -119,7 +119,7 @@ public class DatabaseStateBuilder
     private readonly string _databaseName;
     private readonly string _replicaServerName;
     private readonly string _agName;
-    private decimal _logBlockDifference;
+    private long _logBlockDifference;
     private bool _isSuspended;
     private string? _suspendReason;
     private SynchronizationState _syncState = SynchronizationState.Synchronized;
@@ -131,7 +131,7 @@ public class DatabaseStateBuilder
         _agName = agName;
     }
 
-    public DatabaseStateBuilder WithLogBlockDifference(decimal diff) { _logBlockDifference = diff; return this; }
+    public DatabaseStateBuilder WithLogBlockDifference(long diff) { _logBlockDifference = diff; return this; }
     public DatabaseStateBuilder IsSuspended(bool suspended, string? reason = null)
     {
         _isSuspended = suspended;
