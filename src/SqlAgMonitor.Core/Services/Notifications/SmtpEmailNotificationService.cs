@@ -49,7 +49,7 @@ public class SmtpEmailNotificationService : IEmailNotificationService
         }
     }
 
-    public async Task<bool> TestConnectionAsync(CancellationToken cancellationToken = default)
+    public async Task<string?> TestConnectionAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -72,12 +72,22 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             await client.SendMailAsync(message, cancellationToken);
 
             _logger.LogInformation("SMTP test email sent successfully.");
-            return true;
+            return null;
+        }
+        catch (SmtpFailedRecipientException ex)
+        {
+            _logger.LogError(ex, "SMTP connection test failed.");
+            return ex.Message;
+        }
+        catch (SmtpException ex)
+        {
+            _logger.LogError(ex, "SMTP connection test failed.");
+            return ex.InnerException?.Message ?? ex.Message;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "SMTP connection test failed.");
-            return false;
+            return ex.Message;
         }
     }
 
@@ -94,9 +104,9 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             var password = await _credentialStore.GetPasswordAsync(settings.CredentialKey, cancellationToken);
             if (!string.IsNullOrEmpty(password))
             {
-                _logger.LogDebug(
-                    "SMTP authenticating as '{Username}' with stored credential '{CredentialKey}'.",
-                    settings.Username, settings.CredentialKey);
+                _logger.LogWarning(
+                    "SMTP authenticating as '{Username}' (TLS={UseTls}, port={Port}).",
+                    settings.Username, settings.UseTls, settings.SmtpPort);
                 client.UseDefaultCredentials = false;
                 client.Credentials = new NetworkCredential(settings.Username, password);
             }
@@ -109,7 +119,7 @@ public class SmtpEmailNotificationService : IEmailNotificationService
         }
         else
         {
-            _logger.LogDebug("SMTP sending without authentication (no credential key configured).");
+            _logger.LogWarning("SMTP sending without authentication (no credential key configured).");
         }
 
         return client;

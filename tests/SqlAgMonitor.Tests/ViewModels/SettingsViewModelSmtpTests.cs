@@ -92,7 +92,7 @@ public sealed class SettingsViewModelSmtpTests
     public async Task TestEmail_StoresPasswordInCredentialStore_BeforeTesting()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns((string?)null);
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";
@@ -115,7 +115,7 @@ public sealed class SettingsViewModelSmtpTests
     public async Task TestEmail_SetsCredentialKeyOnConfig_WhenPasswordProvided()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns((string?)null);
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";
@@ -134,7 +134,7 @@ public sealed class SettingsViewModelSmtpTests
     public async Task TestEmail_SkipsCredentialStore_WhenNoPassword()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns((string?)null);
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";
@@ -152,7 +152,7 @@ public sealed class SettingsViewModelSmtpTests
     public async Task TestEmail_SetsSuccessStatus_OnSuccess()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+            .Returns((string?)null);
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";
@@ -168,7 +168,7 @@ public sealed class SettingsViewModelSmtpTests
     public async Task TestEmail_SetsFailureStatus_OnFailure()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns(false);
+            .Returns("relay access denied - please authenticate");
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";
@@ -178,13 +178,14 @@ public sealed class SettingsViewModelSmtpTests
         await vm.TestEmailCommand.Execute();
 
         Assert.Contains("✗", vm.TestEmailStatus);
+        Assert.Contains("relay access denied", vm.TestEmailStatus);
     }
 
     [Fact]
     public async Task TestEmail_SetsErrorStatus_OnException()
     {
         _emailService.TestConnectionAsync(Arg.Any<CancellationToken>())
-            .Returns<bool>(x => throw new InvalidOperationException("SMTP server is not configured."));
+            .Returns<string?>(x => throw new InvalidOperationException("SMTP server is not configured."));
 
         var vm = CreateVm();
         vm.SmtpServer = "smtp.test.com";

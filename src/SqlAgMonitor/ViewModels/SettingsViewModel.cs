@@ -170,6 +170,15 @@ public class SettingsViewModel : ViewModelBase
         CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
         TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync);
+
+        // Prevent ReactiveCommand from faulting (permanently disabling)
+        // when an unhandled exception escapes — log it and surface in UI.
+        TestEmailCommand.ThrownExceptions.Subscribe(ex =>
+            TestEmailStatus = $"✗ {ex.Message}");
+        TestConnectionCommand.ThrownExceptions.Subscribe(ex =>
+            TestConnectionStatus = $"✗ {ex.Message}");
+        SaveCommand.ThrownExceptions.Subscribe(_ => { });
+        CancelCommand.ThrownExceptions.Subscribe(_ => { });
     }
 
     private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
@@ -285,8 +294,8 @@ public class SettingsViewModel : ViewModelBase
 
             _configService.Save(config);
 
-            var success = await _emailService.TestConnectionAsync(cancellationToken);
-            TestEmailStatus = success ? "✓ Test email sent successfully." : "✗ Test email failed.";
+            var error = await _emailService.TestConnectionAsync(cancellationToken);
+            TestEmailStatus = error == null ? "✓ Test email sent successfully." : $"✗ {error}";
         }
         catch (Exception ex)
         {

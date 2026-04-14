@@ -35,7 +35,7 @@ public sealed class SmtpEmailNotificationServiceTests
     };
 
     [Fact]
-    public async Task TestConnectionAsync_MissingSmtpServer_ReturnsFalse()
+    public async Task TestConnectionAsync_MissingSmtpServer_ReturnsError()
     {
         var config = new AppConfiguration
         {
@@ -51,11 +51,11 @@ public sealed class SmtpEmailNotificationServiceTests
 
         var result = await service.TestConnectionAsync();
 
-        Assert.False(result);
+        Assert.NotNull(result);
     }
 
     [Fact]
-    public async Task TestConnectionAsync_MissingFromAddress_ReturnsFalse()
+    public async Task TestConnectionAsync_MissingFromAddress_ReturnsError()
     {
         var config = new AppConfiguration
         {
@@ -71,11 +71,11 @@ public sealed class SmtpEmailNotificationServiceTests
 
         var result = await service.TestConnectionAsync();
 
-        Assert.False(result);
+        Assert.NotNull(result);
     }
 
     [Fact]
-    public async Task TestConnectionAsync_NoRecipients_ReturnsFalse()
+    public async Task TestConnectionAsync_NoRecipients_ReturnsError()
     {
         var config = new AppConfiguration
         {
@@ -91,7 +91,7 @@ public sealed class SmtpEmailNotificationServiceTests
 
         var result = await service.TestConnectionAsync();
 
-        Assert.False(result);
+        Assert.NotNull(result);
     }
 
     [Fact]
