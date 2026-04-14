@@ -76,9 +76,8 @@ public partial class App : Application
             .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
                 System.Reflection.Assembly.GetEntryAssembly()!))
             ?.InformationalVersion ?? "0.0.0";
-        Services.GetRequiredService<ILoggerFactory>()
-            .CreateLogger<App>()
-            .LogInformation("SqlAgMonitor v{Version} starting", appVersion);
+        // Always log startup banner regardless of configured log level
+        Program.WriteLog("INFO", $"SqlAgMonitor v{appVersion} starting (log level: {initialLogLevel})");
 
         // Restore saved theme
         var configService = Services.GetRequiredService<IConfigurationService>();

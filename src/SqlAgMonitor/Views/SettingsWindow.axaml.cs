@@ -40,6 +40,24 @@ public partial class SettingsWindow : ReactiveWindow<SettingsViewModel>
                             await credStore.StorePasswordAsync(serviceCredentialKey, vm.ServicePassword);
                         }
 
+                        /* Store the SMTP password securely via credential store */
+                        var smtpCredStore = App.Services.GetRequiredService<ICredentialStore>();
+                        if (!string.IsNullOrEmpty(vm.EmailPassword))
+                        {
+                            const string smtpCredentialKey = "smtp-password";
+                            config.Email.CredentialKey = smtpCredentialKey;
+                            await smtpCredStore.StorePasswordAsync(smtpCredentialKey, vm.EmailPassword);
+                        }
+                        else if (string.IsNullOrEmpty(vm.EmailUsername))
+                        {
+                            /* No username and no new password — clear the credential */
+                            if (!string.IsNullOrEmpty(config.Email.CredentialKey))
+                            {
+                                await smtpCredStore.DeletePasswordAsync(config.Email.CredentialKey);
+                            }
+                            config.Email.CredentialKey = null;
+                        }
+
                         configService.Save(config);
 
                         var themeService = App.Services.GetRequiredService<IThemeService>();

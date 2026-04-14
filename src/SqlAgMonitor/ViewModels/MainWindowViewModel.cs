@@ -433,7 +433,7 @@ public class MainWindowViewModel : ViewModelBase
         var window = GetMainWindow();
         if (window == null) return;
 
-        var vm = new SettingsViewModel(_configService, _emailService);
+        var vm = new SettingsViewModel(_configService, _emailService, _credentialStore);
         vm.LoadFrom(_configService.Load());
 
         var settingsWindow = new SettingsWindow { DataContext = vm };

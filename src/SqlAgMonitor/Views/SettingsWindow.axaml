@@ -147,6 +147,16 @@
                             <TextBox Text="{Binding EmailUsername}" Watermark="Optional SMTP username" />
                         </StackPanel>
 
+                        <StackPanel Spacing="4" IsEnabled="{Binding EmailEnabled}">
+                            <TextBlock Text="Password" />
+                            <TextBox Text="{Binding EmailPassword}" 
+                                     PasswordChar="●" Watermark="SMTP password"
+                                     RevealPassword="False" />
+                            <TextBlock Text="✓ Password saved (leave blank to keep current)"
+                                       IsVisible="{Binding HasStoredSmtpPassword}"
+                                       Opacity="0.6" FontSize="11" />
+                        </StackPanel>
+
                         <Button Content="Test Email Connection" Command="{Binding TestEmailCommand}" 
                                 IsEnabled="{Binding EmailEnabled}" HorizontalAlignment="Left" />
                         <TextBlock Text="{Binding TestEmailStatus}" Opacity="0.7" FontSize="12"

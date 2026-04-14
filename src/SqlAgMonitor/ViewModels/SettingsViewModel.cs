@@ -11,6 +11,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ReactiveUI;
 using SqlAgMonitor.Core.Configuration;
+using SqlAgMonitor.Core.Services.Credentials;
 using SqlAgMonitor.Core.Services.Notifications;
 using SqlAgMonitor.Services;
 
@@ -20,6 +21,7 @@ public class SettingsViewModel : ViewModelBase
 {
     private readonly IConfigurationService _configService;
     private readonly IEmailNotificationService _emailService;
+    private readonly ICredentialStore _credentialStore;
 
     private int _globalPollingIntervalSeconds;
     private string _theme = "dark";
@@ -33,6 +35,8 @@ public class SettingsViewModel : ViewModelBase
     private string _fromAddress = string.Empty;
     private string _toAddresses = string.Empty;
     private string? _emailUsername;
+    private string _emailPassword = string.Empty;
+    private bool _hasStoredSmtpPassword;
 
     // Syslog
     private bool _syslogEnabled;
@@ -98,6 +102,8 @@ public class SettingsViewModel : ViewModelBase
     public string FromAddress { get => _fromAddress; set => this.RaiseAndSetIfChanged(ref _fromAddress, value); }
     public string ToAddresses { get => _toAddresses; set => this.RaiseAndSetIfChanged(ref _toAddresses, value); }
     public string? EmailUsername { get => _emailUsername; set => this.RaiseAndSetIfChanged(ref _emailUsername, value); }
+    public string EmailPassword { get => _emailPassword; set => this.RaiseAndSetIfChanged(ref _emailPassword, value); }
+    public bool HasStoredSmtpPassword { get => _hasStoredSmtpPassword; set => this.RaiseAndSetIfChanged(ref _hasStoredSmtpPassword, value); }
 
     // Syslog settings
     public bool SyslogEnabled { get => _syslogEnabled; set => this.RaiseAndSetIfChanged(ref _syslogEnabled, value); }
@@ -155,14 +161,24 @@ public class SettingsViewModel : ViewModelBase
     /// <summary>Raised when the dialog should close. True = saved, False = cancelled.</summary>
     public Func<bool, Task>? CloseRequested;
 
-    public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService)
+    public SettingsViewModel(IConfigurationService configService, IEmailNotificationService emailService, ICredentialStore credentialStore)
     {
         _configService = configService;
         _emailService = emailService;
+        _credentialStore = credentialStore;
         SaveCommand = ReactiveCommand.CreateFromTask(OnSaveAsync);
         CancelCommand = ReactiveCommand.CreateFromTask(OnCancelAsync);
         TestEmailCommand = ReactiveCommand.CreateFromTask(OnTestEmailAsync);
         TestConnectionCommand = ReactiveCommand.CreateFromTask(OnTestConnectionAsync);
+
+        // Prevent ReactiveCommand from faulting (permanently disabling)
+        // when an unhandled exception escapes — log it and surface in UI.
+        TestEmailCommand.ThrownExceptions.Subscribe(ex =>
+            TestEmailStatus = $"✗ {ex.Message}");
+        TestConnectionCommand.ThrownExceptions.Subscribe(ex =>
+            TestConnectionStatus = $"✗ {ex.Message}");
+        SaveCommand.ThrownExceptions.Subscribe(_ => { });
+        CancelCommand.ThrownExceptions.Subscribe(_ => { });
     }
 
     private static readonly Dictionary<string, string> ThemeToDisplay = new(StringComparer.OrdinalIgnoreCase)
@@ -191,6 +207,7 @@ public class SettingsViewModel : ViewModelBase
         FromAddress = config.Email.FromAddress;
         ToAddresses = string.Join("; ", config.Email.ToAddresses);
         EmailUsername = config.Email.Username;
+        HasStoredSmtpPassword = !string.IsNullOrEmpty(config.Email.CredentialKey);
         SyslogEnabled = config.Syslog.Enabled;
         SyslogServer = config.Syslog.Server;
         SyslogPort = config.Syslog.Port;
@@ -266,10 +283,19 @@ public class SettingsViewModel : ViewModelBase
             // Save current email settings first so the service reads them
             var config = _configService.Load();
             ApplyTo(config);
+
+            // Store SMTP password in credential store before testing
+            if (!string.IsNullOrEmpty(EmailPassword))
+            {
+                const string smtpCredentialKey = "smtp-password";
+                config.Email.CredentialKey = smtpCredentialKey;
+                await _credentialStore.StorePasswordAsync(smtpCredentialKey, EmailPassword, cancellationToken);
+            }
+
             _configService.Save(config);
 
-            var success = await _emailService.TestConnectionAsync(cancellationToken);
-            TestEmailStatus = success ? "✓ Test email sent successfully." : "✗ Test email failed.";
+            var error = await _emailService.TestConnectionAsync(cancellationToken);
+            TestEmailStatus = error == null ? "✓ Test email sent successfully." : $"✗ {error}";
         }
         catch (Exception ex)
         {
