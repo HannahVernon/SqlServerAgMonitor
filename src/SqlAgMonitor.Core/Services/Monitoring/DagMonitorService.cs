@@ -187,7 +187,26 @@ public class DagMonitorService : IAgMonitorService
 
         var subscription = Observable
             .Timer(TimeSpan.Zero, TimeSpan.FromSeconds(interval))
-            .SelectMany(_ => Observable.FromAsync(ct => PollGroupAsync(groupName, groupConfig, blocking: false, ct)))
+            .SelectMany(_ => Observable.FromAsync(async ct =>
+            {
+                try
+                {
+                    return await PollGroupAsync(groupName, groupConfig, blocking: false, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "DAG poll cycle failed for {Group} — will retry next interval.", groupName);
+                    return new MonitoredGroupSnapshot
+                    {
+                        Name = groupName,
+                        GroupType = AvailabilityGroupType.DistributedAvailabilityGroup,
+                        Timestamp = DateTimeOffset.UtcNow,
+                        OverallHealth = SynchronizationHealth.Unknown,
+                        ErrorMessage = ex.Message,
+                        IsConnected = false
+                    };
+                }
+            }))
             .Where(snapshot => snapshot != null)
             .Subscribe(
                 snapshot => _snapshots.OnNext(snapshot!),
