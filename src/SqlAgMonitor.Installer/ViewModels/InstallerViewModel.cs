@@ -464,6 +464,9 @@ public class InstallerViewModel : ReactiveObject
         _completedActions.Clear();
 
         Log("=== Installation started ===");
+
+        // Normalize install path to prevent symlink/junction attacks
+        InstallPath = Path.GetFullPath(InstallPath);
         Log($"InstallPath={InstallPath}, Port={Port}, UseTls={UseTls}, ServiceAccount={ServiceAccount}");
 
         try
@@ -562,12 +565,45 @@ public class InstallerViewModel : ReactiveObject
 
         if (!FirewallAllowAnySource && !string.IsNullOrWhiteSpace(FirewallRemoteAddress))
         {
-            args += $" remoteip=\"{FirewallRemoteAddress.Trim()}\"";
+            var remoteAddr = FirewallRemoteAddress.Trim();
+            if (!IsValidRemoteAddress(remoteAddr))
+                throw new InvalidOperationException($"Invalid firewall remote address: '{remoteAddr}'. Expected IP, CIDR, or comma-separated list.");
+            args += $" remoteip=\"{remoteAddr}\"";
         }
 
         var exitCode = await RunProcessAsync("netsh", args);
         if (exitCode != 0)
             throw new InvalidOperationException($"Failed to create firewall rule (exit code {exitCode}).");
+    }
+
+    /// <summary>
+    /// Validates that a remote address string contains only safe IP/CIDR values.
+    /// Prevents command injection via the netsh argument.
+    /// </summary>
+    private static bool IsValidRemoteAddress(string value)
+    {
+        // Reject characters that could break out of the netsh argument
+        const string dangerousChars = "\"'&|;`$()<>\n\r";
+        if (value.IndexOfAny(dangerousChars.ToCharArray()) >= 0)
+            return false;
+
+        // Each comma-separated entry must be a valid IP or CIDR
+        foreach (var entry in value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var ipPart = entry;
+            if (entry.Contains('/'))
+            {
+                var parts = entry.Split('/');
+                if (parts.Length != 2 || !int.TryParse(parts[1], out var prefix) || prefix < 0 || prefix > 128)
+                    return false;
+                ipPart = parts[0];
+            }
+
+            if (!System.Net.IPAddress.TryParse(ipPart, out _))
+                return false;
+        }
+
+        return true;
     }
 
     private async Task PublishServiceAsync()

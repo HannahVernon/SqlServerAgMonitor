@@ -38,19 +38,31 @@ public sealed class AlertDispatcher
     /// </summary>
     public void Dispatch(AlertEvent alert)
     {
-        _ = _eventRecorder.RecordEventAsync(alert);
+        _ = SafeExecuteAsync("event recording", () => _eventRecorder.RecordEventAsync(alert));
 
         try
         {
             var config = _configService.Load();
             if (config.Email.Enabled)
-                _ = _emailService.SendAlertEmailAsync(alert);
+                _ = SafeExecuteAsync("email notification", () => _emailService.SendAlertEmailAsync(alert));
             if (config.Syslog.Enabled)
-                _ = _syslogService.SendEventAsync(alert);
+                _ = SafeExecuteAsync("syslog notification", () => _syslogService.SendEventAsync(alert));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error dispatching alert notifications.");
+        }
+    }
+
+    private async Task SafeExecuteAsync(string channel, Func<Task> action)
+    {
+        try
+        {
+            await action().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to dispatch alert via {Channel}.", channel);
         }
     }
 }

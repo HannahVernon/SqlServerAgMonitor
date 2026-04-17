@@ -695,7 +695,9 @@ public class StatisticsViewModel : ViewModelBase
             .ObserveOn(RxApp.MainThreadScheduler)
             .Where(_ => !_isLoading)
             .SelectMany(_ => Observable.FromAsync(LoadDataAsync))
-            .Subscribe();
+            .Subscribe(
+                _ => { },
+                ex => System.Diagnostics.Debug.WriteLine($"Auto-refresh error: {ex.Message}"));
     }
 
     private bool _autoRefreshPaused;

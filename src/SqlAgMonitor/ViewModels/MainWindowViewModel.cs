@@ -208,7 +208,9 @@ public class MainWindowViewModel : ViewModelBase
         // Update "last polled" text every second
         var timerSub = Observable.Interval(TimeSpan.FromSeconds(1))
             .ObserveOn(RxApp.MainThreadScheduler)
-            .Subscribe(_ => UpdateLastPolledText());
+            .Subscribe(
+                _ => UpdateLastPolledText(),
+                ex => Program.WriteLog("ERROR", $"Timer subscription error: {ex.Message}"));
         _subscriptions.Add(timerSub);
 
         // Wire coordinator events to UI state
@@ -481,8 +483,9 @@ public class MainWindowViewModel : ViewModelBase
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
             {
-                FileName = Program.LogDir,
-                UseShellExecute = true
+                FileName = "explorer.exe",
+                Arguments = Program.LogDir,
+                UseShellExecute = false
             });
         }
         catch (Exception ex)

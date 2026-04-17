@@ -145,9 +145,16 @@ public class SmtpEmailNotificationService : IEmailNotificationService
             var password = await _credentialStore.GetPasswordAsync(settings.CredentialKey, cancellationToken);
             if (!string.IsNullOrEmpty(password))
             {
-                _logger.LogWarning(
-                    "SMTP authenticating as '{Username}' (TLS={UseTls}, port={Port}).",
-                    settings.Username, settings.UseTls, settings.SmtpPort);
+                if (!settings.UseTls)
+                {
+                    _logger.LogWarning(
+                        "SMTP credentials are configured but TLS is disabled — credentials will be sent in plain text. "
+                        + "Enable UseTls in email settings to protect credentials in transit.");
+                }
+
+                _logger.LogDebug(
+                    "SMTP authenticating (TLS={UseTls}, port={Port}).",
+                    settings.UseTls, settings.SmtpPort);
                 client.UseDefaultCredentials = false;
                 client.Credentials = new NetworkCredential(settings.Username, password);
             }

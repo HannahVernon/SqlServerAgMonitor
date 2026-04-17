@@ -20,12 +20,13 @@ public class DagMonitorService : IAgMonitorService
     private readonly IConfigurationService _configService;
     private readonly ILogger<DagMonitorService> _logger;
     private readonly Subject<MonitoredGroupSnapshot> _snapshots = new();
+    private readonly ISubject<MonitoredGroupSnapshot> _syncSnapshots;
     private readonly ConcurrentDictionary<string, IDisposable> _pollingSubscriptions = new();
     private readonly ConcurrentDictionary<string, ReconnectingConnectionWrapper> _connections = new();
     private bool _useLegacyDbStateSql;
     private bool _disposed;
 
-    public IObservable<MonitoredGroupSnapshot> Snapshots => _snapshots.AsObservable();
+    public IObservable<MonitoredGroupSnapshot> Snapshots => _syncSnapshots.AsObservable();
 
     /// <summary>
     /// Queries the distributed AG's own replicas to get DAG-level topology
@@ -164,6 +165,7 @@ public class DagMonitorService : IAgMonitorService
         _connectionService = connectionService;
         _configService = configService;
         _logger = logger;
+        _syncSnapshots = Subject.Synchronize(_snapshots);
     }
 
     public Task StartMonitoringAsync(string groupName, CancellationToken cancellationToken = default)
@@ -209,7 +211,7 @@ public class DagMonitorService : IAgMonitorService
             }))
             .Where(snapshot => snapshot != null)
             .Subscribe(
-                snapshot => _snapshots.OnNext(snapshot!),
+                snapshot => _syncSnapshots.OnNext(snapshot!),
                 ex => _logger.LogError(ex, "DAG polling error for {Group}.", groupName));
 
         _pollingSubscriptions[groupName] = subscription;

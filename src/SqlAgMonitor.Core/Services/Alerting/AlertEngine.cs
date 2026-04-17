@@ -24,17 +24,19 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
     private readonly IConfigurationService _configService;
     private readonly ILogger<AlertEngine> _logger;
     private readonly Subject<AlertEvent> _alertSubject = new();
+    private readonly ISubject<AlertEvent> _syncAlertSubject;
     private readonly ConcurrentDictionary<string, DateTimeOffset> _mutedAlerts = new();
     private readonly object _cooldownLock = new();
     private DateTimeOffset _lastAlertTime = DateTimeOffset.MinValue;
     private long _nextId;
 
-    public IObservable<AlertEvent> Alerts => _alertSubject;
+    public IObservable<AlertEvent> Alerts => _syncAlertSubject;
 
     public AlertEngine(IConfigurationService configService, ILogger<AlertEngine> logger)
     {
         _configService = configService;
         _logger = logger;
+        _syncAlertSubject = Subject.Synchronize(_alertSubject);
     }
 
     public void EvaluateSnapshot(MonitoredGroupSnapshot snapshot, MonitoredGroupSnapshot? previousSnapshot)
@@ -416,7 +418,7 @@ public sealed class AlertEngine : IAlertEngine, IDisposable
             "Alert raised: {AlertType} [{Severity}] for group {GroupName}: {Message}",
             alert.AlertType, alert.Severity, alert.GroupName, alert.Message);
 
-        _alertSubject.OnNext(alert);
+        _syncAlertSubject.OnNext(alert);
     }
 
     /// <summary>
