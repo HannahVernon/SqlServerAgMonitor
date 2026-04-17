@@ -66,6 +66,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     private SqlConnection? _connection;
     private readonly SemaphoreSlim _usageLock = new(1, 1);
     private readonly Subject<ConnectionStateChange> _stateChanges = new();
+    private readonly ISubject<ConnectionStateChange> _syncStateChanges;
     private CancellationTokenSource? _reconnectCts;
     private Task? _reconnectTask;
     private bool _disposed;
@@ -74,7 +75,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     // cap at 60s. Last entry repeats indefinitely for all subsequent attempts.
     private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 16, 32, 60];
 
-    public IObservable<ConnectionStateChange> StateChanges => _stateChanges.AsObservable();
+    public IObservable<ConnectionStateChange> StateChanges => _syncStateChanges.AsObservable();
     public bool IsConnected => _connection?.State == System.Data.ConnectionState.Open;
     public string Server => _server;
 
@@ -96,6 +97,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
         _authType = authType;
         _encrypt = encrypt;
         _trustServerCertificate = trustServerCertificate;
+        _syncStateChanges = Subject.Synchronize(_stateChanges);
     }
 
     /// <summary>
@@ -140,13 +142,13 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
         {
             _connection = await _connectionService.GetConnectionAsync(
                 _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, cancellationToken);
-            _stateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
+            _syncStateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
             return new ConnectionLease(_connection, _usageLock, this);
         }
         catch (Exception ex)
         {
             _usageLock.Release();
-            _stateChanges.OnNext(new ConnectionStateChange(_server, false, ex.Message, DateTimeOffset.UtcNow));
+            _syncStateChanges.OnNext(new ConnectionStateChange(_server, false, ex.Message, DateTimeOffset.UtcNow));
             StartBackgroundReconnect();
             throw;
         }
@@ -160,7 +162,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     {
         _connection?.Dispose();
         _connection = null;
-        _stateChanges.OnNext(new ConnectionStateChange(_server, false, "Connection invalidated.", DateTimeOffset.UtcNow));
+        _syncStateChanges.OnNext(new ConnectionStateChange(_server, false, "Connection invalidated.", DateTimeOffset.UtcNow));
         StartBackgroundReconnect();
     }
 
@@ -210,7 +212,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
 
                 _connection = await _connectionService.GetConnectionAsync(
                     _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, ct);
-                _stateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
+                _syncStateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
                 _logger.LogInformation("Reconnected to {Server}.", _server);
                 return;
             }
@@ -220,7 +222,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
                 attempt++;
                 _logger.LogWarning("Reconnection to {Server} failed (attempt {Attempt}): {Message}",
                     _server, attempt, ex.Message);
-                _stateChanges.OnNext(new ConnectionStateChange(_server, false, ex.Message, DateTimeOffset.UtcNow));
+                _syncStateChanges.OnNext(new ConnectionStateChange(_server, false, ex.Message, DateTimeOffset.UtcNow));
             }
             finally
             {

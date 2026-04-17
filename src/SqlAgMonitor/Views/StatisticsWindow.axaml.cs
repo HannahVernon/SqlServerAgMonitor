@@ -42,34 +42,34 @@ public partial class StatisticsWindow : Window
 
     private async void OnWindowOpened(object? sender, EventArgs e)
     {
-        var state = _layoutService.Load();
-
-        if (state.StatsWindowWidth.HasValue && state.StatsWindowHeight.HasValue)
+        try
         {
-            Width = state.StatsWindowWidth.Value;
-            Height = state.StatsWindowHeight.Value;
-        }
+            var state = _layoutService.Load();
 
-        if (state.StatsWindowX.HasValue && state.StatsWindowY.HasValue)
-        {
-            Position = new PixelPoint(
-                (int)state.StatsWindowX.Value,
-                (int)state.StatsWindowY.Value);
-        }
+            if (state.StatsWindowWidth.HasValue && state.StatsWindowHeight.HasValue)
+            {
+                Width = state.StatsWindowWidth.Value;
+                Height = state.StatsWindowHeight.Value;
+            }
 
-        RestoreColumnWidths(state);
-        DataGridAutoFitHelper.Attach(SummaryGrid);
+            if (state.StatsWindowX.HasValue && state.StatsWindowY.HasValue)
+            {
+                Position = new PixelPoint(
+                    (int)state.StatsWindowX.Value,
+                    (int)state.StatsWindowY.Value);
+            }
 
-        if (DataContext is StatisticsViewModel vm)
-        {
-            try
+            RestoreColumnWidths(state);
+            DataGridAutoFitHelper.Attach(SummaryGrid);
+
+            if (DataContext is StatisticsViewModel vm)
             {
                 await vm.InitializeAsync(state.StatsState);
             }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Statistics initialization failed: {ex.Message}");
-            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Statistics window initialization failed: {ex.Message}");
         }
     }
 

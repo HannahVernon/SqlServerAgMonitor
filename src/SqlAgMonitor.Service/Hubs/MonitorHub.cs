@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
@@ -21,6 +22,7 @@ namespace SqlAgMonitor.Service.Hubs;
 ///   GetAlertHistory(groupName?, since?, limit)
 ///   ExportToExcel(since, until, groupName?, replicaName?, databaseName?)
 /// </summary>
+[Authorize]
 public sealed class MonitorHub : Hub
 {
     private readonly ILogger<MonitorHub> _logger;
@@ -45,13 +47,15 @@ public sealed class MonitorHub : Hub
 
     public override Task OnConnectedAsync()
     {
-        _logger.LogInformation("Client connected: {ConnectionId}", Context.ConnectionId);
+        var user = Context.User?.Identity?.Name ?? "anonymous";
+        _logger.LogInformation("Client connected: {ConnectionId} (user: {User})", Context.ConnectionId, user);
         return base.OnConnectedAsync();
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)
     {
-        _logger.LogInformation("Client disconnected: {ConnectionId}", Context.ConnectionId);
+        var user = Context.User?.Identity?.Name ?? "anonymous";
+        _logger.LogInformation("Client disconnected: {ConnectionId} (user: {User})", Context.ConnectionId, user);
         return base.OnDisconnectedAsync(exception);
     }
 

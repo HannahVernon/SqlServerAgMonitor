@@ -1,5 +1,8 @@
+using System.Security.Authentication;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
 using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
@@ -42,7 +45,11 @@ builder.WebHost.ConfigureKestrel(options =>
 
                 if (certs.Count > 0)
                 {
-                    listenOptions.UseHttps(certs[0]);
+                    listenOptions.UseHttps(httpsOptions =>
+                    {
+                        httpsOptions.ServerCertificate = certs[0];
+                        httpsOptions.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
+                    });
                 }
                 else
                 {
@@ -53,7 +60,14 @@ builder.WebHost.ConfigureKestrel(options =>
             else if (string.Equals(tlsSource, "File", StringComparison.OrdinalIgnoreCase))
             {
                 var certPath = builder.Configuration.GetValue<string>("Service:Tls:Path") ?? string.Empty;
-                listenOptions.UseHttps(certPath);
+                var fullCertPath = Path.GetFullPath(certPath);
+                if (!File.Exists(fullCertPath))
+                    throw new FileNotFoundException($"TLS certificate file not found: '{fullCertPath}'.");
+                listenOptions.UseHttps(httpsOptions =>
+                {
+                    httpsOptions.ServerCertificate = X509CertificateLoader.LoadCertificateFromFile(fullCertPath);
+                    httpsOptions.SslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13;
+                });
             }
         });
     }
@@ -61,6 +75,9 @@ builder.WebHost.ConfigureKestrel(options =>
     {
         options.ListenAnyIP(servicePort);
     }
+
+    // Limit request body size to 1 MB (prevents oversized config imports)
+    options.Limits.MaxRequestBodySize = 1 * 1024 * 1024;
 });
 
 // Register Core services (monitoring, alerting, DuckDB, notifications, etc.)
@@ -135,6 +152,19 @@ builder.Logging.AddProvider(new FileLoggerProvider(logFilePath));
 builder.Logging.SetMinimumLevel(
     builder.Configuration.GetValue("Logging:LogLevel:Default", LogLevel.Information));
 
+// Rate limiting — protect login endpoint from brute-force attacks
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("login", limiterOptions =>
+    {
+        limiterOptions.PermitLimit = 5;
+        limiterOptions.Window = TimeSpan.FromMinutes(1);
+        limiterOptions.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+        limiterOptions.QueueLimit = 0;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+
 var app = builder.Build();
 
 // Configure JWT validation with the signing key from JwtTokenService
@@ -152,6 +182,39 @@ _ = app.Services.GetRequiredService<MaintenanceScheduler>();
 
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
+
+// Security headers — prevent clickjacking, MIME sniffing, and enforce HTTPS
+app.Use(async (context, next) =>
+{
+    context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+    context.Response.Headers["X-Frame-Options"] = "DENY";
+    context.Response.Headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    if (context.Request.IsHttps)
+    {
+        context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+    }
+    await next();
+});
+
+// Global exception handler — prevents stack traces leaking to clients
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex)
+    {
+        var logger = context.RequestServices.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Unhandled exception on {Method} {Path}.", context.Request.Method, context.Request.Path);
+        if (!context.Response.HasStarted)
+        {
+            context.Response.StatusCode = 500;
+            await context.Response.WriteAsJsonAsync(new { error = "An internal server error occurred." });
+        }
+    }
+});
 
 // Login endpoint — returns JWT token
 app.MapPost("/api/auth/login", (LoginRequest request, JwtTokenService jwt, UserStore users) =>
@@ -159,12 +222,15 @@ app.MapPost("/api/auth/login", (LoginRequest request, JwtTokenService jwt, UserS
     if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
         return Results.BadRequest(new { error = "Username and password are required." });
 
+    if (request.Username.Length > 256 || request.Password.Length > 256)
+        return Results.BadRequest(new { error = "Username and password must be 256 characters or fewer." });
+
     if (!users.ValidateCredentials(request.Username, request.Password))
         return Results.Unauthorized();
 
     var token = jwt.GenerateToken(request.Username);
     return Results.Ok(new { token });
-});
+}).RequireRateLimiting("login");
 
 // Protocol version — unauthenticated so clients can check compatibility before login
 app.MapGet("/api/version", () => Results.Ok(new
@@ -230,6 +296,13 @@ app.MapGet("/api/config/export", (IConfigurationService configService) =>
 // Configuration import — merges incoming sections into existing config
 app.MapPost("/api/config/import", (ConfigImportRequest request, IConfigurationService configService) =>
 {
+    // Validate import payload — enforce count limits to prevent resource exhaustion
+    const int maxGroups = 50;
+    const int maxConnectionsPerGroup = 10;
+
+    if (request.MonitoredGroups is { Count: > maxGroups })
+        return Results.BadRequest(new { error = $"Too many groups ({request.MonitoredGroups.Count}). Maximum is {maxGroups}." });
+
     var config = configService.Load();
 
     int groupCount = 0;
@@ -241,6 +314,23 @@ app.MapPost("/api/config/import", (ConfigImportRequest request, IConfigurationSe
     {
         foreach (var incoming in request.MonitoredGroups)
         {
+            if (string.IsNullOrWhiteSpace(incoming.Name) || incoming.Name.Length > 256)
+                return Results.BadRequest(new { error = "Group name is required and must be 256 characters or fewer." });
+
+            if (incoming.Connections.Count > maxConnectionsPerGroup)
+                return Results.BadRequest(new { error = $"Group '{incoming.Name}' has too many connections ({incoming.Connections.Count}). Maximum is {maxConnectionsPerGroup}." });
+
+            // Clamp polling interval to sane range
+            if (incoming.PollingIntervalSeconds.HasValue)
+                incoming.PollingIntervalSeconds = Math.Clamp(incoming.PollingIntervalSeconds.Value, 5, 3600);
+
+            // Validate connection fields
+            foreach (var conn in incoming.Connections)
+            {
+                if (string.IsNullOrWhiteSpace(conn.Server) || conn.Server.Length > 512)
+                    return Results.BadRequest(new { error = $"Connection server in group '{incoming.Name}' is invalid." });
+            }
+
             var existing = config.MonitoredGroups
                 .FirstOrDefault(g => string.Equals(g.Name, incoming.Name, StringComparison.OrdinalIgnoreCase));
 
@@ -269,6 +359,11 @@ app.MapPost("/api/config/import", (ConfigImportRequest request, IConfigurationSe
 
     if (request.Email is not null)
     {
+        // Validate SMTP settings
+        if (!string.IsNullOrWhiteSpace(request.Email.SmtpServer) && request.Email.SmtpServer.Length > 512)
+            return Results.BadRequest(new { error = "SMTP server name is too long." });
+        request.Email.SmtpPort = Math.Clamp(request.Email.SmtpPort, 1, 65535);
+
         config.Email = request.Email;
         emailImported = true;
     }

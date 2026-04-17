@@ -79,24 +79,43 @@ Write-Host ""
 
 $binPath = "`"$exePath`""
 
+/* Use New-Service (PowerShell) instead of sc.exe to avoid exposing the password
+   in the process command line (visible via tasklist, Process Explorer, etc.). */
+$svcParams = @{
+    Name           = $ServiceName
+    BinaryPathName = $binPath
+    DisplayName    = $DisplayName
+    StartupType    = 'AutomaticDelayedStart'
+}
+
 if ($ServicePassword) {
-    sc.exe create $ServiceName `
-        binPath= $binPath `
-        DisplayName= $DisplayName `
-        start= delayed-auto `
-        obj= $ServiceAccount `
-        password= $ServicePassword
+    $securePassword = ConvertTo-SecureString $ServicePassword -AsPlainText -Force
+    $svcParams['Credential'] = New-Object System.Management.Automation.PSCredential($ServiceAccount, $securePassword)
 } else {
+    /* Built-in accounts (LOCAL SERVICE, etc.) — sc.exe is the only way to set obj= for
+       built-in accounts because New-Service -Credential doesn't accept them cleanly.
+       No password is involved, so no exposure risk. */
     sc.exe create $ServiceName `
         binPath= $binPath `
         DisplayName= $DisplayName `
         start= delayed-auto `
         obj= $ServiceAccount
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "sc.exe create failed with exit code $LASTEXITCODE."
+        return
+    }
+    $svcParams = $null
 }
 
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "sc.exe create failed with exit code $LASTEXITCODE."
-    return
+if ($svcParams) {
+    try {
+        New-Service @svcParams -ErrorAction Stop
+    } catch {
+        Write-Error "Failed to create service: $_"
+        return
+    }
+    /* New-Service doesn't support delayed-auto directly in older PS versions — apply it via sc.exe */
+    sc.exe config $ServiceName start= delayed-auto | Out-Null
 }
 
 # Set the service description
@@ -112,20 +131,25 @@ if ($ServiceAccount -notin $builtInAccounts) {
     $sid = (New-Object System.Security.Principal.NTAccount($ServiceAccount)).Translate(
         [System.Security.Principal.SecurityIdentifier]).Value
     $tempCfg = [System.IO.Path]::GetTempFileName()
-    secedit /export /cfg $tempCfg /areas USER_RIGHTS | Out-Null
-    $content = Get-Content $tempCfg -Raw
-    if ($content -match "SeServiceLogonRight\s*=\s*(.*)") {
-        $existing = $Matches[1]
-        if ($existing -notmatch [regex]::Escape($sid)) {
-            $content = $content -replace "(SeServiceLogonRight\s*=\s*.*)", "`$1,*$sid"
+    $tempDb  = [System.IO.Path]::GetTempFileName()
+    try {
+        secedit /export /cfg $tempCfg /areas USER_RIGHTS | Out-Null
+        $content = Get-Content $tempCfg -Raw
+        if ($content -match "SeServiceLogonRight\s*=\s*(.*)") {
+            $existing = $Matches[1]
+            if ($existing -notmatch [regex]::Escape($sid)) {
+                $content = $content -replace "(SeServiceLogonRight\s*=\s*.*)", "`$1,*$sid"
+            }
+        } else {
+            $content = $content -replace "(\[Privilege Rights\])", "`$1`r`nSeServiceLogonRight = *$sid"
         }
-    } else {
-        $content = $content -replace "(\[Privilege Rights\])", "`$1`r`nSeServiceLogonRight = *$sid"
+        Set-Content $tempCfg $content
+        secedit /configure /db $tempDb /cfg $tempCfg /areas USER_RIGHTS | Out-Null
+        Write-Host "  Granted." -ForegroundColor Green
+    } finally {
+        Remove-Item $tempCfg -ErrorAction SilentlyContinue
+        Remove-Item $tempDb  -ErrorAction SilentlyContinue
     }
-    Set-Content $tempCfg $content
-    secedit /configure /db ([System.IO.Path]::GetTempFileName()) /cfg $tempCfg /areas USER_RIGHTS | Out-Null
-    Remove-Item $tempCfg -ErrorAction SilentlyContinue
-    Write-Host "  Granted." -ForegroundColor Green
 }
 
 # Create firewall rule if requested
