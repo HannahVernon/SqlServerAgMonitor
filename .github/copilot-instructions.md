@@ -8,7 +8,7 @@ Whenever you make a code change that affects any of the following, you **must** 
 |---|---|
 | New/renamed/removed files or folders | `ARCHITECTURE.md` (file tree + relevant sections) |
 | New/changed features, menu items, UI behavior | `FEATURE-GUIDE.md` |
-| New/changed NuGet dependencies | `licence.md` (package name, version, copyright, license) |
+| New/changed NuGet dependencies | `LICENSE` (package name, version, copyright, license) |
 | Build requirements, project structure, quick-start steps | `README.md` |
 | Contribution workflow, coding standards | `CONTRIBUTING.md` |
 | Installer changes (steps, service config, firewall, accounts) | `scripts/Install-Service.ps1`, `scripts/Uninstall-Service.ps1`, `scripts/Publish-Service.ps1` |
