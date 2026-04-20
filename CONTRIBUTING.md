@@ -81,7 +81,7 @@ Open an issue with the `enhancement` label. Describe the problem you're trying t
 All direct NuGet dependencies must be **MIT or Apache-2.0 licensed**. When adding a new package:
 
 1. Verify the license in the `.nuspec` file at `%USERPROFILE%\.nuget\packages\{package}\{version}\`
-2. Add the package to `licence.md` in the repo root with name, version, copyright holder, and license type
+2. Add the package to `LICENSE` in the repo root with name, version, copyright holder, and license type
 3. If the license is more restrictive, discuss in the PR before merging
 
 ## Technical Guidelines
@@ -129,4 +129,4 @@ The client checks the protocol version at three points: before initial login, du
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the [MIT License](licence.md) that covers this project.
+By contributing, you agree that your contributions will be licensed under the [MIT License](LICENSE) that covers this project.
