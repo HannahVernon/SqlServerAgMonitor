@@ -163,4 +163,4 @@ SqlAgMonitor.sln
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) for dependency licenses.
