@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core.Services;
 
 namespace SqlAgMonitor.Core.Services.Credentials;
 
@@ -176,6 +177,8 @@ public class AesCredentialStore : ICredentialStore
         fs.Write(nonce);
         fs.Write(ciphertext);
         fs.Write(tag);
+        fs.Close();
+        FileAccessHelper.RestrictToCurrentUser(_storePath, _logger);
     }
 
     private static byte[] DeriveKey(string password, byte[] salt)
@@ -203,6 +206,7 @@ public class AesCredentialStore : ICredentialStore
     {
         var saltPath = Path.ChangeExtension(_storePath, ".salt");
         File.WriteAllBytes(saltPath, salt);
+        FileAccessHelper.RestrictToCurrentUser(saltPath, _logger);
     }
 
     public void Dispose()

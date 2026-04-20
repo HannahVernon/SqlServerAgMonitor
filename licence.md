@@ -61,6 +61,7 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [Microsoft.AspNetCore.SignalR.Client](https://github.com/dotnet/aspnetcore) | 9.0.6 | © Microsoft Corporation |
 | [BCrypt.Net-Next](https://github.com/BcryptNet/bcrypt.net) | 4.0.3 | © Chris McKee, Ryan D. Emerl, Damien Miller |
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [System.IO.FileSystem.AccessControl](https://github.com/dotnet/runtime) | 5.0.0 | © Microsoft Corporation |
 | [System.ServiceProcess.ServiceController](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 
 ### BSD 3-Clause License

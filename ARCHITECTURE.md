@@ -143,6 +143,7 @@ SqlAgMonitor.sln
 │   │   ├── MonitorHub.cs               # SignalR hub (6 query methods + push callbacks)
 │   │   └── ExcelExporter.cs            # ClosedXML xlsx generation for hub export
 │   ├── Auth/
+│   │   ├── FileAccessHelper.cs          # Thin wrapper → Core FileAccessHelper
 │   │   ├── JwtTokenService.cs          # 512-bit signing key, auto-generated, persisted to AppData
 │   │   └── UserStore.cs                # File-based JSON user store with bcrypt hashing
 │   └── appsettings.json                # Port, auth config, logging levels
@@ -172,6 +173,8 @@ SqlAgMonitor.sln
 │   │   └── LsnHelper.cs                  # LSN parsing and comparison
 │   ├── Services/
 │   │   ├── Alerting/AlertEngine.cs       # Snapshot diff → alert generation
+│   │   ├── Alerting/AlertDispatcher.cs  # Fire-and-forget notification dispatch
+│   │   ├── FileAccessHelper.cs          # Restrict file ACLs to current user (Windows/Unix)
 │   │   ├── Connection/
 │   │   │   ├── ReconnectingConnectionWrapper.cs  # Lease pattern + reconnect
 │   │   │   └── SqlConnectionService.cs   # Connection string builder

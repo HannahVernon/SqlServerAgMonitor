@@ -13,14 +13,16 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
     private readonly ILogger<SqlConnectionService> _logger;
     private readonly ConcurrentDictionary<string, bool> _connectionStates = new(StringComparer.OrdinalIgnoreCase);
     private readonly Subject<ConnectionStateChange> _stateChanges = new();
+    private readonly ISubject<ConnectionStateChange> _syncStateChanges;
     private bool _disposed;
 
-    public IObservable<ConnectionStateChange> ConnectionStateChanges => _stateChanges.AsObservable();
+    public IObservable<ConnectionStateChange> ConnectionStateChanges => _syncStateChanges.AsObservable();
 
     public SqlConnectionService(ICredentialStore credentialStore, ILogger<SqlConnectionService> logger)
     {
         _credentialStore = credentialStore;
         _logger = logger;
+        _syncStateChanges = Subject.Synchronize(_stateChanges);
     }
 
     public bool IsConnected(string server) =>
@@ -92,6 +94,14 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
             MultiSubnetFailover = true
         };
 
+        if (trustServerCertificate)
+        {
+            _logger.LogWarning(
+                "TrustServerCertificate is enabled for {Server} — TLS certificate validation is bypassed. "
+                + "This is insecure and should only be used for development/testing.",
+                server);
+        }
+
         if (string.Equals(authType, "windows", StringComparison.OrdinalIgnoreCase))
         {
             builder.IntegratedSecurity = true;
@@ -120,7 +130,7 @@ public class SqlConnectionService : ISqlConnectionService, IConnectionMonitor
         if (previousState != isConnected)
         {
             var change = new ConnectionStateChange(server, isConnected, errorMessage, DateTimeOffset.UtcNow);
-            _stateChanges.OnNext(change);
+            _syncStateChanges.OnNext(change);
 
             if (isConnected)
                 _logger.LogInformation("Connected to {Server}.", server);

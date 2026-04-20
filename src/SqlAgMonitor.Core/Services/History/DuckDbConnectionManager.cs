@@ -1,6 +1,7 @@
 using System.Globalization;
 using DuckDB.NET.Data;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core.Services;
 
 namespace SqlAgMonitor.Core.Services.History;
 
@@ -47,6 +48,10 @@ internal sealed class DuckDbConnectionManager : IAsyncDisposable
             {
                 _connection = new DuckDBConnection(_connectionString);
                 _connection.Open();
+
+                // Restrict the database file to the current user
+                if (File.Exists(_dbPath))
+                    FileAccessHelper.RestrictToCurrentUser(_dbPath, _logger);
 
                 // Force UTC timezone to prevent TIMESTAMPTZ double-offset conversion.
                 using var tzCmd = _connection.CreateCommand();

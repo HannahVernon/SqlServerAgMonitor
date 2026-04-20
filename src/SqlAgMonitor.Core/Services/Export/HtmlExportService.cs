@@ -2,6 +2,7 @@ using System.Text;
 using Microsoft.Extensions.Logging;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Models;
+using SqlAgMonitor.Core.Services;
 using System.Linq;
 
 namespace SqlAgMonitor.Core.Services.Export;
@@ -20,12 +21,18 @@ public class HtmlExportService : IHtmlExportService
 
     public async Task ExportAsync(IReadOnlyList<MonitoredGroupSnapshot> snapshots, string outputPath, CancellationToken cancellationToken = default)
     {
+        // Validate export path — reject UNC paths (NTLM relay risk) and normalize to prevent traversal
+        var normalizedPath = Path.GetFullPath(outputPath);
+        if (normalizedPath.StartsWith(@"\\", StringComparison.Ordinal))
+            throw new ArgumentException("UNC paths are not allowed for HTML export to prevent NTLM credential relay.");
+
         var html = GenerateHtml(snapshots);
-        Directory.CreateDirectory(outputPath);
+        Directory.CreateDirectory(normalizedPath);
 
         var fileName = "ag-monitor-report.html";
-        var fullPath = Path.Combine(outputPath, fileName);
+        var fullPath = Path.Combine(normalizedPath, fileName);
         await File.WriteAllTextAsync(fullPath, html, cancellationToken);
+        FileAccessHelper.RestrictToCurrentUser(fullPath, _logger);
         _logger.LogInformation("HTML report exported to {Path}.", fullPath);
     }
 

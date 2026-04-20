@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core.Services;
 
 namespace SqlAgMonitor.Core.Services.Credentials;
 
@@ -138,6 +139,7 @@ public class DpapiCredentialStore : ICredentialStore
     {
         var json = JsonSerializer.Serialize(store, new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(_storePath, json);
+        FileAccessHelper.RestrictToCurrentUser(_storePath, _logger);
     }
 
     public void Dispose()

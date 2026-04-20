@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using SqlAgMonitor.Core.Services;
 
 namespace SqlAgMonitor.Core.Configuration;
 
@@ -66,6 +67,7 @@ public class JsonConfigurationService : IConfigurationService
                 var dir = Path.GetDirectoryName(_configFilePath);
                 if (dir != null) Directory.CreateDirectory(dir);
                 File.WriteAllText(_configFilePath, json);
+                FileAccessHelper.RestrictToCurrentUser(_configFilePath, _logger);
                 _logger.LogInformation("Configuration saved to {Path}.", _configFilePath);
                 ConfigurationChanged?.Invoke(config);
             }
