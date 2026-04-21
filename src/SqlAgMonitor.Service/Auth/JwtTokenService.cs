@@ -18,13 +18,13 @@ public sealed class JwtTokenService
     private readonly ILogger<JwtTokenService> _logger;
     private readonly int _tokenLifetimeMinutes;
 
-    public JwtTokenService(ILogger<JwtTokenService> logger, IConfiguration configuration)
+    public JwtTokenService(ILogger<JwtTokenService> logger, IConfiguration configuration, string? keyDirectory = null)
     {
         _logger = logger;
         _tokenLifetimeMinutes = Math.Clamp(
             configuration.GetValue("Service:Auth:TokenLifetimeMinutes", 480), 15, 10080);
 
-        _signingKey = LoadOrCreateSigningKey();
+        _signingKey = LoadOrCreateSigningKey(keyDirectory);
     }
 
     public TokenValidationParameters GetValidationParameters() => new()
@@ -59,9 +59,9 @@ public sealed class JwtTokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private SymmetricSecurityKey LoadOrCreateSigningKey()
+    private SymmetricSecurityKey LoadOrCreateSigningKey(string? keyDirectory = null)
     {
-        var keyDirectory = Path.Combine(
+        keyDirectory ??= Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "SqlAgMonitor", "service");
         Directory.CreateDirectory(keyDirectory);
