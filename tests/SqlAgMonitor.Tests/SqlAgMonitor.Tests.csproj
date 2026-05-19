@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SqlAgMonitor.Core\SqlAgMonitor.Core.csproj" />
+    <ProjectReference Include="..\..\src\SqlAgMonitor.Service\SqlAgMonitor.Service.csproj" />
     <ProjectReference Include="..\..\src\SqlAgMonitor\SqlAgMonitor.csproj" />
   </ItemGroup>
 

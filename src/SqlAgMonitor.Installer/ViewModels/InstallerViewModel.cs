@@ -1356,10 +1356,21 @@ public class InstallerViewModel : ReactiveObject
 
             using var probeHandler = new HttpClientHandler
             {
-                ServerCertificateCustomValidationCallback = (_, cert, _, errors) =>
+                ServerCertificateCustomValidationCallback = (_, cert, chain, errors) =>
                 {
                     if (errors == System.Net.Security.SslPolicyErrors.None)
                         return true;
+
+                    /* We connect to "localhost" but the cert's SAN likely contains the machine's
+                       FQDN (e.g. server.corp.contoso.com).  That causes RemoteCertificateNameMismatch
+                       even though the CA chain is perfectly valid.  Accept the cert when the ONLY
+                       error is a name mismatch and the chain built successfully. */
+                    if (errors == System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch
+                        && chain != null
+                        && chain.Build(new X509Certificate2(cert!)))
+                    {
+                        return true;
+                    }
 
                     if (cert != null)
                         capturedCert = new X509Certificate2(cert);

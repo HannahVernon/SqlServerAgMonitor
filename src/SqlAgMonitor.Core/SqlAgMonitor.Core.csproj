@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="SqlAgMonitor.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="DuckDB.NET.Data.Full" Version="1.5.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.0.0" />

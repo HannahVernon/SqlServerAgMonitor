@@ -20,11 +20,11 @@ public sealed class UserStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
     };
 
-    public UserStore(ILogger<UserStore> logger)
+    public UserStore(ILogger<UserStore> logger, string? storeDirectory = null)
     {
         _logger = logger;
 
-        var storeDirectory = Path.Combine(
+        storeDirectory ??= Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
             "SqlAgMonitor", "service");
         Directory.CreateDirectory(storeDirectory);
