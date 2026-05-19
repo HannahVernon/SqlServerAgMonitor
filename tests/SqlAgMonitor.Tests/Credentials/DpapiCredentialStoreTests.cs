@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 using NSubstitute;
 using SqlAgMonitor.Core.Services.Credentials;
+using SqlAgMonitor.Tests.Helpers;
 
 namespace SqlAgMonitor.Tests.Credentials;
 
@@ -35,7 +36,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
     private DpapiCredentialStore CreateStore(string? dir = null) =>
         new(_logger, dir ?? _testDir);
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task StorePassword_ThenGetPassword_Roundtrips()
     {
         using var store = CreateStore();
@@ -46,7 +47,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Equal("password1", result);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task GetPassword_ForMissingKey_ReturnsNull()
     {
         using var store = CreateStore();
@@ -56,7 +57,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Null(result);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task HasPassword_ReturnsTrue_ForStoredKey()
     {
         using var store = CreateStore();
@@ -65,7 +66,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.True(await store.HasPasswordAsync("exists"));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task HasPassword_ReturnsFalse_ForMissingKey()
     {
         using var store = CreateStore();
@@ -73,7 +74,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.False(await store.HasPasswordAsync("nope"));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task DeletePassword_RemovesCredential()
     {
         using var store = CreateStore();
@@ -85,7 +86,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Null(await store.GetPasswordAsync("to-delete"));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task MultipleCredentials_StoredIndependently()
     {
         using var store = CreateStore();
@@ -99,7 +100,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Equal("v3", await store.GetPasswordAsync("k3"));
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task Store_PersistsAcrossInstances()
     {
         var sharedDir = Path.Combine(_testDir, "persist");
@@ -115,7 +116,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Equal("saved-value", result);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task CorruptStoreFile_ReturnsNull()
     {
         Directory.CreateDirectory(_testDir);
@@ -128,7 +129,7 @@ public sealed class DpapiCredentialStoreTests : IDisposable
         Assert.Null(result);
     }
 
-    [Fact]
+    [WindowsOnlyFact]
     public async Task EmptyStoreFile_ReturnsNull()
     {
         Directory.CreateDirectory(_testDir);
