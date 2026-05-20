@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Reactive.Linq;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
@@ -178,6 +179,30 @@ public sealed class ReconnectingConnectionWrapperTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Invalidate_KeepsLeasedConnectionUntilLeaseIsReleased()
+    {
+        var sqlConn = new SqlConnection();
+        _connectionService.GetConnectionAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(sqlConn));
+
+        var wrapper = CreateWrapper();
+        var lease = await wrapper.AcquireAsync();
+
+        Assert.Same(sqlConn, GetCurrentConnection(wrapper));
+
+        lease.Invalidate();
+
+        Assert.Same(sqlConn, GetCurrentConnection(wrapper));
+
+        await lease.DisposeAsync();
+
+        Assert.Null(GetCurrentConnection(wrapper));
+    }
+
+    [Fact]
     public async Task DisposeAsync_CompletesCleanly()
     {
         var wrapper = CreateWrapper();
@@ -186,6 +211,29 @@ public sealed class ReconnectingConnectionWrapperTests : IAsyncLifetime
         _wrapper = null; // Prevent double-dispose in DisposeAsync lifecycle
 
         // No exception means success
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WaitsForActiveLeaseToRelease()
+    {
+        var sqlConn = new SqlConnection();
+        _connectionService.GetConnectionAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(sqlConn));
+
+        var wrapper = CreateWrapper();
+        var lease = await wrapper.AcquireAsync();
+
+        var disposeTask = wrapper.DisposeAsync().AsTask();
+        await Task.Delay(50);
+
+        Assert.False(disposeTask.IsCompleted);
+
+        await lease.DisposeAsync();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(1));
+        _wrapper = null; // Prevent double-dispose in DisposeAsync lifecycle
     }
 
     [Fact]
@@ -220,5 +268,15 @@ public sealed class ReconnectingConnectionWrapperTests : IAsyncLifetime
         // We verify by checking the call count doesn't explode.
         Assert.True(callCount <= 10,
             $"Expected reasonable call count but got {callCount} — suggests multiple reconnect loops.");
+    }
+
+    private static SqlConnection? GetCurrentConnection(ReconnectingConnectionWrapper wrapper)
+    {
+        var field = typeof(ReconnectingConnectionWrapper).GetField(
+            "_connection",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        return (SqlConnection?)field.GetValue(wrapper);
     }
 }
