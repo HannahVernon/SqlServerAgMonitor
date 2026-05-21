@@ -47,7 +47,20 @@ internal sealed class DuckDbConnectionManager : IAsyncDisposable
             await Task.Run(() =>
             {
                 _connection = new DuckDBConnection(_connectionString);
-                _connection.Open();
+                try
+                {
+                    _connection.Open();
+                }
+                catch (DuckDBException ex) when (ex.Message.Contains("Could not move file") || ex.Message.Contains("WAL"))
+                {
+                    _logger.LogWarning(ex, "DuckDB WAL recovery failed. Removing stale WAL files and retrying.");
+                    _connection.Dispose();
+                    _connection = null;
+                    DeleteStaleWalFiles();
+                    _connection = new DuckDBConnection(_connectionString);
+                    _connection.Open();
+                    _logger.LogInformation("DuckDB opened successfully after WAL file cleanup.");
+                }
 
                 // Restrict the database file to the current user
                 if (File.Exists(_dbPath))
@@ -252,6 +265,17 @@ internal sealed class DuckDbConnectionManager : IAsyncDisposable
             _disposed = true;
             if (_connection != null)
             {
+                try
+                {
+                    using var cmd = _connection.CreateCommand();
+                    cmd.CommandText = "CHECKPOINT";
+                    cmd.ExecuteNonQuery();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to checkpoint DuckDB before dispose.");
+                }
+
                 try { _connection.Dispose(); }
                 catch (Exception ex) { _logger.LogDebug(ex, "Error disposing DuckDB connection."); }
             }
@@ -259,5 +283,30 @@ internal sealed class DuckDbConnectionManager : IAsyncDisposable
             _opLock.Dispose();
         }
         return ValueTask.CompletedTask;
+    }
+
+    /// <summary>
+    /// Deletes stale WAL files that can prevent DuckDB from opening after an
+    /// unclean shutdown.
+    /// </summary>
+    private void DeleteStaleWalFiles()
+    {
+        string[] walExtensions = [".wal", ".wal.checkpoint", ".wal.recovery"];
+        foreach (var ext in walExtensions)
+        {
+            var walPath = _dbPath + ext;
+            if (File.Exists(walPath))
+            {
+                try
+                {
+                    File.Delete(walPath);
+                    _logger.LogInformation("Deleted stale WAL file: {Path}", walPath);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete stale WAL file: {Path}", walPath);
+                }
+            }
+        }
     }
 }
