@@ -39,6 +39,7 @@ The following packages are licensed under the [MIT License](https://opensource.o
 | [System.Security.Cryptography.ProtectedData](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
 | [System.IO.FileSystem.AccessControl](https://github.com/dotnet/runtime) | 5.0.0 | © Microsoft Corporation |
 | [System.ServiceProcess.ServiceController](https://github.com/dotnet/runtime) | 10.0.5 | © Microsoft Corporation |
+| [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | 0.21.3 | © Tom Deseyn |
 
 ## BSD 3-Clause License
 

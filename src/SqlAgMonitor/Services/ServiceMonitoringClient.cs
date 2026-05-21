@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -26,7 +27,7 @@ public sealed class ServiceMonitoringClient : IMonitoringCoordinator
 {
     private readonly IConfigurationService _configService;
     private readonly ILogger<ServiceMonitoringClient> _logger;
-    private readonly Dictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, MonitoredGroupSnapshot> _latestSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
     private HubConnection? _hubConnection;
     private string? _trustedCertThumbprint;
