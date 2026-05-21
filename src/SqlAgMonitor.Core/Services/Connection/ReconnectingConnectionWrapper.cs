@@ -10,35 +10,33 @@ namespace SqlAgMonitor.Core.Services.Connection;
 /// </summary>
 public sealed class ConnectionLease : IAsyncDisposable
 {
-    private readonly SemaphoreSlim _lock;
     private readonly ReconnectingConnectionWrapper _owner;
-    private bool _released;
+    private int _released;
 
     public SqlConnection Connection { get; }
 
-    internal ConnectionLease(SqlConnection connection, SemaphoreSlim usageLock, ReconnectingConnectionWrapper owner)
+    internal ConnectionLease(SqlConnection connection, ReconnectingConnectionWrapper owner)
     {
         Connection = connection;
-        _lock = usageLock;
         _owner = owner;
     }
 
     /// <summary>
-    /// Marks the connection as broken and starts background reconnection.
-    /// The lease remains held until disposed — no other caller can acquire it.
+    /// Marks the connection as broken for future acquisitions and starts background
+    /// reconnection.  The leased connection is not disposed until this lease is released,
+    /// preventing use-after-dispose for callers mid-command.
     /// </summary>
     public void Invalidate()
     {
-        _owner.InvalidateConnectionInternal();
+        if (Interlocked.CompareExchange(ref _released, 0, 0) == 0)
+            _owner.InvalidateConnectionInternal(Connection);
     }
 
     public ValueTask DisposeAsync()
     {
-        if (!_released)
-        {
-            _released = true;
-            _lock.Release();
-        }
+        if (Interlocked.Exchange(ref _released, 1) == 0)
+            _owner.ReleaseLease(Connection);
+
         return ValueTask.CompletedTask;
     }
 }
@@ -69,6 +67,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     private readonly ISubject<ConnectionStateChange> _syncStateChanges;
     private CancellationTokenSource? _reconnectCts;
     private Task? _reconnectTask;
+    private int _connectionInvalidated;
     private bool _disposed;
 
     // Exponential backoff for reconnection attempts: 1s, 2s, 4s, 8s, 16s, 32s, then
@@ -76,8 +75,10 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     private static readonly int[] BackoffSeconds = [1, 2, 4, 8, 16, 32, 60];
 
     public IObservable<ConnectionStateChange> StateChanges => _syncStateChanges.AsObservable();
-    public bool IsConnected => _connection?.State == System.Data.ConnectionState.Open;
+    public bool IsConnected => Interlocked.CompareExchange(ref _connectionInvalidated, 0, 0) == 0
+        && _connection?.State == System.Data.ConnectionState.Open;
     public string Server => _server;
+    internal SqlConnection? CurrentConnectionForTesting => _connection;
 
     public ReconnectingConnectionWrapper(
         ISqlConnectionService connectionService,
@@ -130,20 +131,22 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
     /// </summary>
     private async Task<ConnectionLease?> AcquireInternalAsync(CancellationToken cancellationToken)
     {
-        // Already connected — return lease
-        if (_connection?.State == System.Data.ConnectionState.Open)
-            return new ConnectionLease(_connection, _usageLock, this);
+        // Already connected and not invalidated - return lease
+        if (Interlocked.CompareExchange(ref _connectionInvalidated, 0, 0) == 0
+            && _connection?.State == System.Data.ConnectionState.Open)
+            return new ConnectionLease(_connection, this);
 
-        // Not connected — try once
+        // Not connected or invalidated - dispose stale connection and try once
         _connection?.Dispose();
         _connection = null;
+        Interlocked.Exchange(ref _connectionInvalidated, 0);
 
         try
         {
             _connection = await _connectionService.GetConnectionAsync(
                 _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, cancellationToken);
             _syncStateChanges.OnNext(new ConnectionStateChange(_server, true, null, DateTimeOffset.UtcNow));
-            return new ConnectionLease(_connection, _usageLock, this);
+            return new ConnectionLease(_connection, this);
         }
         catch (Exception ex)
         {
@@ -156,14 +159,37 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
 
     /// <summary>
     /// Called by <see cref="ConnectionLease.Invalidate"/> while the lease is held.
-    /// Disposes the connection and starts background reconnection.
+    /// Marks the connection as unavailable for future acquisitions without disposing
+    /// it, then starts background reconnection.  The connection is disposed when the
+    /// owning lease is released via <see cref="ReleaseLease"/>.
     /// </summary>
-    internal void InvalidateConnectionInternal()
+    internal void InvalidateConnectionInternal(SqlConnection leasedConnection)
     {
-        _connection?.Dispose();
-        _connection = null;
-        _syncStateChanges.OnNext(new ConnectionStateChange(_server, false, "Connection invalidated.", DateTimeOffset.UtcNow));
+        if (!ReferenceEquals(_connection, leasedConnection))
+            return;
+
+        if (Interlocked.Exchange(ref _connectionInvalidated, 1) == 0)
+            _syncStateChanges.OnNext(new ConnectionStateChange(_server, false, "Connection invalidated.", DateTimeOffset.UtcNow));
+
         StartBackgroundReconnect();
+    }
+
+    /// <summary>
+    /// Called by <see cref="ConnectionLease.DisposeAsync"/> when the lease holder is
+    /// done with the connection.  If the connection was invalidated, disposes it now
+    /// that no caller is using it.  Always releases the semaphore.
+    /// </summary>
+    internal void ReleaseLease(SqlConnection leasedConnection)
+    {
+        if (Interlocked.CompareExchange(ref _connectionInvalidated, 0, 0) == 1
+            && ReferenceEquals(_connection, leasedConnection))
+        {
+            _connection.Dispose();
+            _connection = null;
+            Interlocked.Exchange(ref _connectionInvalidated, 0);
+        }
+
+        _usageLock.Release();
     }
 
     private void StartBackgroundReconnect()
@@ -201,7 +227,8 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
 
             try
             {
-                if (_connection?.State == System.Data.ConnectionState.Open)
+                if (Interlocked.CompareExchange(ref _connectionInvalidated, 0, 0) == 0
+                    && _connection?.State == System.Data.ConnectionState.Open)
                 {
                     _logger.LogInformation("Connection to {Server} already restored.", _server);
                     return;
@@ -209,6 +236,7 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
 
                 _connection?.Dispose();
                 _connection = null;
+                Interlocked.Exchange(ref _connectionInvalidated, 0);
 
                 _connection = await _connectionService.GetConnectionAsync(
                     _server, _username, _credentialKey, _authType, _encrypt, _trustServerCertificate, ct);
@@ -245,10 +273,21 @@ public class ReconnectingConnectionWrapper : IAsyncDisposable
                 catch (OperationCanceledException) { }
             }
 
-            _connection?.Dispose();
-            _stateChanges.OnCompleted();
-            _stateChanges.Dispose();
-            _usageLock.Dispose();
+            // Wait for any active lease to release before disposing the connection
+            await _usageLock.WaitAsync();
+            try
+            {
+                _connection?.Dispose();
+                _connection = null;
+                Interlocked.Exchange(ref _connectionInvalidated, 0);
+                _stateChanges.OnCompleted();
+                _stateChanges.Dispose();
+            }
+            finally
+            {
+                _usageLock.Release();
+                _usageLock.Dispose();
+            }
         }
     }
 }

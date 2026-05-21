@@ -61,19 +61,19 @@ Direct SQL Server connections via `MonitoringCoordinator` → `AgMonitorService`
 When `Service.Enabled = true` in settings, the app connects to a remote `SqlAgMonitor.Service` instance via SignalR:
 
 ```
-┌──────────────────────┐          SignalR           ┌──────────────────────────┐
-│  Desktop App          │ ◄═══════════════════════► │  SqlAgMonitor.Service     │
+┌───────────────────────┐          SignalR           ┌──────────────────────────┐
+│  Desktop App          │ ◄════════════════════════► │  SqlAgMonitor.Service    │
 │                       │   OnSnapshotReceived       │                          │
 │  ServiceMonitoring    │   OnAlertFired             │  MonitoringWorker        │
-│  Client               │                           │  (IHostedService)        │
+│  Client               │                            │  (IHostedService)        │
 │       │               │   GetSnapshotHistory       │       │                  │
 │       ├─► MonitorTabs │   GetAlertHistory          │       ├─► AgMonitor      │
 │       ├─► Alerts      │   GetSnapshotFilters       │       ├─► DagMonitor     │
 │       └─► Statistics  │   ExportToExcel            │       ├─► AlertEngine    │
-│                       │                           │       └─► DuckDB         │
-│  HubSnapshotQuery ◄───┤                           │                          │
-│  HubEventQuery    ◄───┤   JWT Auth                 │  Kestrel (port 58432)   │
-└──────────────────────┘                            └──────────────────────────┘
+│                       │                            │       └─► DuckDB         │
+│  HubSnapshotQuery ◄───┤                            │                          │
+│  HubEventQuery    ◄───┤   JWT Auth                 │  Kestrel (port 58432)    │
+└───────────────────────┘                            └──────────────────────────┘
 ```
 
 Both modes share the same ViewModels — `IMonitoringCoordinator` abstracts the data source. `HubSnapshotQueryService` and `HubEventQueryService` implement the same `ISnapshotQueryService` / `IEventQueryService` interfaces, delegating to SignalR hub methods instead of local DuckDB.
@@ -288,22 +288,27 @@ The `ReconnectingConnectionWrapper` ensures exclusive access to a `SqlConnection
 ┌─────────────────────────────────────────────────────────┐
 │ ReconnectingConnectionWrapper                           │
 │                                                         │
-│  SemaphoreSlim(1,1)  ◄── guards all access              │
+│  SemaphoreSlim(1,1)  <-- guards all access              │
 │                                                         │
-│  TryAcquireAsync()   → null if semaphore busy           │
-│  AcquireAsync()      → waits for semaphore              │
+│  TryAcquireAsync()   -> null if semaphore busy          │
+│  AcquireAsync()      -> waits for semaphore             │
 │                                                         │
 │  ConnectionLease : IAsyncDisposable                     │
-│  ├── .Connection     → the SqlConnection                │
-│  ├── .Invalidate()   → mark broken, start reconnect     │
-│  └── .DisposeAsync() → release semaphore                │
+│  |-- .Connection     -> the SqlConnection               │
+│  |-- .Invalidate()   -> mark broken, start reconnect    │
+│  |                      (connection stays alive until   │
+│  |                       lease is released)             │
+│  '-- .DisposeAsync() -> dispose if invalidated, then    │
+│                         release semaphore               │
 │                                                         │
 │  ReconnectLoopAsync() (background task)                 │
-│  ├── Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s │
-│  ├── Acquires semaphore with 2s timeout                 │
-│  └── Emits ConnectionStateChange on success/failure     │
+│  |-- Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s │
+│  |-- Acquires semaphore with 2s timeout                 │
+│  '-- Emits ConnectionStateChange on success/failure     │
 └─────────────────────────────────────────────────────────┘
 ```
+
+`Invalidate()` defers connection disposal until the lease is released, preventing use-after-dispose when a caller invalidates mid-command.  The `_connectionInvalidated` flag (guarded by `Interlocked` operations) ensures `IsConnected` and `AcquireInternalAsync` treat the connection as dead immediately, while the actual `SqlConnection.Dispose()` call is deferred to `ReleaseLease()`.
 
 **Timer polls** use `TryAcquireAsync` (non-blocking) — if the previous poll or a reconnect attempt is in progress, the poll is silently skipped and the Observable chain's `.Where(snapshot != null)` filter drops it. The UI keeps the last good data.
 
@@ -404,14 +409,14 @@ The statistics subsystem captures per-poll metrics and maintains a three-tier su
 ```
 snapshots (raw)                    snapshot_hourly                 snapshot_daily
 ┌──────────────────────┐          ┌──────────────────────┐       ┌──────────────────────┐
-│ Per-poll rows         │  ──►    │ GROUP BY             │  ──►  │ Weighted average     │
-│ (full resolution)     │  hourly │ date_trunc('hour')   │ daily │ from hourly data     │
-│                       │  rollup │                      │rollup │                      │
-│ Retained: 48h         │         │ Aggregates:          │       │ Retained: 730d       │
-│                       │         │  MIN/MAX/AVG (nums)  │       │                      │
-│                       │         │  LAST() (states)     │       │                      │
-│                       │         │  BOOL_OR (booleans)  │       │                      │
-│                       │         │ Retained: 90d        │       │                      │
+│ Per-poll rows        │  ──►     │ GROUP BY             │  ──►  │ Weighted average     │
+│ (full resolution)    │  hourly  │ date_trunc('hour')   │ daily │ from hourly data     │
+│                      │  rollup  │                      │rollup │                      │
+│ Retained: 48h        │          │ Aggregates:          │       │ Retained: 730d       │
+│                      │          │  MIN/MAX/AVG (nums)  │       │                      │
+│                      │          │  LAST() (states)     │       │                      │
+│                      │          │  BOOL_OR (booleans)  │       │                      │
+│                      │          │ Retained: 90d        │       │                      │
 └──────────────────────┘          └──────────────────────┘       └──────────────────────┘
 ```
 
