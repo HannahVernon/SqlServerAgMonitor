@@ -178,6 +178,53 @@ public sealed class ReconnectingConnectionWrapperTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Invalidate_KeepsLeasedConnectionUntilLeaseIsReleased()
+    {
+        var sqlConn = new SqlConnection();
+        _connectionService.GetConnectionAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(sqlConn));
+
+        var wrapper = CreateWrapper();
+        var lease = await wrapper.AcquireAsync();
+
+        // Connection is stored in the wrapper before invalidation
+        Assert.Same(sqlConn, wrapper.CurrentConnectionForTesting);
+
+        lease.Invalidate();
+
+        // After invalidation, the connection is still held (not disposed mid-command)
+        Assert.Same(sqlConn, wrapper.CurrentConnectionForTesting);
+
+        await lease.DisposeAsync();
+
+        // After lease release, the invalidated connection is disposed and cleared
+        Assert.Null(wrapper.CurrentConnectionForTesting);
+    }
+
+    [Fact]
+    public async Task Invalidate_SetsIsConnectedToFalse()
+    {
+        var sqlConn = new SqlConnection();
+        _connectionService.GetConnectionAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(sqlConn));
+
+        var wrapper = CreateWrapper();
+        var lease = await wrapper.AcquireAsync();
+
+        lease.Invalidate();
+
+        Assert.False(wrapper.IsConnected);
+
+        await lease.DisposeAsync();
+    }
+
+    [Fact]
     public async Task DisposeAsync_CompletesCleanly()
     {
         var wrapper = CreateWrapper();
@@ -186,6 +233,33 @@ public sealed class ReconnectingConnectionWrapperTests : IAsyncLifetime
         _wrapper = null; // Prevent double-dispose in DisposeAsync lifecycle
 
         // No exception means success
+    }
+
+    [Fact]
+    public async Task DisposeAsync_WaitsForActiveLeaseToRelease()
+    {
+        var sqlConn = new SqlConnection();
+        _connectionService.GetConnectionAsync(
+            Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<string?>(),
+            Arg.Any<string>(), Arg.Any<bool>(), Arg.Any<bool>(),
+            Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(sqlConn));
+
+        var wrapper = CreateWrapper();
+        var lease = await wrapper.AcquireAsync();
+
+        // Start disposing the wrapper while a lease is active
+        var disposeTask = wrapper.DisposeAsync().AsTask();
+        await Task.Delay(50);
+
+        // DisposeAsync should be blocked waiting for the lease to release
+        Assert.False(disposeTask.IsCompleted);
+
+        // Release the lease so DisposeAsync can complete
+        await lease.DisposeAsync();
+        await disposeTask.WaitAsync(TimeSpan.FromSeconds(2));
+
+        _wrapper = null; // Already disposed, prevent double-dispose
     }
 
     [Fact]
