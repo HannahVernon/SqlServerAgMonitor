@@ -103,6 +103,46 @@ public sealed class DuckDbConnectionManagerTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task DisposeAsync_CheckpointsAndRemovesWalFiles()
+    {
+        await _db!.InitializeAsync();
+
+        // Write some data to ensure WAL activity
+        await _db.ExecuteAsync(conn =>
+        {
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO events VALUES (nextval('event_seq'), CURRENT_TIMESTAMP, 'Test', 'TestGroup', NULL, NULL, 'test msg', 'Info', FALSE, FALSE)";
+            cmd.ExecuteNonQuery();
+        });
+
+        await _db.DisposeAsync();
+
+        var dbPath = Path.Combine(_testDir, "events.duckdb");
+        Assert.False(File.Exists(dbPath + ".wal"), "WAL file should not exist after clean dispose.");
+        Assert.False(File.Exists(dbPath + ".wal.checkpoint"), "WAL checkpoint file should not exist after clean dispose.");
+        Assert.False(File.Exists(dbPath + ".wal.recovery"), "WAL recovery file should not exist after clean dispose.");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_RecoverFromStaleWalFiles()
+    {
+        // First, create a valid database
+        await _db!.InitializeAsync();
+        await _db.DisposeAsync();
+
+        // Create fake stale WAL files to simulate unclean shutdown
+        var dbPath = Path.Combine(_testDir, "events.duckdb");
+        File.WriteAllText(dbPath + ".wal", "stale");
+        File.WriteAllText(dbPath + ".wal.checkpoint", "stale");
+
+        // Re-create the manager and initialize; it should self-heal
+        _db = new DuckDbConnectionManager(_logger, _testDir);
+        await _db.InitializeAsync();
+
+        Assert.True(_db.IsInitialized);
+    }
+
+    [Fact]
     public async Task DisposeAsync_SubsequentExecuteThrows()
     {
         await _db!.InitializeAsync();
