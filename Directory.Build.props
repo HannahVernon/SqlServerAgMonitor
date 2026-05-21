@@ -8,9 +8,20 @@
          Dev builds between tags get a pre-release suffix (e.g., 1.2.33-alpha.0.5). -->
     <MinVerTagPrefix>v</MinVerTagPrefix>
     <MinVerMinimumMajorMinor>2.0</MinVerMinimumMajorMinor>
+
+    <!-- NuGetAudit: fail restore/build if any direct or transitive package has a
+         known vulnerability at or above the specified severity level.
+         https://learn.microsoft.com/nuget/concepts/auditing-packages -->
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>low</NuGetAuditLevel>
+    <WarningsAsErrors>NU1901;NU1902;NU1903;NU1904</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="MinVer" Version="6.0.0" PrivateAssets="All" />
+    <!-- Pin transitive dependency to patched version (CVE-2026-39959, GHSA-xrw6-gwf8-vvr9).
+         Pulled in by Avalonia.FreeDesktop/Avalonia.X11 for Linux D-Bus support. -->
+    <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" PrivateAssets="All" />
   </ItemGroup>
 </Project>
