@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -30,7 +31,7 @@ public sealed class MonitoringCoordinator : IMonitoringCoordinator
     private readonly IHtmlExportService _exportService;
     private readonly ILogger _logger;
     private readonly CompositeDisposable _subscriptions = new();
-    private readonly Dictionary<string, MonitoredGroupSnapshot> _previousSnapshots = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, MonitoredGroupSnapshot> _previousSnapshots = new(StringComparer.OrdinalIgnoreCase);
 
     public ObservableCollection<MonitorTabViewModel> MonitorTabs { get; } = new();
 
