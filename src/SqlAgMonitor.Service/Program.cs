@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Server.Kestrel.Https;
+using Microsoft.AspNetCore.SignalR;
 using SqlAgMonitor.Core;
 using SqlAgMonitor.Core.Configuration;
 using SqlAgMonitor.Core.Services.History;
@@ -128,6 +129,7 @@ builder.Services.AddSignalR(options =>
     options.MaximumReceiveMessageSize = 512 * 1024; // 512 KB
     options.KeepAliveInterval = TimeSpan.FromSeconds(15);
     options.ClientTimeoutInterval = TimeSpan.FromSeconds(60);
+    options.AddFilter<HubExceptionFilter>();
 });
 
 // Headless monitoring coordinator — registered as singleton so the hub can access it
